@@ -1,0 +1,21 @@
+{
+    "name": "Many-objective baseline (hillclimber - aggregate)",
+    "controls":
+    {
+        "target": "data/sunrise_tiny.png",
+        "activations": ["sin", "cos", "gauss", "identity", "sigmoid"],
+        "do_crossover": false,
+        "population_size": 1,
+        "num_children": 100,
+        "population_elitism": 0,
+        "tiebreak_novel": false,
+        "alg": "baseline"
+    },
+    "conditions": [
+        {
+            "baseline-aggregate": {
+                "fitness_function": "aggregate"
+            }
+        }
+    ]
+}

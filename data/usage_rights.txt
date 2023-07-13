@@ -1,0 +1,14 @@
+Public domain (CC0):
+    - Peppers
+    - Sailboat
+
+Adam Gaier, Alexander Asteroth, and Jean-Baptiste Mouret. 2019. Are quality
+diversity algorithms better at generating stepping stones than objective-based
+search?. In Proceedings of the Genetic and Evolutionary Computation Conference
+Companion. 115–116.
+    - Dolphin
+    - Skull 
+    - Apple
+
+Attribution (CC BY-SA 3.0)
+    - Sunrise: author: Bogdan [https://commons.wikimedia.org/wiki/User:Bogdan] license: CC BY-SA 3.0 [https://creativecommons.org/licenses/by-sa/3.0/deed.en]

@@ -1,0 +1,40 @@
+{
+    "name": "move-allow-jumps",
+    "controls": {
+        "target": "data/sunrise_tiny.png",
+        "alg": "move",
+        "activations": ["sin", "cos", "gauss", "identity", "sigmoid"],
+        "population_elitism": 0,
+        "tiebreak_novel": false,
+        "do_crossover": false,
+        "population_size": 100,
+        "num_cells": 100,
+
+        "norm_df_path": "results/ff-sgd-baseline/norm.pkl",
+
+        "use_fourier_features": true,
+        "n_fourier_features": 128,
+        "fourier_feature_scale": 1.25,
+        "sgd_steps": 30,
+        "with_grad": true,
+        "sgd_learning_rate": 0.1,
+        "prob_mutate_weight": 0.0,
+        "num_generations": 100
+        
+    },
+    "conditions": [
+        {
+            "population": {
+                "activation_mode": "population"
+            }
+        },
+        {
+            "layer": {
+                "activation_mode": "layer"
+            }
+            
+        }
+
+       
+    ]
+}

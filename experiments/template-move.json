@@ -1,0 +1,16 @@
+{
+    "name": "move",
+    "controls": {
+        "target": "data/<TARGET>.png",
+        "alg": "move",
+        "norm_df_path": "results/baseline/norm.pkl"
+    },
+    "conditions": [
+        {
+            "<CONDITION>": {
+                "allow_jumps": <ALLOW_JUMPS>,
+                "move_fns_per_cell": <FNS_PER_CELL>
+            }
+        }
+    ]
+}

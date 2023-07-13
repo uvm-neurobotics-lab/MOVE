@@ -1,0 +1,133 @@
+{
+    "name": "move-allow-jumps",
+    "controls": {
+        "target": "data/sunrise_tiny.png",
+        "alg": "move",
+        "activations": ["sin", "cos", "gauss", "identity", "sigmoid"],
+        "population_elitism": 0,
+        "tiebreak_novel": false,
+        "do_crossover": false,
+        "population_size": 100,
+        "num_cells": 100,
+        "move_fns_per_cell": 5
+    },
+    "conditions": [
+        {
+            "no-100-cells-1ea": {
+                "allow_jumps": false,
+                "move_fns_per_cell": 1
+            }
+        },
+        {
+            "yes-100-cells-1ea-no-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": false,
+                "move_fns_per_cell": 1
+            }
+        },
+        {
+            "yes-100-cells-1ea-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": true,
+                "move_fns_per_cell": 1
+            }
+        },
+        {
+            "no-100-cells-3ea": {
+                "allow_jumps": false,
+                "move_fns_per_cell": 3
+            }
+        },
+        {
+            "yes-100-cells-3ea-no-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": false,
+                "move_fns_per_cell": 3
+            }
+        },
+        {
+            "yes-100-cells-3ea-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": true,
+                "move_fns_per_cell": 3
+            }
+        },
+        {
+            "no-100-cells-5ea": {
+                "allow_jumps": false
+            }
+        },
+        {
+            "yes-100-cells-5ea-no-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": false
+            }
+        },
+        {
+            "yes-100-cells-5ea-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": true
+            }
+        },
+        {
+            "no-100-cells-7ea": {
+                "allow_jumps": false,
+                "move_fns_per_cell": 7
+            }
+        },
+        {
+            "yes-100-cells-7ea-no-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": false,
+                "move_fns_per_cell": 7
+            }
+        },
+        {
+            "yes-100-cells-7ea-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": true,
+                "move_fns_per_cell": 7
+            }
+        },
+        {
+            "no-100-cells-9ea": {
+                "allow_jumps": false,
+                "move_fns_per_cell": 9
+            }
+        },
+        {
+            "yes-100-cells-9ea-no-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": false,
+                "move_fns_per_cell": 9
+            }
+        },
+        {
+            "yes-100-cells-9ea-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": true,
+                "move_fns_per_cell": 9
+            }
+        },
+        {
+            "no-100-cells-11ea": {
+                "allow_jumps": false,
+                "move_fns_per_cell": 11
+            }
+        },
+        {
+            "yes-100-cells-11ea-no-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": false,
+                "move_fns_per_cell": 11
+            }
+        },
+        {
+            "yes-100-cells-11ea-mp": {
+                "allow_jumps": true,
+                "allow_multiple_placements": true,
+                "move_fns_per_cell": 11
+            }
+        }
+    ]
+}
