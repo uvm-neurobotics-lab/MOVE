@@ -1,0 +1,19 @@
+{
+    "name": "Single-objective baseline (hillclimber)",
+    "controls":
+    {
+        "target": "<TARGET>",
+        "color_mode": "<COLOR_MODE>",
+        "population_size": 1,
+        "num_children": 5,
+        "alg": "baseline",
+        "norm_df_path": "analysis/target_fitness_fn_ranges.csv"
+    },
+    "conditions": [
+        {
+            "<CONDITION>": {
+                "fitness_function": "<CONDITION>"
+            }
+        }
+    ]
+}

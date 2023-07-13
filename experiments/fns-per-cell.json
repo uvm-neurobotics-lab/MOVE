@@ -1,0 +1,46 @@
+{
+    "name": "move-fns-per-cell",
+    "controls":
+    {
+        "target": "data/sunrise_tiny.png",
+        "alg": "move",
+        "activations": ["sin", "cos", "gauss", "identity", "sigmoid"],
+        "do_crossover": false,
+        "population_elitism": 0,
+        "tiebreak_novel": false,
+        "num_cells": 100,
+        "population_size": 100
+    },
+    "conditions": [
+        {
+            "01-fns-per-cell": {
+                "move_fns_per_cell": 1
+            }
+        },
+        {
+            "03-fns-per-cell": {
+                "move_fns_per_cell": 3
+            }
+        },
+        {
+            "05-fns-per-cell": {
+                "move_fns_per_cell": 5
+            }
+        },
+        {
+            "07-fns-per-cell": {
+                "move_fns_per_cell": 7
+            }
+        },
+        {
+            "09-fns-per-cell": {
+                "move_fns_per_cell": 9
+            }
+        },
+        {
+            "11-fns-per-cell": {
+                "move_fns_per_cell": 11
+            }
+        }
+    ]
+}

@@ -1,0 +1,28 @@
+{
+    "name": "move",
+    "controls": {
+        "target": "data/<TARGET>.png",
+        "alg": "move",
+        "norm_df_path": "results/baseline-small/norm.pkl",
+        "target_resize": [33, 33],
+        "with_grad": false,
+        "prob_mutate_weight":  0.80,
+        "prob_mutate_bias":  0.80,
+        "weight_mutation_std":  2.0,
+        "weight_init_std":  2.0,
+        "prob_random_restart": 0.001,
+        "use_radial_distance":false,
+        "num_inputs": 2,
+        "use_input_bias": false,
+        "use_fourier_features": false,
+        "init_connection_probability": 0.85
+    },
+    "conditions": [
+        {
+            "<CONDITION>": {
+                "allow_jumps": <ALLOW_JUMPS>,
+                "move_fns_per_cell": <FNS_PER_CELL>
+            }
+        }
+    ]
+}

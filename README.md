@@ -5,6 +5,9 @@ By Jackson Dean and Nick Cheney
 
 
 ## Setup
+Create a conda environment using environment.yml:
+
+`conda env create -f environment.yml`
 
 
 ---

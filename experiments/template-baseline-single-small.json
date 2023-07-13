@@ -1,0 +1,31 @@
+{
+    "name": "Single-objective baseline (hillclimber)",
+    "controls":
+    {
+        "target": "<TARGET>",
+        "color_mode": "<COLOR_MODE>",
+        "population_size": 1,
+        "num_children": 5,
+        "alg": "baseline",
+        "norm_df_path": "results/baseline-small/norm.pkl",
+        "target_resize": [33, 33],
+        "with_grad": false,
+        "prob_mutate_weight":  0.80,
+        "prob_mutate_bias":  0.80,
+        "weight_mutation_std":  2.0,
+        "weight_init_std":  2.0,
+        "prob_random_restart": 0.001,
+        "use_radial_distance":false,
+        "num_inputs": 2,
+        "use_input_bias": false,
+        "use_fourier_features": false,
+        "init_connection_probability": 0.85
+    },
+    "conditions": [
+        {
+            "<CONDITION>": {
+                "fitness_function": "<CONDITION>"
+            }
+        }
+    ]
+}

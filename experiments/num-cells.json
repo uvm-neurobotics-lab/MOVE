@@ -1,0 +1,105 @@
+{
+    "name": "move-num-cells",
+    "controls": {
+        "target": "data/sunrise_tiny.png",
+        "alg": "move",
+        "activations": ["sin", "cos", "gauss", "identity", "sigmoid"],
+        "population_elitism": 0,
+        "tiebreak_novel": false,
+        "do_crossover": false,
+        "population_size": 50,
+        "allow_multiple_placements": true
+    },
+    "conditions": [
+        {
+            "50-cells-1ea": {
+                "num_cells": 50,
+                "move_fns_per_cell": 1,
+                "population_size": 50
+            }
+        },
+        {
+            "50-cells-3ea": {
+                "num_cells": 50,
+                "move_fns_per_cell": 3,
+                "population_size": 50
+            }
+        },
+        {
+            "50-cells-5ea": {
+                "num_cells": 50,
+                "move_fns_per_cell": 5,
+                "population_size": 50
+            }
+        },
+        {
+            "50-cells-7ea": {
+                "num_cells": 50,
+                "move_fns_per_cell": 7,
+                "population_size": 50
+            }
+        }
+        ,
+        {
+            "50-cells-9ea": {
+                "num_cells": 50,
+                "move_fns_per_cell": 9,
+                "population_size": 50
+            }
+        }
+        ,
+        {
+            "50-cells-11ea": {
+                "num_cells": 50,
+                "move_fns_per_cell": 11,
+                "population_size": 50
+            }
+        },
+
+
+        {
+            "25-cells-1ea": {
+                "num_cells": 25,
+                "move_fns_per_cell": 1,
+                "population_size": 25
+            }
+        },
+        {
+            "25-cells-3ea": {
+                "num_cells": 25,
+                "move_fns_per_cell": 3,
+                "population_size": 25
+            }
+        },
+        {
+            "25-cells-5ea": {
+                "num_cells": 25,
+                "move_fns_per_cell": 5,
+                "population_size": 25
+            }
+        },
+        {
+            "25-cells-7ea": {
+                "num_cells": 25,
+                "move_fns_per_cell": 7,
+                "population_size": 25
+            }
+        }
+        ,
+        {
+            "25-cells-9ea": {
+                "num_cells": 25,
+                "move_fns_per_cell": 9,
+                "population_size": 25
+            }
+        }
+        ,
+        {
+            "25-cells-11ea": {
+                "num_cells": 25,
+                "move_fns_per_cell": 11,
+                "population_size": 25
+            }
+        }
+    ]
+}

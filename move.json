@@ -1,0 +1,14 @@
+{
+    "name": "MOVE",
+    "controls":
+    {
+        "target": "data/sunrise.png",
+        "alg": "move"
+    },
+    "conditions": [
+        {
+            "default": {
+            }
+        }
+    ]
+}
