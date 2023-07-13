@@ -27,7 +27,7 @@ def run_setup():
     import uuid
     default_device = "cuda:0" if torch.cuda.is_available() else "cpu"
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', '-c', type=str, default='move.json', help='Path to config json file (default: move.json).')
+    parser.add_argument('--config', '-c', type=str, default='default.json', help='Path to config json file (default: default.json).')
     parser.add_argument('--generations', '-g', type=int, default=-1, help='Number of generations to run (default: 1000).')
     parser.add_argument('--population', '-p', type=int, default=-1, help='Population size.')
     parser.add_argument('--output', '-o', type=str, default=None, help='Output directory.')

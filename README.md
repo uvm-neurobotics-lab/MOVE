@@ -29,7 +29,7 @@ Create a conda environment using environment.yml:
 options
   -h, --help            show this help message and exit
   --config CONFIG, -c CONFIG
-                        Path to config json file (default: move.json).
+                        Path to config json file (default: default.json).
   --generations GENERATIONS, -g GENERATIONS
                         Number of generations to run (default: 1000).
   --population POPULATION, -p POPULATION
