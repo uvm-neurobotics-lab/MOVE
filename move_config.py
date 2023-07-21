@@ -69,7 +69,22 @@ class MoveConfig(AlgorithmConfig):
         self.allow_jumps = torch.inf
         self.num_cells = 50
         self.population_size = self.num_cells
-        self.objective_functions = None # default: use all
+        self.objective_functions =  [
+            "psnr",
+            "mse",
+            "lpips",
+            "dists",
+            "ssim",
+            "style",
+            "haarpsi",
+            "vif",
+            "msssim",
+            "dss",
+            "gmsd",
+            "fsim",
+            "mdsi",
+            "vsi"
+            ]
         
         self.norm_df_path = 'data/target_fitness_fn_ranges.csv'
         

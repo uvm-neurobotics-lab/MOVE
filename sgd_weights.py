@@ -46,6 +46,8 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         P = c.prepare_optimizer()  # create parameters
         # all_params.extend([cx.weight for cx in c.enabled_connections()]) # doesn't work
         all_params.extend(P)
+        assert len(P) > 0, "No parameters found"
+        assert torch.isfinite(P[0]).all(), "Non-finite parameters found"
         
     if len(all_params) == 0:
         return

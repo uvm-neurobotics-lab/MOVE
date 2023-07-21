@@ -251,83 +251,328 @@ def compression_ratio(candidates, _=None):
 ######################
 # GENOTYPE FUNCTIONS #
 ######################
+import networkx as nx
+import numpy as np
 
-def modularity(candidate_genomes,_=None):
+
+def _communities(G):
+   return nx.algorithms.community.greedy_modularity_communities(
+      G,
+      weight='weight',
+      )
+
+def modularity(genomes):
    """Returns the modularity of the genotype"""
-   fits = torch.zeros(len(candidate_genomes))
-   for i, candidate in enumerate(candidate_genomes):
-      G = candidate.to_networkx()
-      fits[i] = nx.algorithms.community.modularity(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'), weight='weight')
-   return fits
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = nx.algorithms.community.modularity(G, _communities(G), weight=None)
+   return metric
 
-def partition_coverage(candidate_genomes,_=None):
+def partition_coverage(genomes):
    """Returns the partition coverage [the ratio of the number of intra-community edges to the total number of edges in the graph] of the genotype"""
-   fits = torch.zeros(len(candidate_genomes))
-   for i, candidate in enumerate(candidate_genomes):
-      G = candidate.to_networkx()
-      coverage, _ = nx.algorithms.community.partition_quality(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'))
-      fits[i] = coverage
-   return fits
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      coverage, _ = nx.algorithms.community.partition_quality(G, _communities(G))
+      metric[i] = coverage
+   return metric
 
-def partition_performance(candidate_genomes,_=None):
+def partition_performance(genomes):
    """Returns the partition performance [the number of intra-community edges plus inter-community non-edges divided by the total number of potential edges.] of the genotype"""
-   fits = torch.zeros(len(candidate_genomes))
-   for i, candidate in enumerate(candidate_genomes):
-      G = candidate.to_networkx()
-      _, performance = nx.algorithms.community.partition_quality(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'))
-      fits[i] = performance
-   return fits
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      _, performance = nx.algorithms.community.partition_quality(G, _communities(G))
+      metric[i] = performance
+   return metric
 
-def partition_quality(candidate_genomes,_=None):
+def partition_quality(genomes):
    """Returns the partition quality [the coverage and performance of a partition] of the genotype"""
-   fits = torch.zeros(len(candidate_genomes))
-   for i, candidate in enumerate(candidate_genomes):
-      G = candidate.to_networkx()
-      coverage, performance = nx.algorithms.community.partition_quality(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'))
-      fits[i] = (performance + coverage) / 2.0
-   return fits
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      coverage, performance = nx.algorithms.community.partition_quality(G, _communities(G))
+      metric[i] = (performance + coverage) / 2.0
+   return metric
 
-def min_nodes(candidate_genomes,_=None):
+def min_nodes(genomes):
    """Returns the inverse of the count of nodes in the genotype"""
-   fits = torch.zeros(len(candidate_genomes))
-   for i, candidate in enumerate(candidate_genomes):
-      fits[i] = 1.0 / candidate.count_nodes()
-   return fits
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = 1.0 / genome.count_nodes()
+   return metric
 
-def max_nodes(candidate_genomes,_=None):
+def max_nodes(genomes):
    """Returns the count of nodes in the genotype"""
-   fits = torch.zeros(len(candidate_genomes))
-   for i, candidate in enumerate(candidate_genomes):
-      fits[i] = candidate.count_nodes() / 100.0 # make it closer to 0-1
-   return fits
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = genome.count_nodes() / 100.0 # make it closer to 0-1
+   return metric
 
-def min_connections(candidate_genomes,_=None):
+def min_connections(genomes):
    """Returns the inverse of the count of enabled connections in the genotype"""
-   fits = torch.zeros(len(candidate_genomes))
-   for i, candidate in enumerate(candidate_genomes):
-      fits[i] = 1.0 / candidate.count_enabled_connections()
-   return fits
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = 1.0 / genome.count_enabled_connections()
+   return metric
 
-def max_connections(candidate_genomes,_=None):
+def max_connections(genomes):
    """Returns the count of enabled connections in the genotype"""
-   fits = torch.zeros(len(candidate_genomes))
-   for i, candidate in enumerate(candidate_genomes):
-      fits[i] = candidate.count_enabled_connections() / 100.0 # /100 to make it closer to 0-1
-   return fits
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = genome.count_enabled_connections() / 100.0 # /100 to make it closer to 0-1
+   return metric
 
-def max_activation_fns(candidate_genomes,_=None):
+def max_activation_fns(genomes):
    """Returns the count of unique activation functions in the genotype"""
-   fits = torch.zeros(len(candidate_genomes))
-   for i, candidate in enumerate(candidate_genomes):
-      fits[i] = candidate.count_activation_functions() / 10.0 # /100 to make it closer to 0-1
-   return fits
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = genome.count_activation_functions() / 10.0 # /100 to make it closer to 0-1
+   return metric
    
+   
+def avg_in_degree(genomes):
+   """Returns the average in degree of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = torch.mean([G.in_degree(n) for n in G.nodes()])
+   return metric
+
+def avg_out_degree(genomes):
+   """Returns the average out degree of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = torch.mean([G.out_degree(n) for n in G.nodes()])
+   return metric
+
+def avg_degree(genomes):
+   """Returns the average degree of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = torch.mean([G.degree(n) for n in G.nodes()])
+   return metric
+
+def hierarchy(genomes):
+   """Returns the hierarchy of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = nx.algorithms.flow_hierarchy(G, weight='weight')
+   return metric
+
+def assortativity(genomes):
+   """Returns the assortativity of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = nx.algorithms.assortativity.degree_assortativity_coefficient(G)
+   return metric
+
+def planarity(genomes):
+   """Returns the planarity of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = nx.algorithms.planarity.check_planarity(G)[0]
+   return metric
+
+def radius(genomes):
+   """Returns the radius of the genotype. 
+   Note this is not technically the radius of G itself, 
+   but instead the  largest radius amongst all components
+   within G."""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = max([max(j.values())/2.0 for (i,j) in nx.shortest_path_length(G)])
+   return metric
+
+def diameter(genomes):
+   """Returns the diameter of the genotype. 
+   Note this is not technically the diameter of G itself, 
+   but instead the  largest diameter amongst all components
+   within G."""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = max([max(j.values()) for (i,j) in nx.shortest_path_length(G)])
+   return metric
+
+def eccentricity(genomes):
+   """Returns the eccentricity of the genotype.
+   Note this is not technically the eccentricity of G itself,
+   but instead the mean eccentricity amongst all components
+   within G."""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = torch.mean([max(j.values()) for (i,j) in nx.shortest_path_length(G)])
+   return metric
+
+def std_of_weights(genomes):
+   """Returns the standard deviation of the weights of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = np.std([c.weight.item() for c in genome.enabled_connections()])
+   return metric
+
+def mean_of_weights(genomes):
+   """Returns the mean of the weights of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = torch.mean([c.weight.item() for c in genome.enabled_connections()])
+   return metric
+
+def path_length(genomes):
+   """Returns the path length of the genotype 
+   Note this is not technically the path length of G itself,
+   but instead the mean path length amongst all components
+   within G."""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = torch.mean([torch.mean(j.values()) for (i,j) in nx.shortest_path_length(G)])
+   return metric
+
+def global_efficiency(genomes):
+   """Returns the global efficiency of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      G = genome.to_networkx()
+      metric[i] = nx.algorithms.efficiency_measures.global_efficiency(G)
+   return metric
+
+def num_nodes(genomes):
+   """Returns the number of nodes in the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = genome.count_nodes()
+   return metric
+
+def num_edges(genomes):
+   """Returns the number of edges in the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = genome.count_enabled_connections()
+   return metric
+
+def num_activation_functions(genomes):
+   """Returns the number of unique activation functions in the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = genome.count_activation_functions()
+   return metric
+
 def depth(genomes):
    """Returns the depth of the genotype"""
    metric = torch.zeros(len(genomes))
    for i, genome in enumerate(genomes):
       metric[i] = genome.depth()
    return metric
+
+def max_width(genomes):
+   """Returns the max width of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = genome.width(agg=max)
+   return metric
+
+def min_width(genomes):
+   """Returns the min width of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = genome.width(agg=min)
+   return metric
+
+def avg_width(genomes):
+   """Returns the width of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = genome.width(agg=torch.mean)
+#    return metric
+
+
+
+# def modularity(candidate_genomes,_=None):
+#    """Returns the modularity of the genotype"""
+#    fits = torch.zeros(len(candidate_genomes))
+#    for i, candidate in enumerate(candidate_genomes):
+#       G = candidate.to_networkx()
+#       fits[i] = nx.algorithms.community.modularity(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'), weight='weight')
+#    return fits
+
+# def partition_coverage(candidate_genomes,_=None):
+#    """Returns the partition coverage [the ratio of the number of intra-community edges to the total number of edges in the graph] of the genotype"""
+#    fits = torch.zeros(len(candidate_genomes))
+#    for i, candidate in enumerate(candidate_genomes):
+#       G = candidate.to_networkx()
+#       coverage, _ = nx.algorithms.community.partition_quality(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'))
+#       fits[i] = coverage
+#    return fits
+
+# def partition_performance(candidate_genomes,_=None):
+#    """Returns the partition performance [the number of intra-community edges plus inter-community non-edges divided by the total number of potential edges.] of the genotype"""
+#    fits = torch.zeros(len(candidate_genomes))
+#    for i, candidate in enumerate(candidate_genomes):
+#       G = candidate.to_networkx()
+#       _, performance = nx.algorithms.community.partition_quality(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'))
+#       fits[i] = performance
+#    return fits
+
+# def partition_quality(candidate_genomes,_=None):
+#    """Returns the partition quality [the coverage and performance of a partition] of the genotype"""
+#    fits = torch.zeros(len(candidate_genomes))
+#    for i, candidate in enumerate(candidate_genomes):
+#       G = candidate.to_networkx()
+#       coverage, performance = nx.algorithms.community.partition_quality(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'))
+#       fits[i] = (performance + coverage) / 2.0
+#    return fits
+
+# def min_nodes(candidate_genomes,_=None):
+#    """Returns the inverse of the count of nodes in the genotype"""
+#    fits = torch.zeros(len(candidate_genomes))
+#    for i, candidate in enumerate(candidate_genomes):
+#       fits[i] = 1.0 / candidate.count_nodes()
+#    return fits
+
+# def max_nodes(candidate_genomes,_=None):
+#    """Returns the count of nodes in the genotype"""
+#    fits = torch.zeros(len(candidate_genomes))
+#    for i, candidate in enumerate(candidate_genomes):
+#       fits[i] = candidate.count_nodes() / 100.0 # make it closer to 0-1
+#    return fits
+
+# def min_connections(candidate_genomes,_=None):
+#    """Returns the inverse of the count of enabled connections in the genotype"""
+#    fits = torch.zeros(len(candidate_genomes))
+#    for i, candidate in enumerate(candidate_genomes):
+#       fits[i] = 1.0 / candidate.count_enabled_connections()
+#    return fits
+
+# def max_connections(candidate_genomes,_=None):
+#    """Returns the count of enabled connections in the genotype"""
+#    fits = torch.zeros(len(candidate_genomes))
+#    for i, candidate in enumerate(candidate_genomes):
+#       fits[i] = candidate.count_enabled_connections() / 100.0 # /100 to make it closer to 0-1
+#    return fits
+
+# def max_activation_fns(candidate_genomes,_=None):
+#    """Returns the count of unique activation functions in the genotype"""
+#    fits = torch.zeros(len(candidate_genomes))
+#    for i, candidate in enumerate(candidate_genomes):
+#       fits[i] = candidate.count_activation_functions() / 10.0 # /100 to make it closer to 0-1
+#    return fits
+   
+# def depth(genomes):
+#    """Returns the depth of the genotype"""
+#    metric = torch.zeros(len(genomes))
+#    for i, genome in enumerate(genomes):
+#       metric[i] = genome.depth()
+#    return metric
 
 def age(genomes):
    metric = torch.zeros(len(genomes))
@@ -341,7 +586,7 @@ def inv_age(genomes):
       metric[i] = -genome.age
    return metric
    
-GENOTYPE_FUNCTIONS = [min_nodes, max_nodes, min_connections, max_connections, max_activation_fns, modularity, partition_coverage, partition_performance, partition_quality, depth, age, inv_age]
+GENOTYPE_FUNCTIONS = [min_nodes, max_nodes, min_connections, max_connections, max_activation_fns, modularity, partition_coverage, partition_performance, partition_quality, max_width, avg_width, depth, age, inv_age, std_of_weights, mean_of_weights]
 NO_GRADIENT = GENOTYPE_FUNCTIONS + [compression_ratio]
 NO_MEAN = NO_GRADIENT
 NO_NORM = GENOTYPE_FUNCTIONS + [compression_ratio]

@@ -51,9 +51,13 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                         ]
         else:
             self.fns = self.config.objective_functions
+            for i, fn in enumerate(self.fns):
+                if isinstance(fn, str):
+                    self.fns[i] = getattr(ff, fn)
+                
         
         self.allow_multiple_placements = self.config.allow_jumps > 0
-        self.config.fns = [fn.__name__ for fn in self.fns] # for serialization
+        self.config.fns = [fn.__name__ for fn in self.fns if not isinstance(fn, str)] # for serialization
         
         super().__init__(self.config, debug_output)
         
@@ -234,16 +238,18 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             skip_fns = [self.fns.index(f) for f in exclude]
             mask = torch.stack([self.map.fn_mask[i] for i in range(len(self.map.fn_mask)) if i not in skip_fns])
             
-            sgd_weights(new_children, 
-                        mask        = mask,
-                        # mask      = None, # can mask loss by Fm_mask, results in more exploitation within cells
-                        inputs      = self.inputs,
-                        target      = self.target,
-                        fns         = sgd_fns,
-                        norm        = self.norm,
-                        config      = self.config,
-                        early_stop  = self.config.sgd_early_stop,
-                        )
+            if self.gen > 0:
+                sgd_weights(new_children, 
+                            mask        = mask,
+                            # mask      = None, # can mask loss by Fm_mask, results in more exploitation within cells
+                            inputs      = self.inputs,
+                            target      = self.target,
+                            fns         = sgd_fns,
+                            norm        = self.norm,
+                            config      = self.config,
+                            early_stop  = self.config.sgd_early_stop,
+                            )
+                
             for child in new_children:
                 child[1].prune()
                     
