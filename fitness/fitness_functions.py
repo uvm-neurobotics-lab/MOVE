@@ -2,8 +2,9 @@
 # from piq.fsim import FSIMLoss
 # from piq.perceptual import DISTS as piq_dists
 # from piq.perceptual import LPIPS as piq_lpips
+import logging
 import piq
-from piq import StyleLoss
+from piq import ContentLoss
 from skimage.transform import resize
 import torch
 from torchvision.transforms import Resize
@@ -19,6 +20,12 @@ from fitness.dss import dss as piq_dss
 FEATURE_EXTRACTOR = vgg16(weights=VGG16_Weights.DEFAULT).features
 
 from piqa import HaarPSI
+# from piqa import fsim as p_fsim
+# from piqa import vsi as p_vsi
+import piqa
+
+
+
 
 def control(candidates, target):
    return torch.rand(len(candidates), dtype=torch.float32, device=target.device)
@@ -77,7 +84,7 @@ def correct_dims(candidates, target):
       r = torch.stack([r.squeeze() for _ in range(f.shape[0])])
    
    # replace NaNs with 0
-   f = torch.nan_to_num(f) # TODO there should not be NaNs
+   # f = torch.nan_to_num(f) # TODO there should not be NaNs
 
    return f,r
 
@@ -155,6 +162,7 @@ def gmsd(candidates, target):
    return torch.sub(0.35, loss) # 0.35 is max value
 
 def mdsi(candidates, target):
+   # TODO NAN IN GRAD
    assert_images(candidates, target)
    return 1.0 - piq.mdsi(candidates, target, data_range=1., reduction='none')
 
@@ -187,13 +195,12 @@ def content(candidates, target):
    if "CONTENT_INSTANCE" in globals().keys() and candidates.device in globals()["CONTENT_INSTANCE"].keys():
       content_instance = globals()["CONTENT_INSTANCE"][candidates.device]
    else:
-      content_instance = piq.ContentLoss(
-        feature_extractor=FEATURE_EXTRACTOR, reduction='none').eval().to(candidates.device)
+      content_instance = piq.ContentLoss(FEATURE_EXTRACTOR, reduction='none').eval().to(candidates.device)
       if "CONTENT_INSTANCE" not in globals().keys():
          globals()["CONTENT_INSTANCE"] = {}
       globals()["CONTENT_INSTANCE"][candidates.device] = content_instance
    assert_images(candidates, target)
-   loss = content_instance(feature_extractor = feature_extractor, layers=("relu3_3",), reduction='none')(candidates,target)
+   loss = content_instance(candidates, target)
    value = torch.tensor([1.0]*len(candidates)).to(loss) - loss
    return value
 
@@ -224,8 +231,21 @@ def vif(candidates, target):
    return value
 
 def vsi(candidates, target):
+   # TODO NAN IN GRAD
+   if "VSI_INSTANCE" in globals().keys() and candidates.device in globals()["VSI_INSTANCE"].keys():
+      vsi_instance = globals()["VSI_INSTANCE"][candidates.device]
+   else:
+      
+      vsi_instance = piqa.VSI(reduction=None, value_range=1.0).to(candidates.device)
+      
+      if "VSI_INSTANCE" not in globals().keys():
+         globals()["VSI_INSTANCE"] = {}
+      globals()["VSI_INSTANCE"][candidates.device] = vsi_instance
+
+   
    assert_images(candidates, target)
-   value = piq.vsi(candidates, target, data_range=1.0, reduction='none')
+   value = piq.vsi(candidates, target, data_range=1.0, reduction='none') # dep warning TODO
+   # value = vsi_instance(candidates, target)
    return value
 
 def srsim(candidates, target):
@@ -235,8 +255,22 @@ def srsim(candidates, target):
    return value
 
 def fsim(candidates, target):
+   # TODO NAN IN GRAD
+   if "FSIM_INSTANCE" in globals().keys() and candidates.device in globals()["FSIM_INSTANCE"].keys():
+      fsim_instance = globals()["FSIM_INSTANCE"][candidates.device]
+   else:
+      
+      fsim_instance = piqa.FSIM(reduction=None, value_range=1.0).to(candidates.device)
+      # fsim_instance = FSIMLoss(reduction=None, value_range=1.0).to(candidates.device)
+      
+      if "FSIM_INSTANCE" not in globals().keys():
+         globals()["FSIM_INSTANCE"] = {}
+      globals()["FSIM_INSTANCE"][candidates.device] = fsim_instance
+
+   
    assert_images(candidates, target)
-   value = piq.fsim(candidates, target, data_range=1.0, reduction='none')
+   value = piq.fsim(candidates, target, data_range=1.0, reduction='none') # dep warning TODO
+   # value = fsim_instance(candidates, target)
    return value
 
 import zlib
@@ -493,86 +527,9 @@ def avg_width(genomes):
    metric = torch.zeros(len(genomes))
    for i, genome in enumerate(genomes):
       metric[i] = genome.width(agg=torch.mean)
-#    return metric
+   return metric
 
 
-
-# def modularity(candidate_genomes,_=None):
-#    """Returns the modularity of the genotype"""
-#    fits = torch.zeros(len(candidate_genomes))
-#    for i, candidate in enumerate(candidate_genomes):
-#       G = candidate.to_networkx()
-#       fits[i] = nx.algorithms.community.modularity(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'), weight='weight')
-#    return fits
-
-# def partition_coverage(candidate_genomes,_=None):
-#    """Returns the partition coverage [the ratio of the number of intra-community edges to the total number of edges in the graph] of the genotype"""
-#    fits = torch.zeros(len(candidate_genomes))
-#    for i, candidate in enumerate(candidate_genomes):
-#       G = candidate.to_networkx()
-#       coverage, _ = nx.algorithms.community.partition_quality(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'))
-#       fits[i] = coverage
-#    return fits
-
-# def partition_performance(candidate_genomes,_=None):
-#    """Returns the partition performance [the number of intra-community edges plus inter-community non-edges divided by the total number of potential edges.] of the genotype"""
-#    fits = torch.zeros(len(candidate_genomes))
-#    for i, candidate in enumerate(candidate_genomes):
-#       G = candidate.to_networkx()
-#       _, performance = nx.algorithms.community.partition_quality(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'))
-#       fits[i] = performance
-#    return fits
-
-# def partition_quality(candidate_genomes,_=None):
-#    """Returns the partition quality [the coverage and performance of a partition] of the genotype"""
-#    fits = torch.zeros(len(candidate_genomes))
-#    for i, candidate in enumerate(candidate_genomes):
-#       G = candidate.to_networkx()
-#       coverage, performance = nx.algorithms.community.partition_quality(G, nx.algorithms.community.greedy_modularity_communities(G, weight='weight'))
-#       fits[i] = (performance + coverage) / 2.0
-#    return fits
-
-# def min_nodes(candidate_genomes,_=None):
-#    """Returns the inverse of the count of nodes in the genotype"""
-#    fits = torch.zeros(len(candidate_genomes))
-#    for i, candidate in enumerate(candidate_genomes):
-#       fits[i] = 1.0 / candidate.count_nodes()
-#    return fits
-
-# def max_nodes(candidate_genomes,_=None):
-#    """Returns the count of nodes in the genotype"""
-#    fits = torch.zeros(len(candidate_genomes))
-#    for i, candidate in enumerate(candidate_genomes):
-#       fits[i] = candidate.count_nodes() / 100.0 # make it closer to 0-1
-#    return fits
-
-# def min_connections(candidate_genomes,_=None):
-#    """Returns the inverse of the count of enabled connections in the genotype"""
-#    fits = torch.zeros(len(candidate_genomes))
-#    for i, candidate in enumerate(candidate_genomes):
-#       fits[i] = 1.0 / candidate.count_enabled_connections()
-#    return fits
-
-# def max_connections(candidate_genomes,_=None):
-#    """Returns the count of enabled connections in the genotype"""
-#    fits = torch.zeros(len(candidate_genomes))
-#    for i, candidate in enumerate(candidate_genomes):
-#       fits[i] = candidate.count_enabled_connections() / 100.0 # /100 to make it closer to 0-1
-#    return fits
-
-# def max_activation_fns(candidate_genomes,_=None):
-#    """Returns the count of unique activation functions in the genotype"""
-#    fits = torch.zeros(len(candidate_genomes))
-#    for i, candidate in enumerate(candidate_genomes):
-#       fits[i] = candidate.count_activation_functions() / 10.0 # /100 to make it closer to 0-1
-#    return fits
-   
-# def depth(genomes):
-#    """Returns the depth of the genotype"""
-#    metric = torch.zeros(len(genomes))
-#    for i, genome in enumerate(genomes):
-#       metric[i] = genome.depth()
-#    return metric
 
 def age(genomes):
    metric = torch.zeros(len(genomes))
@@ -585,8 +542,18 @@ def inv_age(genomes):
    for i, genome in enumerate(genomes):
       metric[i] = -genome.age
    return metric
+
+def sgd_loss_delta(genomes):
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      if hasattr(genome, "loss_delta"):
+         metric[i] = genome.loss_delta**2
+      else:
+         logging.warning("Genome does not have loss_delta attribute, returning 0")
+   return metric
+
    
-GENOTYPE_FUNCTIONS = [min_nodes, max_nodes, min_connections, max_connections, max_activation_fns, modularity, partition_coverage, partition_performance, partition_quality, max_width, avg_width, depth, age, inv_age, std_of_weights, mean_of_weights]
+GENOTYPE_FUNCTIONS = [min_nodes, max_nodes, min_connections, max_connections, max_activation_fns, modularity, partition_coverage, partition_performance, partition_quality, max_width, avg_width, depth, age, inv_age, std_of_weights, mean_of_weights, sgd_loss_delta]
 NO_GRADIENT = GENOTYPE_FUNCTIONS + [compression_ratio]
 NO_MEAN = NO_GRADIENT
 NO_NORM = GENOTYPE_FUNCTIONS + [compression_ratio]

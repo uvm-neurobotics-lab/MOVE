@@ -33,6 +33,7 @@ class MOVEMap(object):
         else:
             # assign combinations to cells
             combs = list(itertools.combinations(torch.arange(len(self.fns)),  self.fns_per_cell))
+            max_count = len(combs)
             if not hasattr(self.config, "cell_fns_seed"):
                 combs_random = random
             else:
@@ -55,6 +56,7 @@ class MOVEMap(object):
                 print("Using fixed combs: ", combs)
         
         self.n_cells = len(combs)
+        print(f"Using {self.n_cells} out of {max_count} possible combinations")
         self.map = [None] * np.prod(self.n_cells) # fill with None
         self.cell_fn_inds = torch.tensor(combs, device=self.config.device)
         self.cell_names = []

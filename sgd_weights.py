@@ -1,3 +1,4 @@
+import logging
 import torch
 from cppn_torch.graph_util import activate_population
 from torchvision.transforms import Resize
@@ -39,22 +40,38 @@ def min_resize(imgs):
 
 def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
     if isinstance(genomes[0], tuple):
-        genomes = [g for _, g in genomes]
+        genomes = [g for c_,ci_,g in genomes]
     all_params = []
+
+
+    if mask is not None:
+        # filter fns to only the ones that are enabled in mask
+        fns = [fn for i, fn in enumerate(fns) if mask[i].any()]
+        mask = mask[mask.any(dim=1)]
     
+    if len(fns) == 0:
+        return
+        
     for c in genomes:
         P = c.prepare_optimizer()  # create parameters
         # all_params.extend([cx.weight for cx in c.enabled_connections()]) # doesn't work
+        c.loss_delta = 0.0
+        c.last_loss = 0.0
         all_params.extend(P)
         assert len(P) > 0, "No parameters found"
         assert torch.isfinite(P[0]).all(), "Non-finite parameters found"
         
     if len(all_params) == 0:
-        return
+        return 0
     
+    lr = config.sgd_learning_rate
+    if len(genomes) == 1:
+        # allow for different learning rates per genome
+        lr = genomes[0].sgd_lr
+        
     # All CPPN weights in one optimizer
-    optimizer = torch.optim.Adam(all_params, lr=config.sgd_learning_rate)
-    # optimizer = torch.optim.SGD(all_params, lr=config.sgd_learning_rate)
+    optimizer = torch.optim.Adam(all_params, lr=lr, weight_decay=config.sgd_l2_reg)
+    # optimizer = torch.optim.SGD(all_params, lr=lr)
 
 
     # Compile function
@@ -82,11 +99,9 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
 
     # loss function
     def loss_fn(imgs, target):
-        # print("IMG IN LOSS_FN", imgs[0][0][0][0])
         # prepare images
         # remove nan
-        imgs[torch.isnan(imgs)] = 0 # TODO
-        assert not torch.isnan(imgs).any(), "NaNs in images"
+        assert torch.isfinite(imgs).all(), "NaNs in images"
         
         
         if len(config.color_mode) == 1:
@@ -109,23 +124,28 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         normed = torch.zeros((pop_size, len(fns)), device=imgs.device)
         for i, fn in enumerate(fns):
             fitness = fn(imgs, target)
-            # print(f"Fitness {fn.__name__}: {fitness.mean().item():.3f} +/- {fitness.std().item():.3f} (min: {fitness.min().item():.3f}, max: {fitness.max().item():.3f})")
+
             if norm is not None:
                 normed_fit = norm_tensor(fitness, norm, fn.__name__, clamp=True, warn=False)
             else:
                 normed_fit = fitness # no normalization
             normed[:, i] = normed_fit
+        
+        for i, c in enumerate(genomes):
+            c.loss_delta += normed[i].mean().item() - c.last_loss
+            c.last_loss = normed[i].mean().item()
                 
         if mask is not None:
             # mask loss by the functions in each cell
             normed = normed * mask.T
             
-        normed[torch.isnan(normed)] = 0 # TODO
-        assert not torch.isnan(normed).any()
+        assert torch.isfinite(normed).all()
 
         # return the inverse of the mean fitness
         inv = torch.sub(1.0, normed.mean())
         # print("inv_max_normed_masked", inv.max().item(), "inv_min_normed_masked", inv.min().item(), "inv_mean_normed_masked", inv.mean().item(), "inv_std_normed_masked", inv.std().item())
+        
+        
         return inv
     
     # Optimize
@@ -134,26 +154,32 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
     for step in pbar:
         imgs = compiled_fn(inputs, genomes)
         loss = loss_fn(imgs, target)
+        assert torch.isfinite(loss).all(), "Non-finite loss"
         
-        # print(loss.min().item())
-        # print("\n\n\n\n")
-        # print("*"*100)
-        # print("PARAM:", all_params[0], "\nCPPN:", genomes[0].get_params()[0])
-        # print("*"*100)
-        # print("\n\n\n\n")
-
-        # loss = loss.mean()
         optimizer.zero_grad()
-        loss.backward()
+        
+        
+        for param in all_params:
+            assert torch.isfinite(param).all(), "Non-finite parameters before step"
+            assert param.grad is None or torch.isfinite(param.grad).all(), "Non-finite gradients before step"
+        try:
+            loss.backward() 
+        except RuntimeError as e:
+            logging.warning("RuntimeError in loss.backward()")
+            return step
+        if config.sgd_clamp_grad:
+            torch.nn.utils.clip_grad_norm_(all_params, config.sgd_clamp_grad, error_if_nonfinite=False)
         optimizer.step()
         
-        # print(all_params[0], genomes[0].get_params()[0])
+        for param in all_params:
+            assert torch.isfinite(param).all(), "Non-finite parameters after step"
+        
         if early_stop and stopping.check_stop(loss.item()):
             break
         
         if isinstance(pbar, tqdm):
             pbar.set_postfix_str(f"loss={loss.detach().clone().mean().item():.3f}")
-            pbar.set_description_str(f"Optimizing {len(all_params)} params")
+            pbar.set_description_str(f"Optimizing {len(all_params)} params on {len(genomes)} genomes and {len(fns)} fns lr: {lr:.2e}")
         
     return step
         

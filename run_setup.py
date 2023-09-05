@@ -12,6 +12,8 @@ from cppn_torch import ImageCPPN
 def fix_target_dimensions(config):
     dims = config.target.shape
     new_dims = []
+    if config.num_upsamples == 0:
+        return
     for i,d in enumerate(dims[:-1]):
         if d % 2**config.num_upsamples != 0:
             new_dims.append(d - d % 2**config.num_upsamples)

@@ -8,6 +8,7 @@
     "conditions": [
         {
             "default": {
+                "sgd_steps":100
             }
         }
     ]

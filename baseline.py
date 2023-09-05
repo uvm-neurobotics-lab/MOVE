@@ -132,6 +132,7 @@ class Baseline(CPPNEvolutionaryAlgorithm):
                 dims=self.inputs.shape[-1],
                 include_original=True,
                 mult_percent=self.config.get("fourier_mult_percent", 0.0),
+                sin_and_cos=self.config.fourier_sin_and_cos
                 )
             self.config.num_inputs = self.inputs.shape[-1]
         

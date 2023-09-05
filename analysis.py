@@ -3,14 +3,15 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+from fitness.fitness_functions import GENOTYPE_FUNCTIONS
+import math
 from norm import read_norm_data, norm
 
 import argparse
 
 #%%
 parser = argparse.ArgumentParser()
-parser.add_argument("-p", "--path", type=str, default="output/default")
+parser.add_argument("path", type=str)
 parser.add_argument("-g", "--gen", type=int, default=-1)
 parser.add_argument("-t", "--target", type=str, default=None)
 parser.add_argument("-c", "--condition", type=str, default=None)
@@ -31,8 +32,6 @@ if args.collect:
 
 norm_df = read_norm_data("data/target_fitness_fn_ranges.csv", "")
 conds_dir = os.path.join(args.path, "conditions")
-
-# population_size = 70
 
 os.makedirs(os.path.join(args.path, "plots"), exist_ok=True)
 
@@ -55,27 +54,53 @@ if args.condition is not None:
 if args.target is not None:
     df = df[df["target"] == args.target]
     
+# remove functions in GENOTYPE_FUNCTIONS
+g_f = GENOTYPE_FUNCTIONS.copy()
+g_f = [f.__name__ for f in g_f]
+df = df[~df["function"].isin(g_f)]
+
 norm(df, norm_df)
 
+
+pop_size = df[df['run'] == df['run'].min()]["cell"].count()
 mean_df = df.groupby(["gen", "condition", "run"])["fitness"].mean().reset_index()
-
-
-# %%
-# Adjust the Steady State condition to match the Without Steady State condition
 use_df = mean_df.copy()
 
-if "without-steady-state" in df["condition"].unique():
-    population_size = df[(df["condition"] == "without-steady-state") & (df['run'] ==  df['run'].min())]["cell"].unique().shape[0]
-    # split conditions to separate dfs
-    df_with = use_df[use_df["condition"] == "with-steady-state"]
-    df_without = use_df[use_df["condition"] == "without-steady-state"]
-    # keep every 70th gen of df_with
-    df_with = df_with[df_with["gen"] % population_size == 0].reset_index()
-    # rename gens to match df_without
-    df_with["gen"] = df_with["gen"] // population_size
-    use_df = pd.concat([df_with, df_without])
+
 # %%
-ax = sns.lineplot(x="gen", y="fitness", hue="condition", data=use_df)
+adjust_for_batch_size = False
+if adjust_for_batch_size:
+    import json
+    for run in use_df["run"].unique():
+        config = None
+        for cond in use_df["condition"].unique():
+            if config: 
+                break
+            run_name = f"run_{run}"
+            if run_name in os.listdir(os.path.join(conds_dir, cond)):
+                config = json.load(open(os.path.join(conds_dir, cond, run_name, "config.json")))
+                config = json.loads(config)
+                break
+        assert config is not None, f"Could not find config file for run {run}"
+        print(type(config))
+        batch_size = config["batch_size"]
+        initial_batch_size = config["initial_batch_size"]
+        # add total_offspring column
+        gens_with_init = math.ceil(config["num_cells"]/initial_batch_size)
+        offspring_with_init = gens_with_init * initial_batch_size
+        
+        def gen_to_offspring(gen):
+            if gen < gens_with_init:
+                return gen * initial_batch_size
+            else:
+                return offspring_with_init + (gen - gens_with_init) * batch_size
+        
+        use_df.loc[use_df["run"] == run, "total_offspring"] = use_df.apply(lambda row: gen_to_offspring (row["gen"]), axis=1)
+
+use_df["total_offspring"] = use_df["gen"].apply(lambda x: x * pop_size)
+
+# %%
+ax = sns.lineplot(x="total_offspring", y="fitness", hue="condition", data=use_df)
 plt.savefig(os.path.join(args.path, "plots", "avg_fits_over_time.png"))
 plt.show()
 

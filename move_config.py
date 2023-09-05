@@ -1,6 +1,7 @@
 """Stores configuration parameters for the MOVE algorithm."""
 from cppn_torch.activation_functions import *
 from evolution_torch import AlgorithmConfig
+import torch
 
 
 class MoveConfig(AlgorithmConfig):
@@ -34,35 +35,21 @@ class MoveConfig(AlgorithmConfig):
         self.diversity_mode = None # don't record diversity (it's slow)
         self.autoencoder_frequency = 0 # used for novelty, disabled for MOVE
         
-        self.coord_range = (-1.0, 1.0)
+        self.coord_range = (-0.5, 0.5)
+        
+        self.grad_every = 1
+        
+        self.batch_size = 1
+        self.initial_batch_size = 64 # just for the initial population
         
 
         self.hidden_nodes_at_start = 8
         self.init_connection_probability = 0.85
-        self.prune_threshold = 0.001
+        self.prune_threshold = 0 # don't prune
         self.min_pruned = 0
-        self.dense_init_connections = True
-        
-        self.use_steady_state = True
-        
-        # Fourier features:
-        self.use_fourier_features = True
-        self.n_fourier_features = 8
-        self.fourier_feature_scale = 2.0
-        self.fourier_mult_percent = 0.05
-        
-        
-        # SGD:
-        self.with_grad = True
-        self.prob_mutate_weight = 0.0
-        self.prob_weight_reinit = 0.0
-        self.prob_mutate_bias = 0.0
-        self.prob_sgd_weight = 1.0
-        self.sgd_learning_rate = 0.03
-        self.sgd_early_stop_delta = -0.0005
-        self.sgd_steps = 20
-        self.grad_every = 1
-        self.sgd_early_stop = 5
+        self.dense_init_connections = False
+        self.enforce_initial_fill = False
+        self.fourier_sin_and_cos = False
         
         # MOVE specific:
         self.move_fns_per_cell = 3
@@ -86,7 +73,12 @@ class MoveConfig(AlgorithmConfig):
             "vsi"
             ]
         
+        self.low_mem = False # don't record as much data to save memory
+        self.thread_count = 1 # don't use multiple threads
+        
         self.norm_df_path = 'data/target_fitness_fn_ranges.csv'
+        
+        self.record_frequency = 1 # record every offspring
         
         # Used by baseline:
         self.num_children = 5

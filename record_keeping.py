@@ -9,10 +9,9 @@ class Record():
         self.fit_df = pd.DataFrame(columns=['condition', 'target', 'cell', 'run', 'function', 'gen', 'fitness'])
         self.replace_df = pd.DataFrame(columns=['condition','target',  'cell', 'run', 'gen', 'replacements'])
         
-        num_gen_data_points = config.num_generations
-        if config.use_steady_state:
-            num_gen_data_points = round(config.num_generations / config.population_size)
-        
+        num_gen_data_points = (config.num_generations*config.population_size)//config.record_frequency
+        # if config.batch_size != config.population_size:
+        #     num_gen_data_points = config.num_generations*config.batch_size//config.population_size
         self.agg_fitness_over_time = torch.ones((n_cells, num_gen_data_points), device='cpu')*-torch.inf
         
         if not self.low_mem:
@@ -21,17 +20,19 @@ class Record():
             self.replacements_over_time = torch.zeros((n_cells, n_cells, num_gen_data_points), device='cpu')
             self.ids_over_time = torch.ones((n_cells, num_gen_data_points), device='cpu', dtype=torch.int64)*-1
             self.parents_over_time = torch.ones((2, n_cells, num_gen_data_points), device='cpu', dtype=torch.int64)*-1
+            self.lr_over_time = torch.ones((num_gen_data_points), device='cpu')*-torch.inf
+            self.offspring_over_time = torch.ones((num_gen_data_points), device='cpu')*-torch.inf
         
-    def update(self, gen_index, all_replacements, all_votes, map):
+    def update(self, gen_index, all_replacements, map, total_offspring):
         self.agg_fitness_over_time[:,gen_index] = map.agg_fitness.cpu()
-        
         if not self.low_mem:
             self.fitness_over_time[:,:,gen_index] = map.fitness.cpu()
             self.replacements_over_time[:,:,gen_index] = all_replacements.cpu()
-            self.votes_over_time[:,:,:,gen_index] = all_votes
+            # self.votes_over_time[:,:,:,gen_index] = all_votes
             self.ids_over_time[:,gen_index] = torch.tensor([-1 if g is None else g.id for g in map.map]).cpu()
             self.parents_over_time[:,:,gen_index] = torch.tensor([[-1 if g is None else g.parents[0] for g in map.map], [-1 if g is None else g.parents[1] for g in map.map]]).cpu()
-
+            self.lr_over_time[gen_index] = torch.mean(torch.tensor([g.sgd_lr for g in map.map if g is not None]))
+            self.offspring_over_time[gen_index] = total_offspring
 
     def save(self, run_dir):
         torch.save(self.agg_fitness_over_time, os.path.join(run_dir, "agg_fitness_over_time.pt"))
@@ -41,3 +42,5 @@ class Record():
             torch.save(self.ids_over_time, os.path.join(run_dir, "ids_over_time.pt"))
             torch.save(self.parents_over_time, os.path.join(run_dir, "parents_over_time.pt"))
             torch.save(self.votes_over_time, os.path.join(run_dir, "votes_over_time.pt"))
+            torch.save(self.lr_over_time, os.path.join(run_dir, "lr_over_time.pt"))
+            torch.save(self.offspring_over_time, os.path.join(run_dir, "offspring_over_time.pt"))
