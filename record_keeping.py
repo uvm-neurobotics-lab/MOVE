@@ -1,7 +1,11 @@
 import os
 import pandas as pd
 import torch
-
+from tqdm import tqdm
+from typing import Callable
+import matplotlib.pyplot as plt
+import json
+import numpy as np
 
 class Record():
     def __init__(self, config, n_fns, n_cells, low_mem=False) -> None:
@@ -62,3 +66,48 @@ class Record():
             torch.save(self.votes_over_time, os.path.join(run_dir, "votes_over_time.pt"))
             torch.save(self.lr_over_time, os.path.join(run_dir, "lr_over_time.pt"))
             torch.save(self.offspring_over_time, os.path.join(run_dir, "offspring_over_time.pt"))
+            
+     
+    def save_map(self, dirpath, map, config, inputs):
+        # save all images
+        os.makedirs(dirpath, exist_ok=True)
+        genomes_path = os.path.join(config.output_dir, "genomes", config.experiment_condition, f"run_{config.run_id:04d}")
+        os.makedirs(genomes_path, exist_ok=True)
+        genomes = []
+        
+        flat_map = map.get_population()
+        print(f"Saving map with {len(flat_map)} genomes")
+        pbar = tqdm(total=len(flat_map), desc="Saving final map...")
+        imgs = []
+        for i in range(len(flat_map)):
+            cell_fns_inds = map.cell_fn_inds[i] # flat
+            cell_fns = [map.fns[i] for i in cell_fns_inds]
+            if(flat_map[i] is not None):
+                individual = flat_map[i]
+                individual.to(config.device)
+                img = individual.get_image(inputs, channel_first=True, act_mode="node").detach().cpu()
+                if len(config.color_mode)<3:
+                    img = img.repeat(3, 1, 1)
+                img = img.permute(1,2,0) # (H,W,C)
+                img = img.numpy()
+                imgs.append(img)
+                name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"{len(list(individual.enabled_connections()))}c"
+                name = name + ".png"
+                plt.imsave(os.path.join(dirpath, name), img, cmap='gray')
+                plt.close()
+                if config.with_grad:
+                    flat_map[i].discard_grads()
+                genomes.append(flat_map[i].clone(config, new_id=False).to_json())
+            else:
+                genomes.append("null")
+            pbar.update(1)
+
+            
+        pbar.close()
+        with open(os.path.join(genomes_path, "map.json"), "w") as f:
+            json.dump(genomes, f)
+      
+        
+        average_image = np.mean(imgs, axis=0) 
+        plt.imsave(os.path.join(config.output_dir, "images", f"{config.run_id:04d}/avg_{config.run_id:04d}.png"), average_image, cmap='gray')
+        

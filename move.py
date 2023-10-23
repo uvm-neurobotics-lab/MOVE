@@ -25,7 +25,7 @@ from move_map import MOVEMap
 from run_setup import run_setup
 from sgd_weights import sgd_weights 
 from record_keeping import Record
-from move_multiprocessing import MOVEWorker, activate_population_async, sgd_population_async
+# from move_multiprocessing import MOVEWorker, activate_population_async, sgd_population_async
 
 from norm import norm_tensor, read_norm_data
 import fitness.fitness_functions as ff
@@ -494,7 +494,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         os.makedirs(os.path.join(self.config.output_dir, "images", f"{self.config.run_id:04d}"), exist_ok=True)
         self.save_best_img(os.path.join(self.config.output_dir, "images", f"{self.config.run_id:04d}/best_{self.config.run_id:04d}.png"), do_graph=True)
        
-        self.save_map()
+        if not self.config.dry_run:
+            dirpath = os.path.join(self.config.output_dir, "images", "final_map", self.config.experiment_condition, f"run_{self.config.run_id:04d}")
+            self.record.save_map(dirpath, self.map, self.config, self.inputs)
         
         lineages = {i:v for i,v in enumerate(self.get_lineages())}
         json.dump(lineages, open(os.path.join(run_dir, "lineages.json"), "w"), indent=4)
@@ -509,61 +511,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             else:
                 yield g.cell_lineage       
         
-        
-    def save_map(self):
-        if self.config.dry_run:
-            print("dry run, not saving map")
-            return
-        
-        # save all images
-        dirpath = os.path.join(self.config.output_dir, "images", "final_map", self.config.experiment_condition, f"run_{self.config.run_id:04d}")
-        os.makedirs(dirpath, exist_ok=True)
-        genomes_path = os.path.join(self.config.output_dir, "genomes", self.config.experiment_condition, f"run_{self.config.run_id:04d}")
-        os.makedirs(genomes_path, exist_ok=True)
-        genomes = []
-        
-        flat_map = self.map.get_population()
-        print(f"Saving map with {len(flat_map)} genomes")
-        pbar = tqdm(total=len(flat_map), desc="Saving final map...")
-        imgs = []
-        for i in range(len(flat_map)):
-            cell_fns_inds = self.map.cell_fn_inds[i] # flat
-            cell_fns = [self.fns[i] for i in cell_fns_inds]
-            if(flat_map[i] is not None):
-                individual = flat_map[i]
-                individual.to(self.config.device)
-                img = individual.get_image(self.inputs, channel_first=True, act_mode="node").detach().cpu()
-                if len(self.config.color_mode)<3:
-                    img = img.repeat(3, 1, 1)
-                img = img.permute(1,2,0) # (H,W,C)
-                img = img.numpy()
-                imgs.append(img)
-                name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"{len(list(individual.enabled_connections()))}c"
-                name = name + ".png"
-                plt.imsave(os.path.join(dirpath, name), img, cmap='gray')
-                plt.close()
-                if self.config.with_grad:
-                    flat_map[i].discard_grads()
-                genomes.append(flat_map[i].clone(self.config, new_id=False).to_json())
-            else:
-                genomes.append("null")
-            pbar.update(1)
-
-            
-        pbar.close()
-        with open(os.path.join(genomes_path, "map.json"), "w") as f:
-            json.dump(genomes, f)
-            
-        lineages = self.get_lineages()
-        with open(os.path.join(genomes_path, "lineages.json"), "w") as f:
-            lineages_dict = {i: l for i, l in enumerate(lineages)}
-            json.dump(lineages_dict, f)
-            
-        
-        average_image = np.mean(imgs, axis=0) 
-        plt.imsave(os.path.join(self.config.output_dir, "images", f"{self.config.run_id:04d}/avg_{self.config.run_id:04d}.png"), average_image, cmap='gray')
-        
-
+       
     def save_best_img(self, fname, do_graph=False, show_target=False):
         b = self.get_best()
         if b is None:
