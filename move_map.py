@@ -87,6 +87,7 @@ class MOVEMap(object):
         
         self.agg_fitness = torch.zeros((self.n_cells), device="cpu") # fitness of each cell (normed)
         
+
     def get_population(self, include_empty=False):
         output = []
         output = np.array(self.map).flatten()
@@ -96,12 +97,22 @@ class MOVEMap(object):
         output = output.tolist()
         return output
 
+
+    def get_agg_fitnesses(self):
+        agg_fitnesses = {}
+        for i, c in enumerate(self.map):
+            if c is not None:
+                agg_fitnesses[c.id] = self.agg_fitness[i].item()
+        return agg_fitnesses
+
+        
     def random_non_empty_cell(self):
         pop = self.get_population()
         if len(pop) == 0 :
             return None
         
         return random.choice(pop)
+
 
     def count_full_cells(self):
         pop = self.get_population()

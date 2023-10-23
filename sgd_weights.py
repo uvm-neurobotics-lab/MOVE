@@ -38,11 +38,11 @@ def min_resize(imgs):
         return resize(imgs)
     return imgs
 
+
 def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
     if isinstance(genomes[0], tuple):
         genomes = [g for c_,ci_,g in genomes]
     all_params = []
-
 
     if mask is not None:
         # filter fns to only the ones that are enabled in mask
@@ -58,11 +58,11 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         c.loss_delta = 0.0
         c.last_loss = 0.0
         all_params.extend(P)
-        assert len(P) > 0, "No parameters found"
-        assert torch.isfinite(P[0]).all(), "Non-finite parameters found"
+        # assert len(P) > 0, "No parameters found"
+        # assert torch.isfinite(P[0]).all(), "Non-finite parameters found"
         
     if len(all_params) == 0:
-        return 0
+        return 0 # took no steps
     
     lr = config.sgd_learning_rate
     if len(genomes) == 1:
@@ -84,7 +84,7 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
     def fw(f,_): return f
     
     compiled_fn = f
-    pbar = trange(config.sgd_steps, leave=False) if config.sgd_steps > 5 else range(config.sgd_steps)
+    pbar = trange(config.sgd_steps, leave=False, disable=config.sgd_steps <= 5)
     
     if hasattr(config, 'use_aot') and config.use_aot:
         pbar.set_description_str("Compiling population AOT function... ")
@@ -105,20 +105,17 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         
         
         if len(config.color_mode) == 1:
-            # Grayscale images need to be converted to RGB for loss functions
-            imgs = imgs.unsqueeze(1).repeat(1, 3, 1, 1)
-            if len(target.shape) == 3:
-                target = target.unsqueeze(1).repeat(1, 3, 1, 1)
+            imgs = imgs.repeat(1, 3, 1, 1) # grayscale to RGB
+        # if len(config.color_mode) == 1:
+        #     # Grayscale images need to be converted to RGB for loss functions
+        #     imgs = imgs.unsqueeze(0).repeat(3, 1, 1)
+        #     if len(target.shape) == 3:
+        #         target = target.unsqueeze(0).repeat(3, 1, 1)
         
         # move color channel to first dimension
         
         imgs = min_resize(imgs)
-        
-        # return torch.nn.functional.mse_loss(imgs,
-        #                             target,
-        #                             reduction='mean')
-        
-        
+ 
         # calculate fitness
         pop_size = imgs.shape[0]
         normed = torch.zeros((pop_size, len(fns)), device=imgs.device)
@@ -161,14 +158,24 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         
         for param in all_params:
             assert torch.isfinite(param).all(), "Non-finite parameters before step"
-            assert param.grad is None or torch.isfinite(param.grad).all(), "Non-finite gradients before step"
+            # assert param.grad is None or torch.isfinite(param.grad).all(), "Non-finite gradients before step"
         try:
             loss.backward() 
         except RuntimeError as e:
             logging.warning("RuntimeError in loss.backward()")
             return step
+        
+        # make nan grads 0
+        # TODO: prevent this
+        for param in all_params:
+            if param.grad is not None:
+                param.grad[param.grad != param.grad] = 0        
+            # else:
+                # print(f"Warning: param {param} has no grad")
+        
         if config.sgd_clamp_grad:
-            torch.nn.utils.clip_grad_norm_(all_params, config.sgd_clamp_grad, error_if_nonfinite=False)
+            torch.nn.utils.clip_grad_norm_(all_params, config.sgd_clamp_grad, error_if_nonfinite=True)
+        
         optimizer.step()
         
         for param in all_params:

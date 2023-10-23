@@ -3,12 +3,13 @@
     "controls":
     {
         "target": "data/sunrise.png",
+        "color_mode": "RGB",
         "alg": "move"
     },
     "conditions": [
         {
             "default": {
-                "sgd_steps":100
+                "sgd_steps":10
             }
         }
     ]

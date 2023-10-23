@@ -51,6 +51,14 @@ def plot_vs_offspring(results, y, save_path=None, show=False):
         plt.show()
     plt.close()
     
+def plot_vs_time(results, y, save_path=None, show=False):
+    sns.lineplot(results, x="time", y=y, hue="condition", style="target")
+    if save_path:
+        plt.savefig(os.path.join(save_path, f"{y}_v_time.png"))
+    if show:
+        plt.show()
+    plt.close()
+    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -73,6 +81,8 @@ if __name__ == "__main__":
     plot_vs_offspring(results, "population", save_path, args.show)
     plot_vs_offspring(results, "fitness", save_path, args.show)
     plot_vs_offspring(results, "diversity", save_path, args.show)
+    
+    plot_vs_time(results, "fitness", save_path, args.show)
     
     metrics = [
         "lr_over_time",

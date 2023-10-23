@@ -25,10 +25,9 @@ from piqa import HaarPSI
 import piqa
 
 
-
-
 def control(candidates, target):
    return torch.rand(len(candidates), dtype=torch.float32, device=target.device)
+
 
 def correct_dims(candidates, target):
    f,r = candidates, target
@@ -49,7 +48,12 @@ def correct_dims(candidates, target):
    else:
       # color
       if f.shape[1] != 3:
-         f = f.permute(0,3,1,2)
+         if f.shape[1] == 1:
+            # L
+            f = f.repeat(1,3,1,1)
+         else:
+            # RGB in wrong order
+            f = f.permute(0,3,1,2)
    if len(r.shape) == 2:
       # unbatched L
       r = r.repeat(3,1,1) # to RGB
@@ -294,6 +298,13 @@ def _communities(G):
       G,
       weight='weight',
       )
+
+def n_cells(genomes):
+   """Returns the modularity of the genotype"""
+   metric = torch.zeros(len(genomes))
+   for i, genome in enumerate(genomes):
+      metric[i] = 1.0 - (genome.n_cells/ genome.config.num_cells)
+   return metric
 
 def modularity(genomes):
    """Returns the modularity of the genotype"""
@@ -553,7 +564,7 @@ def sgd_loss_delta(genomes):
    return metric
 
    
-GENOTYPE_FUNCTIONS = [min_nodes, max_nodes, min_connections, max_connections, max_activation_fns, modularity, partition_coverage, partition_performance, partition_quality, max_width, avg_width, depth, age, inv_age, std_of_weights, mean_of_weights, sgd_loss_delta]
+GENOTYPE_FUNCTIONS = [min_nodes, max_nodes, min_connections, max_connections, max_activation_fns, modularity, partition_coverage, partition_performance, partition_quality, max_width, avg_width, depth, age, inv_age, std_of_weights, mean_of_weights, sgd_loss_delta, n_cells]
 NO_GRADIENT = GENOTYPE_FUNCTIONS + [compression_ratio]
 NO_MEAN = NO_GRADIENT
 NO_NORM = GENOTYPE_FUNCTIONS + [compression_ratio]

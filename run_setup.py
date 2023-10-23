@@ -39,6 +39,7 @@ def run_setup():
     parser.add_argument('-sgd','--sgd', type=bool, action='store', default=None, help=f'Use SGD to update weights (default: True).')
     parser.add_argument('-ff','--num_fourier_features',type=int, action='store', default=-1, help=f'Number of fourier features (default: 8).')
     parser.add_argument('-hn','--num_hidden_nodes',type=int, action='store', default=-1, help=f'Number of hidden nodes at initialization (default: 0).')
+    parser.add_argument('-pr','--profile', action='store_true', help=f'Profile the code (default: False).')
     
     args = parser.parse_args()
     
@@ -74,12 +75,15 @@ def run_setup():
     config.device = torch.device(args.device)
     apply_condition(config, parsed.get("controls", {}), {}, parsed.get("name", "Default"), ff.__dict__)
     
+    config.do_profile=args.profile
+    
     conditions = parsed.get("conditions", [])
 
     for experiment in conditions:
         name = list(experiment.keys())[0]
         apply_condition(config, {}, experiment[name], name, ff.__dict__)
-
+        if args.output is None and "output_dir" in parsed['controls'].keys():
+            args.output = parsed['controls'].get("output_dir", os.path.join("output", name))
         if args.output is None:
             args.output = os.path.join("output", name)
         

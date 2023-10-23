@@ -15,6 +15,7 @@ from tqdm import tqdm
 
 from cppn_torch import ImageCPPN
 from cppn_torch.graph_util import activate_population
+from cppn_torch.util import visualize_network
 from cppn_torch.fourier_features import add_fourier_features
 from evolution_torch import CPPNEvolutionaryAlgorithm
 import torch.multiprocessing as mp
@@ -116,7 +117,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         # repeat the target for easy comparison
         self.target = torch.stack([self.target.squeeze() for _ in range(self.config.initial_batch_size)])
 
-        if len(self.config.color_mode) > 1:
+        if len(self.target.shape) > 3:
             self.target = self.target.permute(0, 3, 1, 2) # move color channel to front
         else:
             self.target = self.target.unsqueeze(1).repeat(1,3,1,1) # add color channel
@@ -147,6 +148,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         # reproduce
         self.selection_and_reproduction()
         self.population = self.map.get_population(include_empty=False)
+        self.fitnesses = self.map.get_agg_fitnesses()
     
     
     def update_fitnesses_and_novelty(self):
@@ -162,22 +164,29 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         
     def new_child(self, parent, all_parents):
+        if parent is None:
+            child = self.genome_type(self.config)
+            child.cell_lineage = [-1]
+            child.n_cells = 0
+            return child
         if self.config.do_crossover:
             # sexual reproduction, choose another parent randomly
             all_parents = list(filter(lambda x: x is not None, all_parents))
             other_parent = np.random.choice(all_parents)
             child = parent.crossover(other_parent) # crossover
-            child.mutate() # mutate
+            child.mutate(self.config) # mutate
+            child.n_cells = parent.n_cells
             # TODO lineage
             return child
         else:
             # asexual reproduction, child is mutated clone of parent
             if self.config.with_grad:
                 parent.discard_grads()
-            child = parent.clone(new_id=True)
-            child.mutate()
+            child = parent.clone(self.config, new_id=True)
+            child.mutate(self.config)
             child.parents = (parent.id, parent.id)
-            child.lineage = parent.lineage
+            child.cell_lineage = parent.cell_lineage
+            child.n_cells = parent.n_cells
             return child
   
     
@@ -246,6 +255,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         parents = self.map.get_population(include_empty=True) # current elite map
 
         new_children = []
+        
 
         assert len(parents) == self.map.n_cells
         
@@ -265,26 +275,20 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         # reproduction
         for child_i, cell_i in enumerate(batch_cell_ids):
             p = parents[cell_i]
-            if p is None:
-                # empty cell, create random
-                child = self.genome_type(self.config)
-                child.lineage = [-1]
-                new_children.append((child_i, cell_i, child))
-            else:
-                # create child
-                child = self.new_child(p, parents)
-                for _ in range(self.config.initial_mutations):
-                    child.mutate()
-                new_children.append((child_i, cell_i, child))
-            
-            new_children[-1][2].to(self.config.device)
+            child = self.new_child(p, parents)
+            child.to(self.config.device)
+            for _ in range(self.config.initial_mutations):
+                child.mutate()
+                
+            new_children.append((child_i, cell_i, child))
+            # new_children[-1][2].to(self.config.device)
             
             self.total_offspring += 1
             
             if  len(new_children) >= batch_size:
                 break
-                
         
+        steps=0
         if self.config.with_grad and (self.gen+1) % self.config.grad_every == 0:
             # do SGD update
             self.init_sgd(batch_cell_ids)
@@ -306,7 +310,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                             early_stop  = self.config.sgd_early_stop,
                             )
             for _,_,child in new_children:
-                child.prune()
+                child.prune(self.config)
                     
                     
         # measure children
@@ -314,7 +318,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         fit_children, fc_normed = self.measure_fitness(new_children, imgs)
         fc_normed = fc_normed.detach().mean(dim=1).to("cpu")
         
+        
         # for record keeping
+        n_step_evals = len(new_children) * len(self.fns)
+        n_step_evals_incl_sgd = (n_step_evals * steps) if self.config.with_grad else n_step_evals
+        self.record.update_counts(self.gen, n_step_evals, n_step_evals_incl_sgd)
         all_replacements = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
         # all_votes = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
 
@@ -382,6 +390,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 for idx in indices:
                     replaces[idx] = True # set the chosen cells to 1
             
+            child.n_cells = torch.sum(replaces).item()
+            
             all_replacements[cell_i] = replaces
             
             self.map.fitness[:,replaces] = fit_child[:,replaces] # update fitness values
@@ -393,12 +403,15 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             if self.debug_output:
                 logging.debug(f"Replacing cells: {idxs_to_replace} with {child.id}")
                 
-            child.cpu()
+            # child.to('cpu')
             child.clear_data() # save memory
 
             for r in idxs_to_replace:
-                placed = child.clone(new_id=False, cpu=True)
-                placed.lineage = child.lineage + [r]
+                # placed = child.clone(new_id=False, cpu=True, deepcopy=False)
+                # placed = child.clone(self.config, new_id=False, cpu=True)
+                placed = child.clone(self.config, new_id=False, cpu=False)
+                placed.cell_lineage = child.cell_lineage + [r]
+                placed.n_cells = child.n_cells
                 self.map.map[r] = placed
                 self.map.agg_fitness[r] = fc_normed[child_i] 
             del child
@@ -477,6 +490,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             
         torch.save(self.map.fn_mask, os.path.join(run_dir, "Fm_mask.pt"))
        
+       
+        os.makedirs(os.path.join(self.config.output_dir, "images", f"{self.config.run_id:04d}"), exist_ok=True)
+        self.save_best_img(os.path.join(self.config.output_dir, "images", f"{self.config.run_id:04d}/best_{self.config.run_id:04d}.png"), do_graph=True)
+       
         self.save_map()
         
         lineages = {i:v for i,v in enumerate(self.get_lineages())}
@@ -490,13 +507,14 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             if g is None:
                 yield None
             else:
-                yield g.lineage       
+                yield g.cell_lineage       
         
         
     def save_map(self):
         if self.config.dry_run:
             print("dry run, not saving map")
             return
+        
         # save all images
         dirpath = os.path.join(self.config.output_dir, "images", "final_map", self.config.experiment_condition, f"run_{self.config.run_id:04d}")
         os.makedirs(dirpath, exist_ok=True)
@@ -514,15 +532,19 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             if(flat_map[i] is not None):
                 individual = flat_map[i]
                 individual.to(self.config.device)
-                img = individual.get_image(self.inputs, channel_first=False, override_activation_mode="node").detach().cpu().numpy()
+                img = individual.get_image(self.inputs, channel_first=True, act_mode="node").detach().cpu()
+                if len(self.config.color_mode)<3:
+                    img = img.repeat(3, 1, 1)
+                img = img.permute(1,2,0) # (H,W,C)
+                img = img.numpy()
                 imgs.append(img)
-                name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"_{individual.fitness.item():.3f}+{len(list(individual.enabled_connections()))}c"
+                name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"{len(list(individual.enabled_connections()))}c"
                 name = name + ".png"
                 plt.imsave(os.path.join(dirpath, name), img, cmap='gray')
                 plt.close()
                 if self.config.with_grad:
                     flat_map[i].discard_grads()
-                genomes.append(flat_map[i].clone(new_id=False).to_json())
+                genomes.append(flat_map[i].clone(self.config, new_id=False).to_json())
             else:
                 genomes.append("null")
             pbar.update(1)
@@ -537,20 +559,20 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             lineages_dict = {i: l for i, l in enumerate(lineages)}
             json.dump(lineages_dict, f)
             
-        average_image = np.mean(imgs, axis=0) # TODO also try weighted average?
-        plt.imsave(os.path.join(self.config.output_dir, "images", f"average_{self.config.run_id:04d}.png"), average_image, cmap='gray')
-        self.save_best_img(os.path.join(self.config.output_dir, "images", f"best_{self.config.run_id:04d}.png"), do_graph=True)
+        
+        average_image = np.mean(imgs, axis=0) 
+        plt.imsave(os.path.join(self.config.output_dir, "images", f"{self.config.run_id:04d}/avg_{self.config.run_id:04d}.png"), average_image, cmap='gray')
+        
 
     def save_best_img(self, fname, do_graph=False, show_target=False):
         b = self.get_best()
         if b is None:
             return
         b.to(self.config.device)
-        img = b.get_image(self.inputs, channel_first=True, override_activation_mode="node")
+        img = b.get_image(self.inputs, channel_first=True, act_mode="node")
         if len(self.config.color_mode)<3:
-            img = img.unsqueeze(-1).repeat(1,1,3)
-        else:
-            img = img.permute(1,2,0) # (H,W,C)
+            img = img.repeat(3, 1, 1)
+        img = img.permute(1,2,0) # (H,W,C)
         img = img.detach().cpu().numpy()
         
         # show as subplots
@@ -567,12 +589,29 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         plt.close()
         
+        
         if do_graph:
-            b.draw_nx(size=(10,10), show=False)
-            plt.savefig(fname.replace(".png", "_graph.png"))
+            c_b = b.clone(self.config, new_id=False)
+            P = c_b.prepare_optimizer()
+            c_b.forward(self.inputs)
+            c_b.vis(fname.replace(".png", "_torch_graph"))
+            
+            visualize_network(b, self.config, save_name=fname.replace(".png", "_graph.png"))
             plt.close()
 
 if __name__ == '__main__':
     for config, verbose in run_setup():
         alg = MOVE(config, debug_output=verbose)
-        alg.evolve()
+        if config.do_profile:
+            import cProfile
+            prof_path = os.path.join(alg.config.output_dir, f"{config.run_id:04d}.prof")
+            cProfile.run("alg.evolve()", prof_path, sort="cumime")
+            import pstats
+
+            file = open(os.path.join(alg.config.output_dir, f"{config.run_id:04d}.prof.txt"), 'w')
+            profile = pstats.Stats(prof_path, stream=file)
+            profile.sort_stats('cumulative') # Sorts the result according to the supplied criteria
+            profile.print_stats(1000) # Prints the first 1000 lines of the sorted report
+            file.close() 
+        else:
+            alg.evolve()

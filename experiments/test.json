@@ -1,0 +1,40 @@
+{
+    "name": "sgd-steps_early-stop",
+    "controls": {
+        "target": "data/sunrise.png",
+        "color_mode": "RGB",
+        "output_dir": "../results/test",
+        "alg": "move",
+        "low_mem": true
+    },
+    "conditions":
+        [
+    {
+        "test": {
+            "target_resize": [100, 100],
+            
+            "num_cells": 50,
+            "population_size": 50,
+            "batch_size": 1,
+            "initial_batch_size": 50,
+            
+            "sgd_steps": 100,
+            "sgd_early_stop": 10,
+            "sgd_learning_rate": 0.03,
+
+            "init_connection_probability": 0.05,
+            
+            "coord_range": [-1.0, 1.0],
+            
+            "hidden_nodes_at_start": 0,
+            
+            "use_fourier_features": true,
+            "n_fourier_features": 32,
+            "fourier_feature_scale": 2.0,
+            "fourier_mult_percentage": 0.00
+
+           
+        }
+    }
+]
+}

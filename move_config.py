@@ -12,7 +12,13 @@ class MoveConfig(AlgorithmConfig):
 
         # Overrides:
         self.num_generations = 3_000
-        self.activations=  [sin, gauss, softplus, sigmoid, linear] # MOVE
+        self.activations=  [sin,
+                            gauss,
+                            # softplus,
+                            sigmoid, 
+                            clip,
+                            torch.nn.Conv2d
+                            ] # MOVE
         self.do_crossover = False
         self.population_elitism = 0
         self.tiebreak_novel = False
@@ -39,8 +45,8 @@ class MoveConfig(AlgorithmConfig):
         
         self.grad_every = 1
         
-        self.batch_size = 1
-        self.initial_batch_size = 64 # just for the initial population
+        self.batch_size = 50 # generational
+        self.initial_batch_size = 50 # just for the initial population
         
 
         self.hidden_nodes_at_start = 8
@@ -50,6 +56,14 @@ class MoveConfig(AlgorithmConfig):
         self.dense_init_connections = False
         self.enforce_initial_fill = False
         self.fourier_sin_and_cos = False
+        
+        self.use_fourier_features = True
+        self.n_fourier_features = 8
+        self.fourier_feature_scale = 2.0
+        self.fourier_mult_percent = 0.05
+        
+        self.sgd_clamp_weights = 10
+        self.sgd_lr = 1e-1
         
         # MOVE specific:
         self.move_fns_per_cell = 3
@@ -68,9 +82,9 @@ class MoveConfig(AlgorithmConfig):
             "msssim",
             "dss",
             "gmsd",
-            "fsim",
-            "mdsi",
-            "vsi"
+            # "fsim", # nan in gradients
+            # "mdsi", # nan in gradients
+            # "vsi"   # nan in gradients
             ]
         
         self.low_mem = False # don't record as much data to save memory
@@ -83,6 +97,8 @@ class MoveConfig(AlgorithmConfig):
         # Used by baseline:
         self.num_children = 5
         
-        self._make_dirty() # force cppns to be regenerated if config type is changed
+        
+        # force cppns to be regenerated if config type is changed
+        self._make_dirty()
         
             

@@ -3,7 +3,7 @@
     "controls": {
         "target": "data/<TARGET>.png",
         "alg": "move",
-        "norm_df_path": "results/baseline/norm.pkl"
+        "norm_df_path": "data/target_fitness_fn_ranges.csv"
     },
     "conditions": [
         {
