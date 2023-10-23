@@ -17,7 +17,7 @@ class MoveConfig(AlgorithmConfig):
                             # softplus,
                             sigmoid, 
                             clip,
-                            torch.nn.Conv2d
+                            # torch.nn.Conv2d
                             ] # MOVE
         self.do_crossover = False
         self.population_elitism = 0
@@ -73,15 +73,15 @@ class MoveConfig(AlgorithmConfig):
         self.objective_functions =  [
             "psnr",
             "mse",
-            "lpips",
-            "dists",
             "ssim",
-            "style",
             "haarpsi",
             "vif",
             "msssim",
             "dss",
             "gmsd",
+            # "lpips",
+            # "dists",
+            # "style",
             # "fsim", # nan in gradients
             # "mdsi", # nan in gradients
             # "vsi"   # nan in gradients
