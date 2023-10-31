@@ -14,7 +14,7 @@ from torchvision.transforms import Resize
 from tqdm import tqdm
 
 from cppn_torch import ImageCPPN
-from cppn_torch.graph_util import activate_population
+# from cppn_torch.graph_util import activate_population
 from cppn_torch.util import visualize_network
 from cppn_torch.fourier_features import add_fourier_features
 from evolution_torch import CPPNEvolutionaryAlgorithm
@@ -203,7 +203,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             else:
                 imgs = torch.stack([g.get_image(self.inputs) for _,_, g in genomes])
             
-            imgs = imgs.clamp_(0,1)
+            # imgs = imgs.clamp_(0,1)
         imgs, self.target = ff.correct_dims(imgs, self.target)
         return imgs
     
@@ -306,6 +306,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                             target      = self.target,
                             fns         = self.sgd_fns,
                             norm        = self.norm,
+                            # norm        = None,
                             config      = self.config,
                             early_stop  = self.config.sgd_early_stop,
                             )
@@ -513,14 +514,15 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
        
     def save_best_img(self, fname, do_graph=False, show_target=False):
+        # if not do_graph and not self.gen % 10 == 0:
+        #     return
         b = self.get_best()
         if b is None:
             return
         b.to(self.config.device)
-        img = b.get_image(self.inputs, channel_first=True, act_mode="node")
+        img = b.get_image(self.inputs, channel_first=False, act_mode="node")
         if len(self.config.color_mode)<3:
-            img = img.repeat(3, 1, 1)
-        img = img.permute(1,2,0) # (H,W,C)
+            img = img.repeat(1, 1, 3)
         img = img.detach().cpu().numpy()
         
         # show as subplots
@@ -537,6 +539,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         plt.close()
         
+        # if self.gen % 10 == 0:
+        #     do_graph = True # always do graph 
         
         if do_graph:
             c_b = b.clone(self.config, new_id=False)

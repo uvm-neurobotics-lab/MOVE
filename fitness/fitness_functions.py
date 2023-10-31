@@ -86,9 +86,6 @@ def correct_dims(candidates, target):
    if f.shape[0] !=1 and r.shape[0] == 1:
       # only one target in batch, repeat for comparison
       r = torch.stack([r.squeeze() for _ in range(f.shape[0])])
-   
-   # replace NaNs with 0
-   # f = torch.nan_to_num(f) # TODO there should not be NaNs
 
    return f,r
 

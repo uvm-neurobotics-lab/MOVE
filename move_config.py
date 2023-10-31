@@ -14,10 +14,10 @@ class MoveConfig(AlgorithmConfig):
         self.num_generations = 3_000
         self.activations=  [sin,
                             gauss,
-                            # softplus,
+                            tanh,
                             sigmoid, 
                             clip,
-                            # torch.nn.Conv2d
+                            torch.nn.Conv2d
                             ] # MOVE
         self.do_crossover = False
         self.population_elitism = 0
@@ -77,15 +77,22 @@ class MoveConfig(AlgorithmConfig):
             "haarpsi",
             "vif",
             "msssim",
-            "dss",
             "gmsd",
-            # "lpips",
-            # "dists",
-            # "style",
-            # "fsim", # nan in gradients
-            # "mdsi", # nan in gradients
-            # "vsi"   # nan in gradients
+            "fsim", # nan in gradients
+            "dss",
+            "lpips",
+            "dists",
+            "style",
+            "mdsi", # nan in gradients
+            "vsi"   # nan in gradients
             ]
+    
+        self.prob_mutate_activation = .35
+        self.prob_add_connection = .85 # 0.05 in the original NEAT
+        self.prob_add_node = .85 # 0.03 in original NEAT
+        self.prob_remove_node = 0.15
+        self.prob_disable_connection = .15
+        self.single_structural_mutation = True
         
         self.low_mem = False # don't record as much data to save memory
         self.thread_count = 1 # don't use multiple threads
@@ -101,4 +108,3 @@ class MoveConfig(AlgorithmConfig):
         # force cppns to be regenerated if config type is changed
         self._make_dirty()
         
-            

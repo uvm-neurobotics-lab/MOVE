@@ -73,14 +73,12 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
     optimizer = torch.optim.Adam(all_params, lr=lr, weight_decay=config.sgd_l2_reg)
     # optimizer = torch.optim.SGD(all_params, lr=lr)
 
-
     # Compile function
     def f(X, *gs):
         if config.activation_mode == 'population':
             return activate_population(gs[0], config, X)
         else:
-            
-            return torch.stack([g(X, force_recalculate=True) for g in gs[0]])
+            return torch.stack([g(X, force_recalculate=True, use_graph=True) for g in gs[0]])
     def fw(f,_): return f
     
     compiled_fn = f
@@ -163,6 +161,8 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
             loss.backward() 
         except RuntimeError as e:
             logging.warning("RuntimeError in loss.backward()")
+            import traceback
+            traceback.print_exc()
             return step
         
         # make nan grads 0
