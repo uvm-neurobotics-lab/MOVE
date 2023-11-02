@@ -13,13 +13,17 @@ import matplotlib.pyplot as plt
 from torchvision.transforms import Resize
 from tqdm import tqdm
 
-from cppn_torch import ImageCPPN
+# from cppn_torch import ImageCPPN
+
 # from cppn_torch.graph_util import activate_population
-from cppn_torch.util import visualize_network
-from cppn_torch.fourier_features import add_fourier_features
+# from cppn.util import visualize_network, initialize_inputs
+from cppn.util import initialize_inputs
+from cppn.fourier_features import add_fourier_features
 from evolution_torch import CPPNEvolutionaryAlgorithm
 import torch.multiprocessing as mp
 
+from cppn import CPPN
+from util import *
 
 from move_map import MOVEMap
 from run_setup import run_setup
@@ -90,7 +94,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
     
     def init_inputs(self):
         res_h, res_w = self.config.res_h, self.config.res_w
-        self.inputs = ImageCPPN.initialize_inputs(
+        self.inputs = initialize_inputs(
                 res_h//2**self.config.num_upsamples,
                 res_w//2**self.config.num_upsamples,
                 self.config.use_radial_distance,
@@ -166,6 +170,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
     def new_child(self, parent, all_parents):
         if parent is None:
             child = self.genome_type(self.config)
+            # child = self.genome_type(self.config.num_inputs, self.config.num_outputs, self.config.hidden_nodes_at_start, self.config.init_connection_probability)
             child.cell_lineage = [-1]
             child.n_cells = 0
             return child
@@ -180,8 +185,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             return child
         else:
             # asexual reproduction, child is mutated clone of parent
-            if self.config.with_grad:
-                parent.discard_grads()
+            # if self.config.with_grad:
+                # parent.discard_grads()
             child = parent.clone(self.config, new_id=True)
             child.mutate(self.config)
             child.parents = (parent.id, parent.id)
@@ -201,7 +206,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                                                  self.target,
                                                  self.config)
             else:
-                imgs = torch.stack([g.get_image(self.inputs) for _,_, g in genomes])
+                imgs = torch.stack([g(self.inputs) for _,_, g in genomes])
             
             # imgs = imgs.clamp_(0,1)
         imgs, self.target = ff.correct_dims(imgs, self.target)
@@ -276,7 +281,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         for child_i, cell_i in enumerate(batch_cell_ids):
             p = parents[cell_i]
             child = self.new_child(p, parents)
-            child.to(self.config.device)
+            # child.to(self.config.device)
             for _ in range(self.config.initial_mutations):
                 child.mutate()
                 
@@ -317,7 +322,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         # measure children
         imgs = self.activate_population(new_children)
         fit_children, fc_normed = self.measure_fitness(new_children, imgs)
-        fc_normed = fc_normed.detach().mean(dim=1).to("cpu")
+        fc_normed = fc_normed.detach().mean(dim=1)
+        # fc_normed = fc_normed.detach().mean(dim=1).to("cpu")
         
         
         # for record keeping
@@ -405,7 +411,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 logging.debug(f"Replacing cells: {idxs_to_replace} with {child.id}")
                 
             # child.to('cpu')
-            child.clear_data() # save memory
+            # child.clear_data() # save memory
 
             for r in idxs_to_replace:
                 # placed = child.clone(new_id=False, cpu=True, deepcopy=False)
@@ -519,8 +525,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         b = self.get_best()
         if b is None:
             return
-        b.to(self.config.device)
-        img = b.get_image(self.inputs, channel_first=False, act_mode="node")
+        # b.to(self.config.device)
+        img = b(self.inputs, channel_first=False, act_mode="node")
         if len(self.config.color_mode)<3:
             img = img.repeat(1, 1, 3)
         img = img.detach().cpu().numpy()
@@ -544,11 +550,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         if do_graph:
             c_b = b.clone(self.config, new_id=False)
-            P = c_b.prepare_optimizer()
-            c_b.forward(self.inputs)
-            c_b.vis(fname.replace(".png", "_torch_graph"))
+            # c_b.forward(self.inputs)
+            # c_b.vis(fname.replace(".png", "_torch_graph"))
+            c_b.vis(self.inputs, fname.replace(".png", "_torch_graph"))
             
-            visualize_network(b, self.config, save_name=fname.replace(".png", "_graph.png"))
+            # visualize_network(b, self.config, save_name=fname.replace(".png", "_graph.png"))
             plt.close()
 
 if __name__ == '__main__':
@@ -557,7 +563,7 @@ if __name__ == '__main__':
         if config.do_profile:
             import cProfile
             prof_path = os.path.join(alg.config.output_dir, f"{config.run_id:04d}.prof")
-            cProfile.run("alg.evolve()", prof_path, sort="cumime")
+            cProfile.run("alg.evolve()", prof_path, sort="cumtime")
             import pstats
 
             file = open(os.path.join(alg.config.output_dir, f"{config.run_id:04d}.prof.txt"), 'w')

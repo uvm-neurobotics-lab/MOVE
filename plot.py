@@ -52,6 +52,10 @@ def plot_vs_offspring(results, y, save_path=None, show=False):
     plt.close()
     
 def plot_vs_time(results, y, save_path=None, show=False):
+    results = results.groupby(["condition", "target", 'run', 'gen']).mean().reset_index()
+    # get the average time at each generation
+    results = results.groupby(["condition", "target", 'gen']).mean().reset_index()
+    print(results)
     sns.lineplot(results, x="time", y=y, hue="condition", style="target")
     if save_path:
         plt.savefig(os.path.join(save_path, f"{y}_v_time.png"))
@@ -71,10 +75,15 @@ if __name__ == "__main__":
     os.makedirs(os.path.join(save_path), exist_ok=True)
     
     results = read_results(args.results_path)
+    # remove nan rows
+    results = results[results['condition'].notna()]
     assert len(args.target)==0  or args.target in results["target"].unique()
     if len(args.target) > 0:
         results = results[results["target"] == args.target]
 
+    plot_vs_time(results, "fitness", save_path, args.show)
+    plot_vs_time(results, "total_offspring", save_path, args.show)
+    
     plot_vs_offspring(results, "avg_num_connections", save_path, args.show)
     plot_vs_offspring(results, "avg_num_hidden_nodes", save_path, args.show)
     plot_vs_offspring(results, "time", save_path, args.show)
@@ -82,7 +91,6 @@ if __name__ == "__main__":
     plot_vs_offspring(results, "fitness", save_path, args.show)
     plot_vs_offspring(results, "diversity", save_path, args.show)
     
-    plot_vs_time(results, "fitness", save_path, args.show)
     
     metrics = [
         "lr_over_time",

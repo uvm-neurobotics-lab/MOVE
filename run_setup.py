@@ -7,7 +7,8 @@ import torch
 import matplotlib.pyplot as plt
 import fitness.fitness_functions as ff
 from move_config import MoveConfig
-from cppn_torch import ImageCPPN
+# from cppn_torch import ImageCPPN
+from cppn.cppn import CPPN as ImageCPPN
 
 def fix_target_dimensions(config):
     dims = config.target.shape

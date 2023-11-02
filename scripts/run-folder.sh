@@ -68,11 +68,12 @@ for i in $(seq 1 $repeats); do
         echo "Trapped CTRL-C"
         # pass sigint to all child processes
         pkill -P $$
+        wait
         exit 1
       }
 
-      # python3 -O move.py -c $filename -g $gens -pr & #  >$logdir/$(basename $filename)_$run_id.log &
-      python3 move.py -c $filename -g $gens -pr & #  >$logdir/$(basename $filename)_$run_id.log &
+      python3 -O move.py -c $filename -g $gens -pr & #  >$logdir/$(basename $filename)_$run_id.log &
+      # python3 move.py -c $filename -g $gens -pr & #  >$logdir/$(basename $filename)_$run_id.log &
       
       running=$((running+1))
       if [ $running -eq $workers ]; then

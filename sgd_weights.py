@@ -1,6 +1,5 @@
 import logging
 import torch
-from cppn_torch.graph_util import activate_population
 from torchvision.transforms import Resize
 from functorch.compile import aot_function, make_boxed_compiler
 
@@ -53,32 +52,27 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         return
         
     for c in genomes:
-        P = c.prepare_optimizer()  # create parameters
-        # all_params.extend([cx.weight for cx in c.enabled_connections()]) # doesn't work
+        # P = c.prepare_optimizer()  # create parameters
         c.loss_delta = 0.0
         c.last_loss = 0.0
-        all_params.extend(P)
-        # assert len(P) > 0, "No parameters found"
-        # assert torch.isfinite(P[0]).all(), "Non-finite parameters found"
-        
+        # set lr to c.sgd_lr
+        # all_params.append({'params': P, 'lr': c.sgd_lr})
+    for c in genomes:
+        all_params.extend([{'params': list(c.parameters()), 'lr': c.sgd_lr}])
+
     if len(all_params) == 0:
         return 0 # took no steps
     
     lr = config.sgd_learning_rate
-    if len(genomes) == 1:
-        # allow for different learning rates per genome
-        lr = genomes[0].sgd_lr
-        
-    # All CPPN weights in one optimizer
+    avg_lr = sum([p['lr'] for p in all_params])/len(all_params)
+    
+    # All CPPN weights in one optimizer # TODO allow for different learning rates per genome
     optimizer = torch.optim.Adam(all_params, lr=lr, weight_decay=config.sgd_l2_reg)
     # optimizer = torch.optim.SGD(all_params, lr=lr)
 
     # Compile function
     def f(X, *gs):
-        if config.activation_mode == 'population':
-            return activate_population(gs[0], config, X)
-        else:
-            return torch.stack([g(X, force_recalculate=True, use_graph=True) for g in gs[0]])
+        return torch.stack([g(X, force_recalculate=True, use_graph=True) for g in gs[0]])
     def fw(f,_): return f
     
     compiled_fn = f
@@ -143,6 +137,8 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         
         return inv
     
+    n_params = sum([len(list(c.parameters())) for c in genomes])
+    
     # Optimize
     step = 0
     stopping = EarlyStopping(patience=early_stop if early_stop else config.sgd_steps, min_delta=config.sgd_early_stop_delta)
@@ -154,8 +150,8 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         optimizer.zero_grad()
         
         
-        for param in all_params:
-            assert torch.isfinite(param).all(), "Non-finite parameters before step"
+        # for param in all_params:
+            # assert torch.isfinite(param).all(), "Non-finite parameters before step"
             # assert param.grad is None or torch.isfinite(param.grad).all(), "Non-finite gradients before step"
         try:
             loss.backward() 
@@ -167,26 +163,37 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         
         # make nan grads 0
         # TODO: prevent this
-        for param in all_params:
-            if param.grad is not None:
-                param.grad[param.grad != param.grad] = 0        
-            # else:
-                # print(f"Warning: param {param} has no grad")
+        for param_group in all_params:
+            for param in param_group['params']:
+                if param.grad is not None:
+                    param.grad[param.grad != param.grad] = 0        
+                # else:
+                    # print(f"Warning: param {param} has no grad")
         
         if config.sgd_clamp_grad:
             torch.nn.utils.clip_grad_norm_(all_params, config.sgd_clamp_grad, error_if_nonfinite=True)
         
+        
+        # for param_group in optimizer.param_groups:
+        #     print(param_group['lr'])
+        #     print(param_group['betas'])
+        #     for param in param_group['params']:
+        #         print()       
+        #         print()       
+        #         print(param) 
+        
         optimizer.step()
         
-        for param in all_params:
-            assert torch.isfinite(param).all(), "Non-finite parameters after step"
-        
+        for param_group in all_params:
+            for param in param_group['params']:
+                assert torch.isfinite(param).all(), "Non-finite parameters after step"
+
         if early_stop and stopping.check_stop(loss.item()):
             break
         
         if isinstance(pbar, tqdm):
             pbar.set_postfix_str(f"loss={loss.detach().clone().mean().item():.3f}")
-            pbar.set_description_str(f"Optimizing {len(all_params)} params on {len(genomes)} genomes and {len(fns)} fns lr: {lr:.2e}")
+            pbar.set_description_str(f"Optimizing {n_params} params on {len(genomes)} genomes and {len(fns)} fns lr: {lr:.2e} avg:{avg_lr:.2e}")
         
     return step
         

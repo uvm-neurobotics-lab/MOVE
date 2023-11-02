@@ -91,12 +91,12 @@ class Record():
                 img = img.permute(1,2,0) # (H,W,C)
                 img = img.numpy()
                 imgs.append(img)
-                name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"{len(list(individual.enabled_connections()))}c"
+                name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"{len(list(individual.enabled_connections))}c"
                 name = name + ".png"
                 plt.imsave(os.path.join(dirpath, name), img, cmap='gray')
                 plt.close()
-                if config.with_grad:
-                    flat_map[i].discard_grads()
+                # if config.with_grad:
+                    # flat_map[i].discard_grads()
                 genomes.append(flat_map[i].clone(config, new_id=False).to_json())
             else:
                 genomes.append("null")

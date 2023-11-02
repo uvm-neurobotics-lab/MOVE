@@ -1,5 +1,5 @@
 """Stores configuration parameters for the MOVE algorithm."""
-from cppn_torch.activation_functions import *
+from cppn.activation_functions import *
 from evolution_torch import AlgorithmConfig
 import torch
 
@@ -12,12 +12,17 @@ class MoveConfig(AlgorithmConfig):
 
         # Overrides:
         self.num_generations = 3_000
-        self.activations=  [sin,
-                            gauss,
-                            tanh,
-                            sigmoid, 
-                            clip,
-                            torch.nn.Conv2d
+        # self.activations=  [sin,
+        #                     gauss,
+        #                     tanh,
+        #                     sigmoid, 
+        #                     clip,
+        #                     torch.nn.Conv2d
+                            # ] # MOVE
+        self.activations=  [SinActivation,
+                            IdentityActivation,
+                            torch.nn.Tanh,
+                            torch.nn.Sigmoid, 
                             ] # MOVE
         self.do_crossover = False
         self.population_elitism = 0
@@ -27,14 +32,15 @@ class MoveConfig(AlgorithmConfig):
         self.max_weight = torch.inf
         self.weight_init_std = 2.0
         self.clamp_weights = False
-        self.use_input_bias = True
+        self.use_input_bias = False
         self.use_radial_distance = True
-        self.num_inputs = 4 # x,y,b,d
+        self.num_inputs = 3 # x,y,d
         self.target_resize = (100,100)
         self.color_mode = "HSL"
 
         self.activation_mode = "node"
-        self.output_activation = identity
+        # self.output_activation = identity
+        self.output_activation = IdentityActivation
         self.normalize_outputs = "min_max"
         self.initial_mutations = 0
         
@@ -49,8 +55,8 @@ class MoveConfig(AlgorithmConfig):
         self.initial_batch_size = 50 # just for the initial population
         
 
-        self.hidden_nodes_at_start = 8
-        self.init_connection_probability = 0.85
+        self.hidden_nodes_at_start = (4,4)
+        self.init_connection_probability = 0.55
         self.prune_threshold = 0 # don't prune
         self.min_pruned = 0
         self.dense_init_connections = False
@@ -64,6 +70,9 @@ class MoveConfig(AlgorithmConfig):
         
         self.sgd_clamp_weights = 10
         self.sgd_lr = 1e-1
+        self.prob_mutate_weight = 0.0
+        
+        self.mutate_sgd_lr_sigma = 0.1
         
         # MOVE specific:
         self.move_fns_per_cell = 3

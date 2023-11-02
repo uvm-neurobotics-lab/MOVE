@@ -356,14 +356,14 @@ def min_connections(genomes):
    """Returns the inverse of the count of enabled connections in the genotype"""
    metric = torch.zeros(len(genomes))
    for i, genome in enumerate(genomes):
-      metric[i] = 1.0 / genome.count_enabled_connections()
+      metric[i] = 1.0 / genome.count_enabled_connections
    return metric
 
 def max_connections(genomes):
    """Returns the count of enabled connections in the genotype"""
    metric = torch.zeros(len(genomes))
    for i, genome in enumerate(genomes):
-      metric[i] = genome.count_enabled_connections() / 100.0 # /100 to make it closer to 0-1
+      metric[i] = genome.count_enabled_connections / 100.0 # /100 to make it closer to 0-1
    return metric
 
 def max_activation_fns(genomes):
@@ -459,14 +459,14 @@ def std_of_weights(genomes):
    """Returns the standard deviation of the weights of the genotype"""
    metric = torch.zeros(len(genomes))
    for i, genome in enumerate(genomes):
-      metric[i] = np.std([c.weight.item() for c in genome.enabled_connections()])
+      metric[i] = np.std([c.weight.item() for c in genome.enabled_connections])
    return metric
 
 def mean_of_weights(genomes):
    """Returns the mean of the weights of the genotype"""
    metric = torch.zeros(len(genomes))
    for i, genome in enumerate(genomes):
-      metric[i] = torch.mean([c.weight.item() for c in genome.enabled_connections()])
+      metric[i] = torch.mean([c.weight.item() for c in genome.enabled_connections])
    return metric
 
 def path_length(genomes):
@@ -499,7 +499,7 @@ def num_edges(genomes):
    """Returns the number of edges in the genotype"""
    metric = torch.zeros(len(genomes))
    for i, genome in enumerate(genomes):
-      metric[i] = genome.count_enabled_connections()
+      metric[i] = genome.count_enabled_connections
    return metric
 
 def num_activation_functions(genomes):
@@ -565,4 +565,4 @@ GENOTYPE_FUNCTIONS = [min_nodes, max_nodes, min_connections, max_connections, ma
 NO_GRADIENT = GENOTYPE_FUNCTIONS + [compression_ratio]
 NO_MEAN = NO_GRADIENT
 NO_NORM = GENOTYPE_FUNCTIONS + [compression_ratio]
-name_to_fn = {k:v for k,v in locals().items() if callable(v) and k not in ["name_to_function", "GENOTYPE_FUNCTIONS"]}
+name_to_fn = {k:v for k,v in locals().items() if callable(v) and k not in ["name_to_fn", "GENOTYPE_FUNCTIONS"]}
