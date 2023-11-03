@@ -1,5 +1,3 @@
-from cppn_torch.activation_functions import gauss
-
 # from https://github.com/tancik/fourier-feature-networks
 import torch
 import numpy as np
