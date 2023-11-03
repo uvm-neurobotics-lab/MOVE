@@ -35,7 +35,7 @@ class MoveConfig(AlgorithmConfig):
         self.use_input_bias = False
         self.use_radial_distance = True
         self.num_inputs = 3 # x,y,d
-        self.target_resize = (100,100)
+        self.target_resize = (64,64)
         self.color_mode = "HSL"
 
         self.activation_mode = "node"

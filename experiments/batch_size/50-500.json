@@ -1,0 +1,19 @@
+{
+    "name": "MOVE",
+    "controls":
+    {
+        "target": "data/sunrise.png",
+        "color_mode": "RGB",
+        "alg": "move"
+    },
+    "conditions": [
+        {
+            "50-500": {
+                "sgd_steps":500,
+                "num_gens": 500,
+                "batch_size":50,
+                "initial_batch_size":50
+            }
+        }
+    ]
+}
