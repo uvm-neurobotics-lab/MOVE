@@ -6,7 +6,8 @@
     "targets":[
         "data/skull.png",
         "data/sunrise.png",
-        "data/dolphin.png"
+        "data/dolphin.png",
+        "data/apple.png"
     ],
 
     "color_modes":

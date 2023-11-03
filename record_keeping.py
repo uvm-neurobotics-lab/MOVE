@@ -6,6 +6,8 @@ from typing import Callable
 import matplotlib.pyplot as plt
 import json
 import numpy as np
+import time
+from cppn.util import *
 
 class Record():
     def __init__(self, config, n_fns, n_cells, low_mem=False) -> None:
@@ -85,7 +87,7 @@ class Record():
             if(flat_map[i] is not None):
                 individual = flat_map[i]
                 individual.to(config.device)
-                img = individual.get_image(inputs, channel_first=True, act_mode="node").detach().cpu()
+                img = individual(inputs, channel_first=True, act_mode="node").detach().cpu()
                 if len(config.color_mode)<3:
                     img = img.repeat(3, 1, 1)
                 img = img.permute(1,2,0) # (H,W,C)
@@ -97,7 +99,7 @@ class Record():
                 plt.close()
                 # if config.with_grad:
                     # flat_map[i].discard_grads()
-                genomes.append(flat_map[i].clone(config, new_id=False).to_json())
+                # genomes.append(flat_map[i].clone(config, new_id=False).to_json())
             else:
                 genomes.append("null")
             pbar.update(1)
@@ -111,3 +113,48 @@ class Record():
         average_image = np.mean(imgs, axis=0) 
         plt.imsave(os.path.join(config.output_dir, "images", f"{config.run_id:04d}/avg_{config.run_id:04d}.png"), average_image, cmap='gray')
         
+    
+    def gen_end(self, move, skip_fitness=False):
+        if len(move.fitnesses) > 0:
+            if len(move.population) > 0:
+                move.population = sorted(move.population, key=lambda x: move.fitnesses[x.id], reverse=True) # sort by fitness
+                # if move.config.with_grad:
+                    # move.population[0].discard_grads()
+                move.this_gen_best = move.population[0].clone(move.config, cpu=True)  # still sorted by fitness
+        
+        div_mode = move.config.get('diversity_mode', None)
+        if div_mode == 'full':
+            std_distance, avg_distance, max_diff = calculate_diversity_full(move.population)
+        elif div_mode == 'stochastic':
+            std_distance, avg_distance, max_diff = calculate_diversity_stochastic(move.population)
+        else:
+            std_distance, avg_distance, max_diff = torch.zeros(1)[0], torch.zeros(1)[0], torch.zeros(1)[0]
+        move.diversity = avg_distance
+        n_nodes = get_avg_number_of_hidden_nodes(move.population)
+        n_connections = get_avg_number_of_connections(move.population)
+        max_connections = get_max_number_of_connections(move.population)
+        max_nodes = get_max_number_of_hidden_nodes(move.population)
+
+        move.n_unique = len(set([g.id for g in move.population]))
+
+        if not skip_fitness:
+            # fitness
+            if move.fitnesses[move.population[0].id] > move.solution_fitness: # if the new parent is the best found so far
+                move.solution = move.population[0]                 # update best solution records
+                move.solution_fitness = move.fitnesses[move.population[0].id]
+                move.solution_generation = move.gen
+                move.best_genome = move.solution
+            
+            os.makedirs(os.path.join(move.config.output_dir, 'images'), exist_ok=True)
+            move.save_best_img(os.path.join(move.config.output_dir, "images", f"current_best_output.png"))
+        
+        if move.solution is not None:
+            move.results.loc[len(move.results.index)] = [move.config.experiment_condition, move.config.target_name, move.config.run_id, move.gen, move.solution_fitness, np.mean(list(move.fitnesses.values())),avg_distance.item(), float(len(move.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - move.start_time, move.total_offspring]
+            plt.close()
+            plt.plot(move.results['gen'], move.results['fitness'], label='best')
+            plt.plot(move.results['gen'], move.results['mean_fitness'], label='mean')
+            plt.legend()
+            plt.savefig(os.path.join(move.config.output_dir, "current_fitness.png"))
+            plt.close()
+        else:
+            move.results.loc[len(move.results.index)] = [move.config.experiment_condition, move.config.target_name, move.config.run_id, move.gen, 0.0,  np.mean(list(move.fitnesses.values())), avg_distance.item(), float(len(move.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - move.start_time, move.total_offspring]

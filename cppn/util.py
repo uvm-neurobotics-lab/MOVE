@@ -9,6 +9,8 @@ from torch import nn
 import torch
 from typing import List, Union
 from cv2 import resize as cv2_resize
+import itertools
+import random
 
 # from cppn.cppn import NodeType
 from cppn.normalization import handle_normalization
@@ -257,3 +259,41 @@ def hsl2rgb_torch(hsl: torch.Tensor) -> torch.Tensor:
     rgb += _m
     rgb = rgb.squeeze(0)#.permute(1, 2, 0)
     return rgb
+
+
+
+
+
+def calculate_diversity_full(population):
+    if len(population) == 0:
+        return torch.zeros(1)[0], torch.zeros(1)[0], torch.zeros(1)[0]
+    # very slow, compares every genome against every other
+    diffs = []
+    for i in population:
+        for j in population:
+            if i== j: continue
+            diffs.append(i.genetic_difference(j))
+
+    std_distance = np.std(diffs)
+    avg_distance = np.mean(diffs)
+    max_diff = np.max(diffs)if(len(diffs)>0) else 0
+    return std_distance, avg_distance, max_diff
+
+def calculate_diversity_stochastic(population):
+    if len(population) == 0:
+        return torch.zeros(1)[0], torch.zeros(1)[0], torch.zeros(1)[0]
+    # compare 10% of population
+    diffs = torch.zeros(len(population)//10, device=population[0].config.device)
+    pop = population
+    num = len(pop)//10
+    pairs = itertools.combinations(pop, 2)
+    pairs = random.sample(list(pairs), num)
+    for i, (g1, g2) in enumerate(pairs):
+        diffs[i] = g1.genetic_difference(g2)
+        assert not torch.isnan(diffs[i]).any(), f"nan in diffs {i} {g1.id} {g2.id}" 
+    max_diff = torch.max(diffs) if(len(diffs)>0) else torch.tensor(0).to(population[0].config.device)
+    if max_diff == 0:
+        return torch.zeros(1)[0], torch.zeros(1)[0], torch.zeros(1)[0]
+    std_distance = torch.std(diffs)
+    avg_distance = torch.mean(diffs)
+    return std_distance, avg_distance, max_diff

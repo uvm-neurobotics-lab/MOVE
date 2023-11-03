@@ -12,18 +12,13 @@ class MoveConfig(AlgorithmConfig):
 
         # Overrides:
         self.num_generations = 3_000
-        # self.activations=  [sin,
-        #                     gauss,
-        #                     tanh,
-        #                     sigmoid, 
-        #                     clip,
-        #                     torch.nn.Conv2d
-                            # ] # MOVE
+
         self.activations=  [SinActivation,
                             IdentityActivation,
                             torch.nn.Tanh,
                             torch.nn.Sigmoid, 
                             ] # MOVE
+        
         self.do_crossover = False
         self.population_elitism = 0
         self.tiebreak_novel = False
@@ -35,7 +30,7 @@ class MoveConfig(AlgorithmConfig):
         self.use_input_bias = False
         self.use_radial_distance = True
         self.num_inputs = 3 # x,y,d
-        self.target_resize = (64,64)
+        self.target_resize = (128,128)
         self.color_mode = "HSL"
 
         self.activation_mode = "node"
@@ -64,12 +59,12 @@ class MoveConfig(AlgorithmConfig):
         self.fourier_sin_and_cos = False
         
         self.use_fourier_features = True
-        self.n_fourier_features = 8
+        self.n_fourier_features = 16
         self.fourier_feature_scale = 2.0
         self.fourier_mult_percent = 0.05
         
         self.sgd_clamp_weights = 10
-        self.sgd_lr = 1e-1
+        self.sgd_lr = 3e-2
         self.prob_mutate_weight = 0.0
         
         self.mutate_sgd_lr_sigma = 0.1

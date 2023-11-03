@@ -1,7 +1,6 @@
 import logging
 import torch
 from torchvision.transforms import Resize
-from functorch.compile import aot_function, make_boxed_compiler
 
 import __main__ as main
 if not hasattr(main, '__file__'):
@@ -52,12 +51,8 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         return
         
     for c in genomes:
-        # P = c.prepare_optimizer()  # create parameters
         c.loss_delta = 0.0
         c.last_loss = 0.0
-        # set lr to c.sgd_lr
-        # all_params.append({'params': P, 'lr': c.sgd_lr})
-    for c in genomes:
         all_params.extend([{'params': list(c.parameters()), 'lr': c.sgd_lr}])
 
     if len(all_params) == 0:
@@ -83,6 +78,7 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         if torch.__version__.startswith("1") or config.activation_mode != 'node':
             if hasattr(config, 'use_aot') and config.use_aot:
                 # super slow unless there are a ton of SGD steps
+                from functorch.compile import aot_function, make_boxed_compiler
                 compiled_fn = aot_function(f, fw_compiler=make_boxed_compiler(fw))
         else:
             torch._dynamo.config.verbose=True
@@ -98,13 +94,6 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         
         if len(config.color_mode) == 1:
             imgs = imgs.repeat(1, 3, 1, 1) # grayscale to RGB
-        # if len(config.color_mode) == 1:
-        #     # Grayscale images need to be converted to RGB for loss functions
-        #     imgs = imgs.unsqueeze(0).repeat(3, 1, 1)
-        #     if len(target.shape) == 3:
-        #         target = target.unsqueeze(0).repeat(3, 1, 1)
-        
-        # move color channel to first dimension
         
         imgs = min_resize(imgs)
  
@@ -132,8 +121,6 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
 
         # return the inverse of the mean fitness
         inv = torch.sub(1.0, normed.mean())
-        # print("inv_max_normed_masked", inv.max().item(), "inv_min_normed_masked", inv.min().item(), "inv_mean_normed_masked", inv.mean().item(), "inv_std_normed_masked", inv.std().item())
-        
         
         return inv
     
@@ -149,10 +136,6 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         
         optimizer.zero_grad()
         
-        
-        # for param in all_params:
-            # assert torch.isfinite(param).all(), "Non-finite parameters before step"
-            # assert param.grad is None or torch.isfinite(param.grad).all(), "Non-finite gradients before step"
         try:
             loss.backward() 
         except RuntimeError as e:
@@ -167,20 +150,9 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
             for param in param_group['params']:
                 if param.grad is not None:
                     param.grad[param.grad != param.grad] = 0        
-                # else:
-                    # print(f"Warning: param {param} has no grad")
         
         if config.sgd_clamp_grad:
             torch.nn.utils.clip_grad_norm_(all_params, config.sgd_clamp_grad, error_if_nonfinite=True)
-        
-        
-        # for param_group in optimizer.param_groups:
-        #     print(param_group['lr'])
-        #     print(param_group['betas'])
-        #     for param in param_group['params']:
-        #         print()       
-        #         print()       
-        #         print(param) 
         
         optimizer.step()
         

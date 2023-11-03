@@ -5,6 +5,7 @@ import random
 import copy
 import torch
 import logging
+import time
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,7 @@ from tqdm import tqdm
 
 # from cppn_torch.graph_util import activate_population
 # from cppn.util import visualize_network, initialize_inputs
-from cppn.util import initialize_inputs
+from cppn.util import *
 from cppn.fourier_features import add_fourier_features
 from evolution_torch import CPPNEvolutionaryAlgorithm
 import torch.multiprocessing as mp
@@ -268,7 +269,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         batch_size = self.config.batch_size if initial_pop_done else self.config.initial_batch_size
         if not initial_pop_done:
             batch_size = min(batch_size, self.config.population_size - self.total_offspring)
-        self.target = self.target[0:batch_size] # only need one target for steady state
+        
+        if self.target.shape[0]>batch_size:
+            self.target = self.target[:batch_size]
 
         if initial_pop_done or not self.config.enforce_initial_fill:
             # random parents 
@@ -464,9 +467,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
    
     def generation_end(self):
         self.solution_fitness = -torch.inf # force to update
-        self.record_keeping(skip_fitness=False)
-        
-        
+        # self.record_keeping(skip_fitness=False)
+        self.record.gen_end(self, skip_fitness=False)
+    
+            
     def on_end(self):
         super().on_end()
         
