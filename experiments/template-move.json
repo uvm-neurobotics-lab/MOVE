@@ -1,0 +1,11 @@
+{
+    "name": "<EXPERIMENT_NAME>",
+    "controls": {
+        "target": "<TARGET>",
+        "color_mode": "<COLOR_MODE>",
+        "output_dir": "<OUTPUT>",
+        "alg": "move", <ADDITIONAL_CONTROLS>
+    },
+    "conditions":
+        <CONDITIONS>
+}
