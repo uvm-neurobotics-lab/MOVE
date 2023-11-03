@@ -9,6 +9,8 @@ folder=$1
 
 out_dir="../results/$(basename $folder)"
 
+mkdir -p ../results/jobs
+
 for filename in ./$folder/*; do
     echo "Submitting $filename to out_dir $out_dir"
     sbatch scripts/submit-move-experiment.sh $filename $out_dir
