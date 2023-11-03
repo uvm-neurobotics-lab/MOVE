@@ -27,8 +27,10 @@ if __name__ == "__main__":
     plan = None
     with open(args.plan) as f:
         plan = json.load(f)
-        
+    
+    
     addl_controls = plan["additional_controls"]
+    addl_params = plan.get("additional_parameters", {})
     conditions = []
     name_template = plan["name_template"]
 
@@ -58,12 +60,13 @@ if __name__ == "__main__":
         level_pairs = list(itertools.product(*plan["levels"]))
         for pair in level_pairs:
             name = name_template.format(**dict(zip(plan["variables"], pair)))
-            cond_dict = {
-                name:
-                dict(zip(plan["variables"], pair))
-                }
+            vars = dict(zip(plan["variables"], pair))
+            for variable in addl_params:
+                for param in addl_params[variable]:
+                    vars[param] = addl_params[variable][param][str(vars[variable])]
+           
+            cond_dict = {name:vars}
             conditions.append(cond_dict)
-    
     
     template_string = None
     with open(args.template) as f:

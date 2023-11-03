@@ -1,0 +1,47 @@
+{
+    "experiment_name": "batch-size",
+
+    "additional_controls":{},
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "batch_size",
+       "sgd_steps"
+    ],
+
+
+    "levels":[
+        [1, 50],
+        [1, 1000]
+    ],
+
+    "additional_parameters": {
+        "batch_size": {
+            "num_gens":{
+                "1" : 1000,
+                "50" : 100
+            },
+            "initial_batch_size":{
+                "1" : 1,
+                "50" : 50
+            }
+        }
+    },
+
+    "name_template": "{batch_size:03d}_batch_{sgd_steps:03d}_sgd_steps"
+
+}
