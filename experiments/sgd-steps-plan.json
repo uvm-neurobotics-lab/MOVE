@@ -1,0 +1,34 @@
+{
+    "experiment_name": "sgd-steps_early-stop",
+
+    "additional_controls":{},
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "sgd_steps",
+       "sgd_early_stop"
+    ],
+
+
+    "levels":[
+        [1, 16, 100],
+        [1, 100]
+    ],
+
+    "name_template": "{sgd_steps:03d}_steps_{sgd_early_stop:03d}_early_stop"
+
+}
