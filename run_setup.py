@@ -2,7 +2,8 @@
 import json
 import os
 import imageio.v2 as iio
-from evolution_torch import apply_condition
+# from evolution_torch import apply_condition
+from move_config import apply_condition
 import torch
 import matplotlib.pyplot as plt
 import fitness.fitness_functions as ff

@@ -91,10 +91,11 @@ class Record():
                 if len(config.color_mode)<3:
                     img = img.repeat(3, 1, 1)
                 img = img.permute(1,2,0) # (H,W,C)
-                img = img.numpy()
+                img = torch.clamp(img,0,1).numpy()
                 imgs.append(img)
                 name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"{len(list(individual.enabled_connections))}c"
                 name = name + ".png"
+                
                 plt.imsave(os.path.join(dirpath, name), img, cmap='gray')
                 plt.close()
                 # if config.with_grad:

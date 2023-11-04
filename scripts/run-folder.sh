@@ -27,6 +27,10 @@ case $key in
     workers="$2"
     shift # past argument
     ;;
+    -o|--output)
+    output="$2"
+    shift # past argument
+    ;;
     *)
     echo "Unknown option $key"
     exit 1
@@ -35,13 +39,14 @@ esac
 shift # past argument or value
 done
 
-gens=${gens:-1000}
+gens=${gens:--1}
 repeats=${repeats:-1}
 workers=${workers:-1}
+output=${output:-"output"}
 
 echo "Using $gens gens"
 echo "Running $repeats times"
-
+echo "Outputting to $output"
 echo "Using a maximum of "$workers" workers"
 
 re='^[0-9]+$'
@@ -69,11 +74,12 @@ for i in $(seq 1 $repeats); do
         # pass sigint to all child processes
         pkill -P $$
         wait
+        echo "Killed all child processes"
         exit 1
       }
 
-      python3 -O move.py -c $filename -g $gens -pr & #  >$logdir/$(basename $filename)_$run_id.log &
-      # python3 move.py -c $filename -g $gens -pr & #  >$logdir/$(basename $filename)_$run_id.log &
+      python3 -O move.py -c $filename -g $gens -pr -o $output & #  >$logdir/$(basename $filename)_$run_id.log &
+      # python3 move.py -c $filename -g $gens -pr -o $output & #  >$logdir/$(basename $filename)_$run_id.log &
       
       running=$((running+1))
       if [ $running -eq $workers ]; then

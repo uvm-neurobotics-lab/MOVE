@@ -20,7 +20,8 @@ from tqdm import tqdm
 # from cppn.util import visualize_network, initialize_inputs
 from cppn.util import *
 from cppn.fourier_features import add_fourier_features
-from evolution_torch import CPPNEvolutionaryAlgorithm
+# from evolution_torch import CPPNEvolutionaryAlgorithm
+from evolution import CPPNEvolutionaryAlgorithm
 import torch.multiprocessing as mp
 
 from cppn import CPPN
@@ -41,6 +42,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.config = copy.deepcopy(config)
         if self.config.objective_functions is None:
             # default: use all from paper
+            # self.fns = ff.all_available_fns
+            # self.fns = ff.initialize_fns(self.fns)
+            # self.fns = [fn for fn in self.fns if not fn in ff.NO_GRADIENT]
             self.fns = [
                         ff.psnr,
                         ff.mse,
@@ -57,6 +61,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                         ff.mdsi,
                         ff.vsi,
                         ]
+            self.config.objective_functions = self.fns
         else:
             self.fns = self.config.objective_functions
             for i, fn in enumerate(self.fns):
@@ -156,10 +161,6 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.fitnesses = self.map.get_agg_fitnesses()
     
     
-    def update_fitnesses_and_novelty(self):
-        return # handled in selection_and_reproduction
-    
-    
     def evolve(self, run_number = 1, show_output=False, initial_population=False):
         # start evolving, defaults to no initial population because the initial pop is generated during gen 0
         try:
@@ -231,8 +232,13 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                     normed_fitness = torch.tensor([-torch.inf for _ in range(len(imgs))], device=self.config.device)
                 else:
                     fitness = fn(imgs, self.target) # (children)
-                    
+                    # print(fn.__name__)
+                    # print(fitness.min(), fitness.max())
                     # normalize
+                    # normed_fitness = fitness # TODO no
+                    # if len(normed_fitness.shape) == 0:
+                        # normed_fitness = normed_fitness.unsqueeze(0)
+                    
                     if not fn in ff.NO_NORM:
                         normed_fitness = norm_tensor(fitness, self.norm, fn.__name__, warn=False)
                     
@@ -245,8 +251,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 else:
                     # use raw as fitness
                     fit_children[:,i] = fitness.detach()
-                    
-      
+        
         fc_normed = torch.stack(fc_normed, dim=1)
                 
         # take the mean of fitness values as overall fitness (not used in selection)
@@ -533,7 +538,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         img = b(self.inputs, channel_first=False, act_mode="node")
         if len(self.config.color_mode)<3:
             img = img.repeat(1, 1, 3)
-        img = img.detach().cpu().numpy()
+        
+        img = torch.clamp(img,0,1).detach().cpu().numpy()
         
         # show as subplots
         if show_target:

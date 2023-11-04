@@ -32,7 +32,6 @@ class Connection(nn.Module):
         self.enabled = enabled
         
     def forward(self, x):
-        assert self.enabled # TODO remove
         return x * self.weight
 
 
@@ -197,10 +196,15 @@ class CPPN(nn.Module):
         outputs = torch.stack(outputs, dim=(0 if channel_first else -1))
         
         outputs = torch.sigmoid(outputs)
-        outputs = torch.clamp(outputs, 0, 1)
         
         # normalize?
+        # outputs = (outputs - outputs.min()) / (outputs.max() - outputs.min())
         
+        # outputs = torch.nn.functional.relu(outputs)
+        
+        # outputs = torch.abs(outputs)
+        
+        outputs = torch.clamp(outputs, 0, 1)
         return outputs
 
     def mutate(self, config):

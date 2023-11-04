@@ -27,7 +27,36 @@ def print_net(individual, show_weights=False, visualize_disabled=False):
         print("\t",k, "\t|\t",v.enabled, "\t|\t",v.weight)
     print(">")
   
-  
+
+
+def name_to_fn(name):
+    """
+    Converts a string to a function.
+    params:
+        name: The name of the function.
+    returns:
+        The function.
+    """
+    raise NotImplementedError("")
+    if isinstance(name, (Callable,)) or name is None:
+        return name
+    assert isinstance(name, str), f"name must be a string but is {type(name)}"
+    if name == "":
+        return None
+    fns = inspect.getmembers(sys.modules[af.__name__])
+    fns.extend(inspect.getmembers(sys.modules[ff.__name__]))
+    
+    fns.extend([("round", lambda x: torch.round(x))])
+    
+    if name == "Conv2d":
+        return torch.nn.Conv2d
+    
+    try:
+        return fns[[f[0] for f in fns].index(name)][1]
+    except ValueError:
+        raise ValueError(f"Function {name} not found.")
+
+
 def get_max_number_of_hidden_nodes(population):
     max = 0
     for g in population:
