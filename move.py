@@ -292,10 +292,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         initial_pop_done = self.total_offspring >= self.config.population_size
         batch_size = self.config.batch_size if initial_pop_done else self.config.initial_batch_size
-        if not initial_pop_done:
-            batch_size = min(batch_size, self.config.population_size - self.total_offspring)
         
         if self.target.shape[0]>batch_size:
+            print(f"WARNING: target batch size is larger than population size, truncating target from {self.target.shape[0]} to {batch_size}")
+            print("Population size:", self.config.population_size)
+            print("Total offspring:", self.total_offspring)
             self.target = self.target[:batch_size]
 
         if initial_pop_done or not self.config.enforce_initial_fill:
