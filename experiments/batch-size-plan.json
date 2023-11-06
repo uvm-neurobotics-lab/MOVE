@@ -26,18 +26,20 @@
 
 
     "levels":[
-        [1, 50],
+        [1, 16, 50],
         [1, 1000]
     ],
 
     "additional_parameters": {
         "batch_size": {
-            "num_gens":{
+            "num_generations":{
                 "1" : 1000,
-                "50" : 100
+                "16" : 600,
+                "50" : 200
             },
             "initial_batch_size":{
                 "1" : 1,
+                "16" : 16,
                 "50" : 50
             }
         }

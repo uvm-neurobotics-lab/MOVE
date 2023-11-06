@@ -2,6 +2,7 @@ import json
 import os
 import itertools
 import argparse
+import shutil
 
 DEFAULT_TEMPLATE = "experiments/template-move.json"
 
@@ -44,16 +45,16 @@ if __name__ == "__main__":
     os.makedirs(args.output, exist_ok=True)
     
     serial_output = os.path.join(args.generated_output, "serial")
-    parallel_output = os.path.join(args.generated_output, "parallel")
-    
-    os.makedirs(serial_output, exist_ok=True)
-    os.makedirs(parallel_output, exist_ok=True)
+    parallel_output = os.path.join(args.generated_output)
     
     # empty the dirs
-    for f in os.listdir(serial_output):
-        os.remove(os.path.join(serial_output, f))
-    for f in os.listdir(parallel_output):
-        os.remove(os.path.join(parallel_output, f))
+    shutil.rmtree(parallel_output, ignore_errors=True)
+    shutil.rmtree(serial_output, ignore_errors=True)
+    
+    # create empty dirs
+    os.makedirs(parallel_output)
+    os.makedirs(serial_output)
+    
 
     if plan["mode"] == 'grid':
         # cartesian product of all variables/levels

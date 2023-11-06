@@ -26,7 +26,7 @@ def read_tensor_results(results_path, name):
                 target = f.read().strip()
             df = pd.DataFrame(torch.load(pt_path).numpy(), columns=[name])
             df["condition"] = cond
-            df["run"] = run
+            df["run"] = str(run)
             df["target"] = target
             df["gen"] = df.index
             df["total_offspring"] = torch.load(pt_off_path).numpy()
@@ -43,7 +43,10 @@ def plot_vs_gens(results, y, save_path=None, show=False, max_ofs=None):
         plt.show()
     plt.close()
     
-def plot_vs_offspring(results, y, save_path=None, show=False):
+def plot_vs_offspring(results, y, save_path=None, show=False, mean_by_target=False):
+    if mean_by_target:
+        results = results.groupby(["condition", "target", 'run', 'gen']).mean().reset_index()
+        results = results.groupby(["condition", "target", 'run','gen']).mean().reset_index()
     sns.lineplot(results, x="total_offspring", y=y, hue="condition", style="target")
     if save_path:
         plt.savefig(os.path.join(save_path, f"{y}_v_offspring.png"))
@@ -51,14 +54,21 @@ def plot_vs_offspring(results, y, save_path=None, show=False):
         plt.show()
     plt.close()
     
-def plot_vs_time(results, y, save_path=None, show=False):
-    results = results.groupby(["condition", "target", 'run', 'gen']).mean().reset_index()
+def plot_vs_time(results, y, save_path=None, show=False, mean_by_target=False):
+    results = results.groupby(["condition", "target", 'run', 'gen']).mean(numeric_only=True).reset_index()
     # get the average time at each generation
-    results = results.groupby(["condition", "target", 'gen']).mean().reset_index()
+    results = results.groupby(["condition", "target", "gen"]).agg({"time": "mean", y:"mean"}).reset_index()
+    
+    save_name = f"{y}_v_time.png"
     print(results)
-    sns.lineplot(results, x="time", y=y, hue="condition", style="target")
+    if mean_by_target:
+        results = results.groupby(["condition", "gen"]).agg({"time": "mean", y:"mean"}).reset_index()
+        sns.lineplot(results, x="time", y=y, hue="condition")
+        save_name = f"{y}_v_time_avg.png"
+    else:
+        sns.lineplot(results, x="time", y=y, hue="condition", style="target")
     if save_path:
-        plt.savefig(os.path.join(save_path, f"{y}_v_time.png"))
+        plt.savefig(os.path.join(save_path, save_name))
     if show:
         plt.show()
     plt.close()
@@ -77,12 +87,14 @@ if __name__ == "__main__":
     results = read_results(args.results_path)
     # remove nan rows
     results = results[results['condition'].notna()]
+    results['run'] = results['run'].astype(str)
     assert len(args.target)==0  or args.target in results["target"].unique()
     if len(args.target) > 0:
         results = results[results["target"] == args.target]
 
     plot_vs_time(results, "fitness", save_path, args.show)
-    plot_vs_time(results, "total_offspring", save_path, args.show)
+    plot_vs_time(results, "fitness", save_path, args.show, mean_by_target=True)
+    plot_vs_time(results, "total_offspring", save_path, args.show, mean_by_target=True)
     
     plot_vs_offspring(results, "avg_num_connections", save_path, args.show)
     plot_vs_offspring(results, "avg_num_hidden_nodes", save_path, args.show)

@@ -1,6 +1,6 @@
 #!/bin/bash
 # specify a partition
-#SBATCH --partition=bdgpu
+#SBATCH --partition=dggpu
 # Request nodes
 #SBATCH --nodes=1
 # Request some processor cores
@@ -26,8 +26,7 @@ cd ${SLURM_SUBMIT_DIR}
 
 # your job execution follows:
 echo "starting job"
-conda activate move-amd
-cd ~/scratch/move/move
+conda activate move
 
 EXPERIMENT_FILE="../default.json"
 OUTDIR="../results/default"

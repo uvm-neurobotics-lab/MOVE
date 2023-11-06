@@ -24,7 +24,9 @@ def fix_target_dimensions(config):
             new_dims.append(d)
     config.target = config.target[:new_dims[0], :new_dims[1], :]
     
-    
+
+def assertions(config):
+    assert config.initial_batch_size >= config.batch_size, f"Initial batch size {config.initial_batch_size} must be >= batch size {config.batch_size}"
 
 def run_setup():
     import argparse
@@ -99,6 +101,8 @@ def run_setup():
     
         fix_target_dimensions(config)
         print("Target shape: {}".format(list(config.target.shape)))
+        
+        assertions(config)
         
         yield config, args.verbose
         
