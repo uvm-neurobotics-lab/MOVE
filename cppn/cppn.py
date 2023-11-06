@@ -169,11 +169,16 @@ class CPPN(nn.Module):
              
 
     def forward(self, x, channel_first=True, force_recalculate=True, use_graph=False, act_mode='n/a'):
+        #print(self.nodes.keys())
+        
+        #TODO
+        all_nodes = list(self.nodes.values()) + list(self.output_nodes) + list(self.input_nodes)
+
         # Initialize node states
         if self.node_states is None or force_recalculate:
             self.node_states = {node.id: torch.zeros(x.shape[0:2],
                                                      device=x.device,
-                                                     requires_grad=False) for node in self.nodes.values()}
+                                                     requires_grad=False) for node in all_nodes}
             
         # Set input node states
         for i, input_node in enumerate(self.input_nodes):
@@ -183,6 +188,9 @@ class CPPN(nn.Module):
         inputs = [node.id for node in self.input_nodes]
         outputs = [node.id for node in self.output_nodes]
         
+        #print(outputs)
+
+
         for layer in self.layers:
             for node_id in layer:
                 # Gather inputs from incoming connections
@@ -190,7 +198,9 @@ class CPPN(nn.Module):
                 # Sum inputs and apply activation function
                 if len(inputs) > 0:
                     self.node_states[node_id] = self.nodes[node_id](sum(node_inputs))
-
+                else:
+                    # TODO: shouldn't need to do this
+                    self.node_states[node_id] = torch.zeros(x.shape[0:2], device=x.device, requires_grad=False)
         # Gather outputs
         outputs = [self.node_states[node_id] for node_id in outputs]
         outputs = torch.stack(outputs, dim=(0 if channel_first else -1))
@@ -271,7 +281,8 @@ class CPPN(nn.Module):
                                            warn=True):
                     invalid.append(key)
         for key in invalid:
-            del self.connections[key]
+            key.enabled = False
+            #del self.connections[key]
 
 
     def add_connection(self, config):
@@ -470,8 +481,8 @@ class CPPN(nn.Module):
         all_keys.extend([node.id for node in self.input_nodes])
         all_keys.extend([node.id for node in self.output_nodes])
 
-        for node in list(self.nodes)[::-1]:
-            if node not in all_keys:
+        for node in list(self.nodes.values())[::-1]:
+            if node.id not in all_keys:
                 del self.nodes[node]
         
         # print("Pruned {} connections".format(removed))
