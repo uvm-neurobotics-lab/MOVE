@@ -205,7 +205,7 @@ class CPPN(nn.Module):
         outputs = [self.node_states[node_id] for node_id in outputs]
         outputs = torch.stack(outputs, dim=(0 if channel_first else -1))
         
-        # outputs = torch.sigmoid(outputs)
+        outputs = torch.sigmoid(outputs)
         
         # normalize?
         # outputs = (outputs - outputs.min()) / (outputs.max() - outputs.min())
