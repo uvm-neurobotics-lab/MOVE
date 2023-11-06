@@ -40,11 +40,21 @@ import fitness.fitness_functions as ff
 class MOVE(CPPNEvolutionaryAlgorithm):
     def __init__(self, config, debug_output=False) -> None:
         self.config = copy.deepcopy(config)
+        
+        
         if self.config.objective_functions is None:
             # default: use all from paper
             # self.fns = ff.all_available_fns
+            # self.fns = [
+            #     # "clipiqa",
+            #     # "clipiqa",
+            #     # "clipiqa",
+            #     "topiq_fr",
+            #     "topiq_fr",
+            #     "mse",
+            # ]
             # self.fns = ff.initialize_fns(self.fns)
-            # self.fns = [fn for fn in self.fns if not fn in ff.NO_GRADIENT]
+            # print([f.__name__ for f in self.fns])
             self.fns = [
                         ff.psnr,
                         ff.mse,
@@ -158,8 +168,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         # reproduce
         self.selection_and_reproduction()
         self.population = self.map.get_population(include_empty=False)
-        self.fitnesses = self.map.get_agg_fitnesses()
-    
+        self.agg_fitnesses = self.map.get_agg_fitnesses()
+        self.fitnesses = self.map.get_fitnesses()
     
     def evolve(self, run_number = 1, show_output=False, initial_population=False):
         # start evolving, defaults to no initial population because the initial pop is generated during gen 0
@@ -232,6 +242,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                     normed_fitness = torch.tensor([-torch.inf for _ in range(len(imgs))], device=self.config.device)
                 else:
                     fitness = fn(imgs, self.target) # (children)
+                    if len(fitness.shape) == 0:
+                        fitness = fitness.unsqueeze(0)
+                        
                     # print(fn.__name__)
                     # print(fitness.min(), fitness.max())
                     # normalize
@@ -241,7 +254,14 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                     
                     if not fn in ff.NO_NORM:
                         normed_fitness = norm_tensor(fitness, self.norm, fn.__name__, warn=False)
-                    
+                        
+                    if normed_fitness.min() < -1 or normed_fitness.max() > 1:
+                        print("WARNING: normed fitness out of bounds")
+                        print(fitness.min().item(), fitness.max().item())
+                        print(normed_fitness.min().item(), normed_fitness.max().item())
+                        print(fn.__name__)
+                        print()
+                # print(fn.__name__, fitness.shape)                    
                 if not fn in ff.NO_MEAN:
                     fc_normed.append(normed_fitness)
                
@@ -474,7 +494,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.solution_fitness = -torch.inf # force to update
         # self.record_keeping(skip_fitness=False)
         self.record.gen_end(self, skip_fitness=False)
-    
+        
             
     def on_end(self):
         super().on_end()

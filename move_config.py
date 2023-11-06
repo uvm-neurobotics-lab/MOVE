@@ -12,8 +12,13 @@ class MoveConfig(CPPNConfig):
         # Initialize to default values:
         super().__init__()
 
-        # Overrides:
         self.num_generations = 3_000
+        
+        #self.stop_condition = None
+        #self.stop_condition_value = None
+        self.stop_condition = "seconds"
+        self.stop_condition_value = 60
+        
 
         self.activations=  [SinActivation,
                             IdentityActivation,
@@ -37,7 +42,8 @@ class MoveConfig(CPPNConfig):
 
         self.activation_mode = "node"
         # self.output_activation = identity
-        self.output_activation = IdentityActivation
+        # self.output_activation = IdentityActivation
+        self.output_activation = None
         self.normalize_outputs = "min_max"
         self.initial_mutations = 0
         
@@ -52,7 +58,7 @@ class MoveConfig(CPPNConfig):
         self.initial_batch_size = 1 # just for the initial population
         
 
-        self.hidden_nodes_at_start = (8,8)
+        self.hidden_nodes_at_start = (4,)
         self.init_connection_probability = 0.55
         self.prune_threshold = 0 # don't prune
         self.min_pruned = 0

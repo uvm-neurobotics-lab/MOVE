@@ -14,3 +14,7 @@ def show_move_map_images(move):
         suptitle=f"Generation {move.gen}",
         title_font_size=8,
     )
+    
+    
+def get_dynamic_mut_rate(rate, run_progress, end_mod):
+    return rate - (rate - end_mod * rate) * run_progress

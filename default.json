@@ -2,7 +2,7 @@
     "name": "MOVE",
     "controls":
     {
-        "target": "data/sunrise.png",
+        "target": "data/apple.png",
         "color_mode": "RGB",
         "alg": "move"
     },
@@ -12,6 +12,7 @@
                 "sgd_steps":1000,
                 "batch_size":1,
                 "initial_batch_size":1
+
             }
         }
     ]

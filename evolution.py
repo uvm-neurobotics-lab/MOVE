@@ -19,10 +19,14 @@ import os
 from cppn.cppn import CPPN as ImageCPPN
 import copy 
 import logging
+from stopping import *
+from util import get_dynamic_mut_rate
+
 
 class CPPNEvolutionaryAlgorithm(object):
     def __init__(self, config, debug_output=False) -> None:
         self.config = config
+        self.stop_condition = name_to_stop_condition_map[self.config.stop_condition](self.config.stop_condition_value)
         
         if self.config.with_grad:
             torch.autograd.set_grad_enabled(True)
@@ -95,14 +99,14 @@ class CPPNEvolutionaryAlgorithm(object):
             # Behold:
             run_progress = self.gen / self.config.num_generations
             end_mod = self.config.dynamic_mutation_rate_end_modifier
-            prob_mutate_activation   = self.config.prob_mutate_activation   - (self.config.prob_mutate_activation    - end_mod * self.config.prob_mutate_activation)   * run_progress
-            prob_mutate_weight       = self.config.prob_mutate_weight       - (self.config.prob_mutate_weight        - end_mod * self.config.prob_mutate_weight)       * run_progress
-            prob_add_connection      = self.config.prob_add_connection      - (self.config.prob_add_connection       - end_mod * self.config.prob_add_connection)      * run_progress
-            prob_add_node            = self.config.prob_add_node            - (self.config.prob_add_node             - end_mod * self.config.prob_add_node)            * run_progress
-            prob_remove_node         = self.config.prob_remove_node         - (self.config.prob_remove_node          - end_mod * self.config.prob_remove_node)         * run_progress
-            prob_disable_connection  = self.config.prob_disable_connection  - (self.config.prob_disable_connection   - end_mod * self.config.prob_disable_connection)  * run_progress
-            weight_mutation_max      = self.config.weight_mutation_max      - (self.config.weight_mutation_max       - end_mod * self.config.weight_mutation_max)      * run_progress
-            prob_reenable_connection = self.config.prob_reenable_connection - (self.config.prob_reenable_connection  - end_mod * self.config.prob_reenable_connection) * run_progress
+            prob_mutate_activation   = get_dynamic_mut_rate(self.config.prob_mutate_activation,     run_progress, end_mod)
+            prob_mutate_weight       = get_dynamic_mut_rate(self.config.prob_mutate_weight,         run_progress, end_mod)
+            prob_add_connection      = get_dynamic_mut_rate(self.config.prob_add_connection,        run_progress, end_mod)            
+            prob_add_node            = get_dynamic_mut_rate(self.config.prob_add_node,              run_progress, end_mod)
+            prob_remove_node         = get_dynamic_mut_rate(self.config.prob_remove_node,           run_progress, end_mod)
+            prob_disable_connection  = get_dynamic_mut_rate(self.config.prob_disable_connection,    run_progress, end_mod)
+            weight_mutation_max      = get_dynamic_mut_rate(self.config.weight_mutation_max,        run_progress, end_mod)
+            prob_reenable_connection = get_dynamic_mut_rate(self.config.prob_reenable_connection,   run_progress, end_mod)
             return  prob_mutate_activation, prob_mutate_weight, prob_add_connection, prob_add_node, prob_remove_node, prob_disable_connection, weight_mutation_max, prob_reenable_connection
         else:
             # just return the config values directly
@@ -137,9 +141,13 @@ class CPPNEvolutionaryAlgorithm(object):
                 self.generation_end()
                 b = self.get_best()
                 if b is not None:
-                    pbar.set_postfix_str(f"bf: {self.fitnesses[b.id]:.4f} (id:{b.id}) d:{self.diversity:.4f} af:{np.mean(list(self.fitnesses.values())):.4f} u:{self.n_unique}")
+                    pbar.set_postfix_str(f"bf: {self.agg_fitnesses[b.id]:.4f} (id:{b.id}) d:{self.diversity:.4f} af:{np.mean(list(self.agg_fitnesses.values())):.4f} u:{self.n_unique}")
                 else:
                     pbar.set_postfix_str(f"d:{self.diversity:.4f}")
+                
+                if self.stop_condition(self):
+                    break
+
             
         except KeyboardInterrupt:
             self.on_end()
@@ -218,6 +226,6 @@ class CPPNEvolutionaryAlgorithm(object):
         if len(self.population) == 0:
             print("No individuals in population")
             return None
-        max_fitness_individual = max(self.population, key=lambda x: self.fitnesses[x.id])
+        max_fitness_individual = max(self.population, key=lambda x: self.agg_fitnesses[x.id])
         return max_fitness_individual
     

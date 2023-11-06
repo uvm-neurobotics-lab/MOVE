@@ -105,6 +105,9 @@ class MOVEMap(object):
                 agg_fitnesses[c.id] = self.agg_fitness[i].item()
         return agg_fitnesses
 
+    def get_fitnesses(self):
+        return self.fitness.cpu()
+
         
     def random_non_empty_cell(self):
         pop = self.get_population()

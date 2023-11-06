@@ -116,9 +116,9 @@ class Record():
         
     
     def gen_end(self, move, skip_fitness=False):
-        if len(move.fitnesses) > 0:
+        if len(move.agg_fitnesses) > 0:
             if len(move.population) > 0:
-                move.population = sorted(move.population, key=lambda x: move.fitnesses[x.id], reverse=True) # sort by fitness
+                move.population = sorted(move.population, key=lambda x: move.agg_fitnesses[x.id], reverse=True) # sort by fitness
                 # if move.config.with_grad:
                     # move.population[0].discard_grads()
                 move.this_gen_best = move.population[0].clone(move.config, cpu=True)  # still sorted by fitness
@@ -140,9 +140,9 @@ class Record():
 
         if not skip_fitness:
             # fitness
-            if move.fitnesses[move.population[0].id] > move.solution_fitness: # if the new parent is the best found so far
+            if move.agg_fitnesses[move.population[0].id] > move.solution_fitness: # if the new parent is the best found so far
                 move.solution = move.population[0]                 # update best solution records
-                move.solution_fitness = move.fitnesses[move.population[0].id]
+                move.solution_fitness = move.agg_fitnesses[move.population[0].id]
                 move.solution_generation = move.gen
                 move.best_genome = move.solution
             
@@ -150,7 +150,7 @@ class Record():
             move.save_best_img(os.path.join(move.config.output_dir, "images", f"current_best_output.png"))
         
         if move.solution is not None:
-            move.results.loc[len(move.results.index)] = [move.config.experiment_condition, move.config.target_name, move.config.run_id, move.gen, move.solution_fitness, np.mean(list(move.fitnesses.values())),avg_distance.item(), float(len(move.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - move.start_time, move.total_offspring]
+            move.results.loc[len(move.results.index)] = [move.config.experiment_condition, move.config.target_name, move.config.run_id, move.gen, move.solution_fitness, np.mean(list(move.agg_fitnesses.values())),avg_distance.item(), float(len(move.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - move.start_time, move.total_offspring]
             plt.close()
             plt.plot(move.results['gen'], move.results['fitness'], label='best')
             plt.plot(move.results['gen'], move.results['mean_fitness'], label='mean')
@@ -158,4 +158,4 @@ class Record():
             plt.savefig(os.path.join(move.config.output_dir, "current_fitness.png"))
             plt.close()
         else:
-            move.results.loc[len(move.results.index)] = [move.config.experiment_condition, move.config.target_name, move.config.run_id, move.gen, 0.0,  np.mean(list(move.fitnesses.values())), avg_distance.item(), float(len(move.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - move.start_time, move.total_offspring]
+            move.results.loc[len(move.results.index)] = [move.config.experiment_condition, move.config.target_name, move.config.run_id, move.gen, 0.0,  np.mean(list(move.agg_fitnesses.values())), avg_distance.item(), float(len(move.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - move.start_time, move.total_offspring]
