@@ -61,7 +61,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                         ff.lpips,
                         ff.dists,
                         ff.ssim,
-                        ff.style,
+                        #ff.style,
                         ff.haarpsi,
                         ff.vif,
                         ff.msssim,
