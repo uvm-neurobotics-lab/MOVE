@@ -2,6 +2,7 @@
 import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 
 
 def draw_nodes(graph, pos, node_labels, node_size):
@@ -96,7 +97,11 @@ def add_input_nodes(individual, node_labels, graph):
 
 
         label = f"{node.layer}.{node.id}\n{input_labels[i]}:"
-        label += f"\n{node.activation.__name__.replace('_activation', '')}"
+        if isinstance(node.activation, torch.nn.Module):
+            name = node.activation.__class__.__name__
+        else:
+            name = node.activation.__name__.replace('_activation', '')
+        label += f"\n{name}"
 
         node_labels[node.id] = label
 
@@ -113,7 +118,10 @@ def add_hidden_nodes(individual, node_labels, graph):
         graph.add_node(node.id, color='lightsteelblue',
                        shape='o', layer=int(node.layer))
         label = f"{node.layer}.{node.id}"
-        label += f"\n{node.activation.__name__.replace('_activation', '')}"
+        if isinstance(node.activation, torch.nn.Module):
+            label += f"\n{node.activation.__class__.__name__}"
+        else:
+            label += f"\n{node.activation.__name__.replace('_activation', '')}"
         node_labels[node.id] = label
 
 
@@ -131,7 +139,10 @@ def add_output_nodes(individual, node_labels, graph, config):
         graph.add_node(node.id, color='lightsteelblue',
                        shape='s', layer=int(node.layer))
         label = f"{node.layer}.{node.id}\n{title}:"
-        label += f"\n{node.activation.__name__.replace('_activation', '')}"
+        if isinstance(node.activation, torch.nn.Module):
+            label += f"\n{node.activation.__class__.__name__}"
+        else:
+            label += f"\n{node.activation.__name__.replace('_activation', '')}"
         node_labels[node.id] = label
 
 
