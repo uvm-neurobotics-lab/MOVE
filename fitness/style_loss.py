@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torchvision.models import vgg19, vgg16, VGG16_Weights, VGG19_Weights
 from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
 from torch import nn
-from cppn_torch.image_cppn import Normalization
+from cppn.normalization import Normalization
 
 content_layers_default = ['conv_4']
 style_layers_default = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
