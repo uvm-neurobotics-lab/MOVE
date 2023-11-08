@@ -69,10 +69,10 @@ def get_matching_connections(cxs_1, cxs_2):
     """returns connections in cxs_1 that share an innovation number with a connection in cxs_2
        and     connections in cxs_2 that share an innovation number with a connection in cxs_1"""
 
-    return sorted([c1 for c1 in cxs_1 if c1.key in [c2.key for c2 in cxs_2]],
-                    key=lambda x: x.key),\
-                    sorted([c2 for c2 in cxs_2 if c2.key in [c1.key for c1 in cxs_1]],
-                    key=lambda x: x.key)
+    return sorted([c1 for c1 in cxs_1 if c1 in [c2 for c2 in cxs_2]],
+                    key=lambda x: x),\
+                    sorted([c2 for c2 in cxs_2 if c2 in [c1 for c1 in cxs_1]],
+                    key=lambda x: x)
 
 
 

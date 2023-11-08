@@ -190,7 +190,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             # sexual reproduction, choose another parent randomly
             all_parents = list(filter(lambda x: x is not None, all_parents))
             other_parent = np.random.choice(all_parents)
-            child = parent.crossover(other_parent) # crossover
+            child = parent.crossover(other_parent, self.config) # crossover
             child.mutate(self.config) # mutate
             child.n_cells = parent.n_cells
             # TODO lineage

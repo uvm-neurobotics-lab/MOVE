@@ -2,14 +2,14 @@
     "name": "MOVE",
     "controls":
     {
-        "target": "data/apple.png",
-        "color_mode": "RGB",
+        "target": "data/skull.png",
+        "color_mode": "L",
         "alg": "move"
     },
     "conditions": [
         {
             "default": {
-                "sgd_steps":1000,
+                "sgd_steps":1,
                 "batch_size":1,
                 "initial_batch_size":1
 

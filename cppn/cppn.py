@@ -92,6 +92,8 @@ class CPPN(nn.Module):
         self.parents = (-1, -1)
         self.age = 0
         self.lineage = []
+        self.cell_lineage = []
+        self.n_cells = 0
         self.device = config.device
         self.id = -1
         
