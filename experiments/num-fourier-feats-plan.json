@@ -1,0 +1,34 @@
+{
+    "experiment_name": "num-fourier-features",
+
+    "additional_controls":{},
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png",
+        "data/apple.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "n_fourier_features"
+    ],
+
+
+    "levels":[
+        [0, 4, 8, 32, 128, 256]
+    ],
+
+    "name_template": "num-fourier-features-{n_fourier_features}"
+
+}
