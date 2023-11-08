@@ -79,6 +79,7 @@ class Record():
         print(f"Saving map with {len(flat_map)} genomes")
         pbar = tqdm(total=len(flat_map), desc="Saving final map...")
         imgs = []
+        genomes = []
         for i in range(len(flat_map)):
             cell_fns_inds = map.cell_fn_inds[i] # flat
             cell_fns = [map.fns[i] for i in cell_fns_inds]
@@ -98,7 +99,7 @@ class Record():
                 plt.close()
                 # if config.with_grad:
                     # flat_map[i].discard_grads()
-                # genomes.append(flat_map[i].clone(config, new_id=False).to_json())
+                genomes.append(flat_map[i].clone(config, new_id=False).to_json())
             else:
                 genomes.append("null")
             pbar.update(1)

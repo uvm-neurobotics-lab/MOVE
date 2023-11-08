@@ -107,6 +107,7 @@ class MoveConfig(CPPNConfig):
         self.prob_remove_node = 0.15
         self.prob_disable_connection = .15
         self.single_structural_mutation = True
+        self.mutation_iters = 1
         
         self.low_mem = False # don't record as much data to save memory
         self.thread_count = 1 # don't use multiple threads

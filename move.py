@@ -498,10 +498,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         # self.record_keeping(skip_fitness=False)
         self.record.gen_end(self, skip_fitness=False)
         
-        if self.gen in [0, ]:
-            print("Saving initial population best to: ", self.genomes_dir)
+        if self.gen in [0, ] or (self.gen+1)%10 == 0:
             b = self.get_best()
-            b.save(os.path.join(self.genomes_dir, f"gen_{self.gen:04d}.json"))
+            if b is not None:
+                b.save(os.path.join(self.genomes_dir, f"gen_{self.gen:04d}.json"))
         
             
     def on_end(self):

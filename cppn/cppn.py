@@ -514,12 +514,12 @@ class CPPN(nn.Module):
         if config.prune_threshold == 0 and config.min_pruned == 0:
             return
         removed = 0
-        for cx in list(self.connections.values())[::-1]:
-            if abs(cx.weight)< config.prune_threshold:
-                del self.connections[cx.key]
+        for key, cx in list(self.connections.items())[::-1]:
+            if abs(cx.weight.item()) < config.prune_threshold:
+                del self.connections[key]
                 removed += 1
         for _ in range(config.min_pruned - removed):
-            min_weight_key = min(self.connections, key=lambda k: self.connections[k].weight.item())
+            min_weight_key = min(self.connections.keys(), key=lambda k: self.connections[k].weight.item())
             removed += 1
             del self.connections[min_weight_key]
        
