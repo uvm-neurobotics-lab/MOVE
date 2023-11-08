@@ -95,6 +95,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.record = Record(self.config, self.n_fns, self.n_cells, self.config.low_mem)
         self.norm = read_norm_data(self.config.norm_df_path, self.config.target_name)
         
+        
         self.init_inputs()
         
         self.init_target()        
@@ -106,6 +107,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             self.in_queue = mp.Queue()
             self.out_queue = mp.Queue()
             self.workers = [MOVEWorker(self.config, self.in_queue, self.out_queue, i, self.inputs, self.mask, self.sgd_fns, self.target, self.norm) for i in range(self.config.thread_count)]
+        
+        
         
         print("Initialized MOVE on device:", self.config.device)
     
@@ -144,14 +147,12 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             self.target = self.target.unsqueeze(1).repeat(1,3,1,1) # add color channel
             
         if self.target.shape[-2] < 32 or self.target.shape[-1] < 32:
-                self.target = Resize((32,32),antialias=True)(self.target)
+                self.target = Resize((32,32), antialias=True)(self.target)
         
         self.target = torch.clamp(self.target, 0, 1)
         
         # save target to output directory
-        cond_dir = os.path.join(self.config.output_dir, "images")
-        os.makedirs(cond_dir, exist_ok=True)
-        target_path = os.path.join(cond_dir, "target.png")
+        target_path = os.path.join(self.cond_dir, "target.png")
         plt.imsave(target_path, self.target[0].permute(1,2,0).cpu().numpy())
         
                             
@@ -497,6 +498,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         # self.record_keeping(skip_fitness=False)
         self.record.gen_end(self, skip_fitness=False)
         
+        if self.gen in [0, ]:
+            print("Saving initial population best to: ", self.genomes_dir)
+            b = self.get_best()
+            b.save(os.path.join(self.genomes_dir, f"gen_{self.gen:04d}.json"))
+        
             
     def on_end(self):
         super().on_end()
@@ -506,40 +512,36 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 w.close()
         
         # save fitness over time
-        cond_dir = os.path.join(self.config.output_dir, "conditions", self.config.experiment_condition)
-        os.makedirs(cond_dir, exist_ok=True)
-        run_dir = os.path.join(cond_dir, f"run_{self.config.run_id:04d}")
         
-        self.record.save(run_dir) # save statistics
+        self.record.save(self.run_dir) # save statistics
         
-        torch.save(self.inputs, os.path.join(run_dir, "inputs.pt")) # save inputs
+        torch.save(self.inputs, os.path.join(self.run_dir, "inputs.pt")) # save inputs
         
         # save config file
-        with open(os.path.join(run_dir, "config.json"), "w") as f:
+        with open(os.path.join(self.run_dir, "config.json"), "w") as f:
             json.dump(copy.deepcopy(self.config).to_json(), f, indent=4)
         
         # save other data
-        with open(os.path.join(run_dir, "cell_names.csv"), "w") as f:
+        with open(os.path.join(self.run_dir, "cell_names.csv"), "w") as f:
             f.write(",".join(self.map.cell_names))
-        with open(os.path.join(run_dir, "function_names.csv"), "w") as f:
+        with open(os.path.join(self.run_dir, "function_names.csv"), "w") as f:
             f.write(",".join([fn.__name__ for fn in self.fns]))
-        with open(os.path.join(run_dir, "total_offspring.txt"), "w") as f:
+        with open(os.path.join(self.run_dir, "total_offspring.txt"), "w") as f:
             f.write(str(self.total_offspring))
             
-        torch.save(self.map.fn_mask, os.path.join(run_dir, "Fm_mask.pt"))
+        torch.save(self.map.fn_mask, os.path.join(self.run_dir, "Fm_mask.pt"))
        
-       
-        os.makedirs(os.path.join(self.config.output_dir, "images", f"{self.config.run_id:04d}"), exist_ok=True)
-        self.save_best_img(os.path.join(self.config.output_dir, "images", f"{self.config.run_id:04d}/best_{self.config.run_id:04d}.png"), do_graph=True)
+        
+        self.save_best_img(os.path.join(self.image_dir, "best_{self.config.run_id:04d}.png"), do_graph=True)
        
         if not self.config.dry_run:
-            dirpath = os.path.join(self.config.output_dir, "images", "final_map", self.config.experiment_condition, f"run_{self.config.run_id:04d}")
+            dirpath = os.path.join(self.image_dir, "final_map")
             self.record.save_map(dirpath, self.map, self.config, self.inputs)
         
         lineages = {i:v for i,v in enumerate(self.get_lineages())}
-        json.dump(lineages, open(os.path.join(run_dir, "lineages.json"), "w"), indent=4)
+        json.dump(lineages, open(os.path.join(self.run_dir, "lineages.json"), "w"), indent=4)
         
-        print("Saved run to: ", run_dir)
+        print("Saved run to: ", self.run_dir)
     
     
     def get_lineages(self):

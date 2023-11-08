@@ -38,6 +38,9 @@ class CPPNEvolutionaryAlgorithm(object):
         if not hasattr(self, "inputs"):
             self.inputs = None # default to coord inputs in CPPN class
         
+        self.init_dirs()
+        
+        
         self.gen = 0
         self.debug_output = debug_output
         self.show_output = False
@@ -78,6 +81,18 @@ class CPPNEvolutionaryAlgorithm(object):
             logging.warning("Target image height does not match config.res_h. Setting config.res_h to target image height")
 
         self.fitesses = {}
+    
+        
+    def init_dirs(self):
+        self.cond_dir = os.path.join(self.config.output_dir, "conditions", self.config.experiment_condition)
+        os.makedirs(self.cond_dir, exist_ok=True)
+        self.run_dir = os.path.join(self.cond_dir, f"run_{self.config.run_id:04d}")
+        os.makedirs(self.run_dir, exist_ok=True)
+        self.image_dir = os.path.join(self.run_dir, "images")
+        os.makedirs(self.image_dir, exist_ok=True)
+        self.genomes_dir = os.path.join(self.run_dir, "genomes")
+        os.makedirs(self.genomes_dir, exist_ok=True)
+
     
     def get_mutation_rates(self):
         """Get the mutate rates for the current generation 
@@ -163,24 +178,16 @@ class CPPNEvolutionaryAlgorithm(object):
 
         # save results
         print("Saving data...")
-        cond_dir = os.path.join(self.config.output_dir, "conditions", self.config.experiment_condition)
-        os.makedirs(cond_dir, exist_ok=True)
-        # self.config.run_id =len(os.listdir(cond_dir))
         self.run_number = self.config.run_id
         
         self.results.loc[self.run_number, "run_id"] = self.config.run_id
         
-        run_dir = os.path.join(cond_dir, f"run_{self.config.run_id:04d}")
-        if os.path.exists(run_dir):
-            logging.warning(f"run dir already exists, overwriting: {run_dir}")
-        else:
-            os.makedirs(run_dir)
      
-        with open(os.path.join(run_dir, f"target.txt"), 'w') as f:
+        with open(os.path.join(self.run_dir, f"target.txt"), 'w') as f:
             f.write(self.config.target_name)
         
         # save to run dir
-        filename = os.path.join(run_dir, f"results.pkl")
+        filename = os.path.join(self.run_dir, f"results.pkl")
         self.results.to_pickle(filename)
         
         # save to output dir
@@ -222,7 +229,7 @@ class CPPNEvolutionaryAlgorithm(object):
         """Called at the end of each generation"""
         self.record_keeping()
 
-    def get_best(self):
+    def get_best(self)->ImageCPPN:
         if len(self.population) == 0:
             print("No individuals in population")
             return None

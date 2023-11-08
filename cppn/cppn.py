@@ -1,12 +1,13 @@
 """Contains the CPPN, Node, and Connection classes."""
 from itertools import count
+import json
 import torch
 from torch import nn
 from torchviz import make_dot
 from cppn.util import *
 from cppn.graph_util import *
 import cppn.activation_functions as af
-
+from cppn.config import CPPNConfig
 
 class Node(nn.Module):
     def __init__(self, activation, id, bias=0.0):
@@ -28,18 +29,54 @@ class Node(nn.Module):
         # return self.activation(x + self.bias)
         return self.activation(x + self.bias)
     
+    def to_json(self):
+        return {
+            "id": self.id,
+            "activation": self.activation.__class__.__name__,
+            "bias": self.bias.item(),
+            "layer": self.layer
+        }
+    
+    def from_json(self, json):
+        self.id = json["id"]
+        self.set_activation(af.__dict__[json["activation"]])
+        self.bias = nn.Parameter(torch.tensor(json["bias"]))
+        self.layer = json["layer"]
+    
+    @staticmethod
+    def create_from_json(json):
+        n = Node(json["activation"], json["id"], json["bias"])
+        n.layer = json["layer"]
+        return n
+    
     
 class Connection(nn.Module):
     def __init__(self, weight, enabled=True):
         super().__init__()
+        if isinstance(weight, float):
+            weight = torch.tensor([weight])
         self.weight = nn.Parameter(weight)
-        self.enabled = enabled
+        self.enabled:bool = enabled
         
     def forward(self, x):
         return x * self.weight
 
     def add_to_weight(self, delta):
         self.weight = nn.Parameter(self.weight + delta)
+    
+    def to_json(self):
+        return {
+            "weight": self.weight.item(),
+            "enabled": self.enabled            
+        }
+        
+    def from_json(self, json):
+        self.weight = nn.Parameter(torch.tensor(json["weight"]))
+        self.enabled = json["enabled"]
+
+    @staticmethod
+    def create_from_json(json):
+        return Connection(json["weight"], json["enabled"])
 
 class CPPN(nn.Module):
     """A CPPN Object with Nodes and Connections."""
@@ -76,14 +113,22 @@ class CPPN(nn.Module):
 
     ###   
     
+    @property
+    def input_nodes(self):
+        return [n for n in self.nodes.values() if n.id in self.input_node_ids]
     
-    def __init__(self, config, do_init=True):
+    @property
+    def output_nodes(self):
+        return [n for n in self.nodes.values() if n.id in self.output_node_ids]
+    
+    @property
+    def hidden_nodes(self):
+        return [n for n in self.nodes.values() if n.id not in self.input_node_ids and n.id not in self.output_node_ids]
+    
+    def __init__(self, config:CPPNConfig, do_init=True):
         super().__init__()
         self.nodes = nn.ModuleDict()  # key: node_id (string)
         self.connections = nn.ModuleDict()  # key: (from, to) (string)
-        self.input_nodes = nn.ModuleList()
-        self.output_nodes = nn.ModuleList()
-        self.hidden_nodes = nn.ModuleList()
         
         self.n_input = config.num_inputs
         self.n_output = config.num_outputs
@@ -96,6 +141,9 @@ class CPPN(nn.Module):
         self.n_cells = 0
         self.device = config.device
         self.id = -1
+        
+        self.input_node_ids =   [str(i) for i in range(-1, -self.n_input - 1, -1)]
+        self.output_node_ids =  [str(i) for i in range(-self.n_input - 1, -self.n_input - self.n_output - 1, -1)]
         
         if do_init:
             self.id = type(self).get_id()
@@ -114,15 +162,11 @@ class CPPN(nn.Module):
             n_hidden = config.hidden_nodes_at_start
             if isinstance(n_hidden, int):
                 n_hidden = (n_hidden,)
-            self.input_nodes = nn.ModuleList([Node(af.IdentityActivation,
-                                                   str(n_i)) for n_i in range(-1, -self.n_input - 1, -1)])
-            self.output_nodes = nn.ModuleList([Node(af.IdentityActivation,
-                                                    str(n_i)) for n_i in range(-self.n_input - 1, -self.n_input - self.n_output - 1, -1)])
+                
             
-            for node in self.input_nodes + self.output_nodes:
-                self.nodes[node.id] = node
-            
-            hidden_nodes = []
+            for node_id in self.input_node_ids + self.output_node_ids:
+                node = Node(af.IdentityActivation, node_id)
+                self.nodes[node_id] = node
             
             hidden_layers = {}
             for i, layer in enumerate(n_hidden):
@@ -130,14 +174,8 @@ class CPPN(nn.Module):
                 for j in range(layer):
                     new_id = type(self).get_new_node_id()
                     node = Node(random_choice(config.activations), new_id)
-                    hidden_nodes.append(node)
+                    self.nodes[new_id] = node
                     hidden_layers[layer].append(node)
-                    
-            
-            self.hidden_nodes = nn.ModuleList(hidden_nodes)
-
-            for node in self.hidden_nodes:
-                self.nodes[node.id] = node
                 
             return hidden_layers
             
@@ -162,15 +200,6 @@ class CPPN(nn.Module):
     
 
     def update_layers(self):
-        input_node_ids = range(-1, -self.n_input - 1, -1)
-        output_node_ids = range(-self.n_input - 1, -self.n_input - self.n_output - 1, -1)
-
-        self.hidden_nodes = nn.ModuleList()
-        for node_id in self.nodes.keys():
-            if int(node_id) not in input_node_ids and int(node_id) not in output_node_ids: 
-                self.hidden_nodes.append(self.nodes[node_id])
-        
-        
         self.enabled_connections = [conn_key for conn_key in self.connections if self.connections[conn_key].enabled]
         
         # inputs
@@ -185,7 +214,7 @@ class CPPN(nn.Module):
             for node_id in layer:
                 self.nodes[node_id].layer = layer_idx
                 
-        self.node_states = None
+        self.node_states = {}
 
     def gather_inputs(self, node_id):
         for i in self.node_states:
@@ -200,7 +229,7 @@ class CPPN(nn.Module):
         all_nodes = list(self.nodes.values()) + list(self.output_nodes) + list(self.input_nodes)
 
         # Initialize node states
-        if self.node_states is None or force_recalculate:
+        if len(self.node_states) == 0  or force_recalculate:
             self.node_states = {node.id: torch.zeros(x.shape[0:2],
                                                      device=x.device,
                                                      requires_grad=False) for node in all_nodes}
@@ -210,8 +239,8 @@ class CPPN(nn.Module):
             self.node_states[input_node.id] = x[:, :, i]
 
         # Feed forward through layers
-        inputs = [node.id for node in self.input_nodes]
-        outputs = [node.id for node in self.output_nodes]
+        # inputs = [node.id for node in self.input_nodes]
+        outputs = self.output_node_ids
         
         #print(outputs)
 
@@ -289,7 +318,7 @@ class CPPN(nn.Module):
             
             self.to(self.device) # TODO shouldn't need this
             
-            self.node_states = None # reset the node states
+            self.node_states = {} # reset the node states
             
             
     
@@ -373,7 +402,6 @@ class CPPN(nn.Module):
             "Node ID already exists: {}".format(new_node.id)
         
         self.nodes[new_node.id] =  new_node # add a new node between two nodes
-        self.hidden_nodes.append(new_node)
         self.connections[old_cx_key].enabled = False  # disable old connection
 
         # The connection between the first node in the chain and the
@@ -441,7 +469,6 @@ class CPPN(nn.Module):
         for node in eligible_nodes:
             if torch.rand(1)[0] < prob:
                 node.set_activation(random_choice(config.activations))
-        self.outputs = None # reset the image
 
 
     def mutate_weights(self, prob, config):
@@ -461,7 +488,6 @@ class CPPN(nn.Module):
                 connection.weight = self.random_weight()
 
         # self.clamp_weights()
-        self.outputs = None # reset the image
 
 
     def mutate_bias(self, prob, config):
@@ -475,15 +501,12 @@ class CPPN(nn.Module):
             elif R_reset[i] < config.prob_weight_reinit:
                 node.bias = torch.zeros_like(node.bias)
 
-        self.outputs = None # reset the image
-        
         
     def mutate_lr(self, sigma):
         if not sigma:
             return # don't mutate
         self.sgd_lr = self.sgd_lr + random_normal(None, 0, sigma).item()
         self.sgd_lr = max(1e-8, self.sgd_lr)
-        self.outputs = None
 
 
 
@@ -507,9 +530,9 @@ class CPPN(nn.Module):
         all_keys.extend([node.id for node in self.input_nodes])
         all_keys.extend([node.id for node in self.output_nodes])
 
-        for node in list(self.nodes.values())[::-1]:
-            if node.id not in all_keys:
-                del self.nodes[node]
+        for node_id in list(self.nodes.keys())[::-1]:
+            if node_id not in all_keys:
+                del self.nodes[node_id]
         
         # print("Pruned {} connections".format(removed))
         
@@ -523,7 +546,7 @@ class CPPN(nn.Module):
         eligible_cxs = list(self.enabled_connections)
         if len(eligible_cxs) < 1:
             return
-        cx = random_choice(eligible_cxs, 1, False)
+        cx:str = random_choice(eligible_cxs, 1, False)
         self.connections[cx].enabled = False
 
     
@@ -546,22 +569,13 @@ class CPPN(nn.Module):
         child = CPPN(config, do_init=False)
           
         # Copy the parent's genome
-        for node in self.input_nodes:
-            child.input_nodes.append(Node(type(node.activation), node.id, node.bias.item()))
-        for node in self.output_nodes:
-            child.output_nodes.append(Node(type(node.activation), node.id, node.bias.item()))
-        for node in self.hidden_nodes:
-            child.hidden_nodes.append(Node(type(node.activation), node.id, node.bias.item()))
-        
-        for node in child.input_nodes + child.output_nodes + child.hidden_nodes:
-            # node.bias = nn.Parameter(node.bias.detach().clone())
-            child.nodes[node.id] = node
+        for _, node in self.nodes.items():
+            child.nodes[node.id] = Node(type(node.activation), node.id, node.bias.item())
         
         for conn_key, conn in self.connections.items():
             child.connections[conn_key] = Connection(conn.weight.detach().clone())
         
         child.update_layers()
-        
         
         # Configure record keeping information
         if new_id:
@@ -586,27 +600,21 @@ class CPPN(nn.Module):
             self.connections, other.connections)
         
         # copy input and output nodes randomly
-        input_node_ids = range(-1, -child.n_input - 1, -1)
-        output_node_ids = range(-child.n_input - 1, -child.n_input - child.n_output - 1, -1)
         child.nodes = nn.ModuleDict()
-        child.input_nodes = nn.ModuleList()
-        child.output_nodes = nn.ModuleList()
         
         
-        for node_id in input_node_ids:
+        for node_id in self.input_node_ids:
             node_id = str(node_id)
             from_self = np.random.rand() < .5 
             n = self.nodes[node_id] if from_self else other.nodes[node_id]
             child.nodes[node_id] = Node(n.activation, n.id, n.bias.item())
-            child.input_nodes.append(child.nodes[node_id])
                 
                 
-        for node_id in output_node_ids:
+        for node_id in self.output_node_ids:
             node_id = str(node_id)
             from_self = np.random.rand() < .5 
             n = self.nodes[node_id] if from_self else other.nodes[node_id]
             child.nodes[node_id] = Node(n.activation, n.id, n.bias.item())    
-            child.output_nodes.append(child.nodes[node_id])
         
         for match_index in range(len(matching1)):
             # Matching genes are inherited randomly
@@ -644,12 +652,6 @@ class CPPN(nn.Module):
                 n = self.nodes[node] if from_self else other.nodes[node]
                 child.nodes[node] = Node(n.activation, n.id, n.bias.item())
                             
-            
-        
-        child.hidden_nodes = nn.ModuleList()
-        for node_id in child.nodes.keys():
-            if int(node_id) not in input_node_ids and int(node_id) not in output_node_ids: 
-                child.hidden_nodes.append(child.nodes[node_id])
         
         child.update_layers()
         child.disable_invalid_connections(config)
@@ -660,7 +662,54 @@ class CPPN(nn.Module):
         """Visualize the CPPN."""
         make_dot(self.forward(x), show_attrs=True, show_saved=True, params=dict(self.named_parameters())).render(fname, format="pdf")
         
+    @staticmethod
+    def create_from_json(json_dict, config, CPPNClass=None):
+        """Constructs a CPPN from a json dict or string."""
+        if isinstance(json_dict, str):
+            json_dict = json.loads(json_dict, strict=False)
+        if CPPNClass is None:
+            CPPNClass = CPPN
+        i = CPPNClass(config, do_init=False)
+        i.from_json(json_dict)
+        return i
+    
+    
+    def to_json(self):
+        """Converts the CPPN to a json dict."""
+        return {"id":self.id,
+                "parents":self.parents,
+                "nodes": {k:n.to_json() for k,n in self.nodes.items()},
+                "connections": {k:c.to_json() for k,c in self.connections.items()},
+                "lineage": self.lineage,
+                "sgd_lr": self.sgd_lr
+                }
+
+    
+    def from_json(self, json_dict):
+        """Constructs a CPPN from a json dict or string."""
+        if isinstance(json_dict, str):
+            json_dict = json.loads(json_dict, strict=False)
         
+        copy_keys = ["id", "parents", "lineage", "sgd_lr", 'age', 'cell_lineage', 'n_cells']
+
+        for key, value in json_dict.items():
+            if key in copy_keys:
+                setattr(self, key, value)
+
+        self.nodes = nn.ModuleDict()
+        self.connections = nn.ModuleDict() 
+        
+        for key, item in json_dict["nodes"].items():
+            self.nodes[key] = Node.create_from_json(item)
+        for key, item in json_dict["connections"].items():
+            self.connections[key] = Connection.create_from_json(item)
+
+        self.update_layers()
+        
+    def save(self, fname):
+        """Saves the CPPN to a file."""
+        with open(fname, 'w') as f:
+            json.dump(self.to_json(), f)
 
 if __name__== "__main__":
     from cppn.fourier_features import add_fourier_features

@@ -72,10 +72,8 @@ class Record():
      
     def save_map(self, dirpath, map, config, inputs):
         # save all images
-        os.makedirs(dirpath, exist_ok=True)
-        genomes_path = os.path.join(config.output_dir, "genomes", config.experiment_condition, f"run_{config.run_id:04d}")
-        os.makedirs(genomes_path, exist_ok=True)
-        genomes = []
+        map_path = dirpath
+        os.makedirs(map_path, exist_ok=True)
         
         flat_map = map.get_population()
         print(f"Saving map with {len(flat_map)} genomes")
@@ -107,7 +105,7 @@ class Record():
 
             
         pbar.close()
-        with open(os.path.join(genomes_path, "map.json"), "w") as f:
+        with open(os.path.join(map_path, "map.json"), "w") as f:
             json.dump(genomes, f)
       
         
@@ -146,8 +144,7 @@ class Record():
                 move.solution_generation = move.gen
                 move.best_genome = move.solution
             
-            os.makedirs(os.path.join(move.config.output_dir, 'images'), exist_ok=True)
-            move.save_best_img(os.path.join(move.config.output_dir, "images", f"current_best_output.png"))
+            move.save_best_img(os.path.join(move.run_dir, "images", f"current_best_output.png"))
         
         if move.solution is not None:
             move.results.loc[len(move.results.index)] = [move.config.experiment_condition, move.config.target_name, move.config.run_id, move.gen, move.solution_fitness, np.mean(list(move.agg_fitnesses.values())),avg_distance.item(), float(len(move.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - move.start_time, move.total_offspring]
@@ -155,7 +152,7 @@ class Record():
             plt.plot(move.results['gen'], move.results['fitness'], label='best')
             plt.plot(move.results['gen'], move.results['mean_fitness'], label='mean')
             plt.legend()
-            plt.savefig(os.path.join(move.config.output_dir, "current_fitness.png"))
+            plt.savefig(os.path.join(move.cond_dir, "current_fitness.png"))
             plt.close()
         else:
             move.results.loc[len(move.results.index)] = [move.config.experiment_condition, move.config.target_name, move.config.run_id, move.gen, 0.0,  np.mean(list(move.agg_fitnesses.values())), avg_distance.item(), float(len(move.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - move.start_time, move.total_offspring]

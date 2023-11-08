@@ -11,6 +11,7 @@ from typing import List, Union
 from cv2 import resize as cv2_resize
 import itertools
 import random
+from typing import Callable, List, Union, Tuple
 
 # from cppn.cppn import NodeType
 from cppn.normalization import handle_normalization
@@ -206,7 +207,7 @@ def random_normal (generator=None, mean=0.0, std=1.0, grad=False):
         return torch.randn(1, requires_grad=grad)[0] * std + mean
 
 
-def random_choice(options, count=1, replace=False):
+def random_choice(options, count=1, replace=False)->Union[List, torch.Tensor, str]:
     """Chooses a random option from a list of options"""
     if not replace:
         indxs = torch.randperm(len(options))[:count]
