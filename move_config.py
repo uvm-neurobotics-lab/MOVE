@@ -59,7 +59,7 @@ class MoveConfig(CPPNConfig):
         self.initial_batch_size = 1 # just for the initial population
         
 
-        self.hidden_nodes_at_start = (8, )
+        self.hidden_nodes_at_start = (16, )
         self.init_connection_probability = 0.55
         self.prune_threshold = 0 # don't prune
         self.min_pruned = 0
@@ -68,7 +68,7 @@ class MoveConfig(CPPNConfig):
         self.fourier_sin_and_cos = False
         
         self.use_fourier_features = True
-        self.n_fourier_features = 256
+        self.n_fourier_features = 32
         self.fourier_feature_scale = 2.0
         self.fourier_mult_percent = 0.05
         
