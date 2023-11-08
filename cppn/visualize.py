@@ -142,7 +142,7 @@ def add_nodes_to_graph(individual, node_labels, graph, config):
     add_output_nodes(individual, node_labels, graph, config)
 
 
-def visualize_network(individual, config, visualize_disabled=False, show_weights=False):
+def visualize_network(individual, config, visualize_disabled=False, show_weights=False, save_name=None):
     """Visualize a CPPN network"""
     node_labels = {}
     node_size = 2000
@@ -166,4 +166,8 @@ def visualize_network(individual, config, visualize_disabled=False, show_weights
 
     nx.draw_networkx_labels(graph, pos, labels=node_labels)
     plt.tight_layout()
+    
+    if save_name is not None:
+        plt.savefig(save_name)
+    
     plt.show()

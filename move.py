@@ -18,6 +18,7 @@ from tqdm import tqdm
 
 # from cppn_torch.graph_util import activate_population
 # from cppn.util import visualize_network, initialize_inputs
+from cppn.visualize import visualize_network
 from cppn.util import *
 from cppn.fourier_features import add_fourier_features
 # from evolution_torch import CPPNEvolutionaryAlgorithm
@@ -585,7 +586,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             # c_b.vis(fname.replace(".png", "_torch_graph"))
             c_b.vis(self.inputs, fname.replace(".png", "_torch_graph"))
             
-            # visualize_network(b, self.config, save_name=fname.replace(".png", "_graph.png"))
+            visualize_network(b, self.config, save_name=fname.replace(".png", "_graph.png"))
             plt.close()
 
 if __name__ == '__main__':
