@@ -98,7 +98,7 @@ def add_input_nodes(individual, node_labels, graph):
 
         label = f"{node.layer}.{node.id}\n{input_labels[i]}:"
         if isinstance(node.activation, torch.nn.Module):
-            name = node.activation.__class__.__name__
+            name = node.activation.__class__.__name__.replace('Activation', '')
         else:
             name = node.activation.__name__.replace('_activation', '')
         label += f"\n{name}"
@@ -119,7 +119,7 @@ def add_hidden_nodes(individual, node_labels, graph):
                        shape='o', layer=int(node.layer))
         label = f"{node.layer}.{node.id}"
         if isinstance(node.activation, torch.nn.Module):
-            label += f"\n{node.activation.__class__.__name__}"
+            label += f"\n{node.activation.__class__.__name__.replace('Activation', '')}"
         else:
             label += f"\n{node.activation.__name__.replace('_activation', '')}"
         node_labels[node.id] = label
@@ -140,7 +140,7 @@ def add_output_nodes(individual, node_labels, graph, config):
                        shape='s', layer=int(node.layer))
         label = f"{node.layer}.{node.id}\n{title}:"
         if isinstance(node.activation, torch.nn.Module):
-            label += f"\n{node.activation.__class__.__name__}"
+            label += f"\n{node.activation.__class__.__name__.replace('Activation', '')}"
         else:
             label += f"\n{node.activation.__name__.replace('_activation', '')}"
         node_labels[node.id] = label
@@ -158,6 +158,9 @@ def visualize_network(individual, config, visualize_disabled=False, show_weights
     node_labels = {}
     node_size = 2000
     graph = nx.DiGraph()
+    
+    # decrease font size
+    plt.rcParams.update({'font.size': 8})
 
     # configure plot
     plt.figure(figsize=(8, 8))
