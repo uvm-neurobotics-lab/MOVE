@@ -66,6 +66,8 @@ def get_max_number_of_hidden_nodes(population):
 
 def get_avg_number_of_hidden_nodes(population):
     count = 0
+    if len(population) == 0:
+        return 0
     for g in population:
         count+=len(g.node_genome) - g.n_in_nodes - g.n_outputs
     return count/len(population)
@@ -88,6 +90,8 @@ def get_min_number_of_connections(population):
 
 def get_avg_number_of_connections(population):
     count = 0
+    if len(population) == 0:
+        return 0
     for g in population:
         count+=len(list(g.enabled_connections))
     return count/len(population)

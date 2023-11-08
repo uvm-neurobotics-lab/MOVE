@@ -27,9 +27,6 @@ class CPPNConfig:
         
         self.activation_mode = "node" # "node", "layer", or "population" 
         
-        self.with_grad = False # calculate autograd graph during forward pass
-        self.sgd_learning_rate = 0.01
-        self.sgd_steps = 100 # batch size is 1
         self.num_upsamples = 0
         self.num_conv=0
         self.num_post_conv=0
@@ -43,6 +40,7 @@ class CPPNConfig:
         
         self.allow_recurrent = False
         self.init_connection_probability = 0.85
+        self.init_connection_probability_fourier = 0.1
         self.dense_init_connections = False
         # self.activations = [sin, cos, gauss, linear, tanh]
         self.activations = [SinActivation, CosActivation, GaussActivation, IdentityActivation, TanhActivation]
@@ -90,7 +88,7 @@ class CPPNConfig:
         self.weight_init_std = 1.0
         self.weight_threshold = 0
         self.prob_random_restart =.001
-        self.prob_reenable_connection = 0.1
+        self.prob_reenable_connection = 0.95
         self.coord_range = (-0.5, 0.5)
         self.output_activation = IdentityActivation
         self.target_resize = None # use original size

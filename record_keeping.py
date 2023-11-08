@@ -138,7 +138,7 @@ class Record():
 
         move.n_unique = len(set([g.id for g in move.population]))
 
-        if not skip_fitness:
+        if not skip_fitness and len(move.population) > 0:
             # fitness
             if move.agg_fitnesses[move.population[0].id] > move.solution_fitness: # if the new parent is the best found so far
                 move.solution = move.population[0]                 # update best solution records

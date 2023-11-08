@@ -5,6 +5,7 @@ from cppn.config import CPPNConfig
 import torch
 import imageio.v2 as iio
 from cppn.util import center_crop, resize
+import logging
 
 class MoveConfig(CPPNConfig):
     """Stores configuration parameters for the MOVE algorithm."""
@@ -26,7 +27,7 @@ class MoveConfig(CPPNConfig):
                             torch.nn.Sigmoid, 
                             ] # MOVE
         
-        self.do_crossover = False
+        self.do_crossover = True
         self.population_elitism = 0
         self.tiebreak_novel = False
         self.num_upsamples = 0
@@ -58,7 +59,7 @@ class MoveConfig(CPPNConfig):
         self.initial_batch_size = 1 # just for the initial population
         
 
-        self.hidden_nodes_at_start = (8,)
+        self.hidden_nodes_at_start = (8, )
         self.init_connection_probability = 0.55
         self.prune_threshold = 0 # don't prune
         self.min_pruned = 0
@@ -67,12 +68,12 @@ class MoveConfig(CPPNConfig):
         self.fourier_sin_and_cos = False
         
         self.use_fourier_features = True
-        self.n_fourier_features = 16
+        self.n_fourier_features = 256
         self.fourier_feature_scale = 2.0
         self.fourier_mult_percent = 0.05
         
         self.sgd_clamp_weights = 10
-        self.sgd_lr = 3e-2
+        self.sgd_lr = 3e-1
         self.prob_mutate_weight = 0.0
         
         self.mutate_sgd_lr_sigma = 0.1

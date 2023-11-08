@@ -9,16 +9,20 @@ import cppn.activation_functions as af
 
 
 class Node(nn.Module):
-    def __init__(self, activation, id):
+    def __init__(self, activation, id, bias=0.0):
         super().__init__()
         self.set_activation(activation)
         # self.bias = nn.Parameter(torch.randn(1))
-        self.bias = nn.Parameter(torch.zeros(1))
+        self.bias = nn.Parameter(torch.tensor(bias))
         self.id:str = id
         self.layer = 999
     
     def set_activation(self, activation):
-        self.activation = activation()
+        
+        if isinstance(activation, type):
+            self.activation = activation()
+        else:
+            self.activation = activation
         
     def forward(self, x):
         # return self.activation(x + self.bias)
@@ -34,6 +38,8 @@ class Connection(nn.Module):
     def forward(self, x):
         return x * self.weight
 
+    def add_to_weight(self, delta):
+        self.weight = nn.Parameter(self.weight + delta)
 
 class CPPN(nn.Module):
     """A CPPN Object with Nodes and Connections."""
@@ -82,18 +88,19 @@ class CPPN(nn.Module):
         self.n_input = config.num_inputs
         self.n_output = config.num_outputs
         
-        
-        self.sgd_lr = config.sgd_lr
+        self.sgd_lr = config.sgd_learning_rate
         self.parents = (-1, -1)
         self.age = 0
         self.lineage = []
         self.device = config.device
+        self.id = -1
         
         if do_init:
             self.id = type(self).get_id()
             hidden_layers = self.initialize_node_genome(config)
             self.initialize_connection_genome(hidden_layers,
                                               config.init_connection_probability,
+                                              config.init_connection_probability_fourier,
                                               config.weight_init_std)
             
             self.update_layers()
@@ -133,29 +140,45 @@ class CPPN(nn.Module):
             return hidden_layers
             
     
-    def initialize_connection_genome(self, hidden_layers, initial_connection_prob=1.0, weight_std=1.0):
+    def initialize_connection_genome(self, hidden_layers, initial_connection_prob=1.0, init_connection_prob_fourier=1.0, weight_std=1.0):
         """Initializes the connection genome of the CPPN."""
         prev_layer = self.input_nodes
         for layer in hidden_layers.values():
             for node in layer:
                 for prev_node in prev_layer:
-                    if torch.rand(1) < initial_connection_prob:
+                    prob = initial_connection_prob if (int(prev_node.id) > -4 and int(prev_node.id) < 0) else init_connection_prob_fourier
+                    if torch.rand(1) < prob:
                         self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
             if len(layer) > 0:
                 prev_layer = layer
         for node in self.output_nodes:
             for prev_node in prev_layer:
-                if torch.rand(1) < initial_connection_prob:
+                prob = initial_connection_prob if (int(prev_node.id) > -4 and int(prev_node.id) < 0) else init_connection_prob_fourier
+                if torch.rand(1) < prob:
                     self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
             
     
 
-    
     def update_layers(self):
+        input_node_ids = range(-1, -self.n_input - 1, -1)
+        output_node_ids = range(-self.n_input - 1, -self.n_input - self.n_output - 1, -1)
+
+        self.hidden_nodes = nn.ModuleList()
+        for node_id in self.nodes.keys():
+            if int(node_id) not in input_node_ids and int(node_id) not in output_node_ids: 
+                self.hidden_nodes.append(self.nodes[node_id])
+        
+        
         self.enabled_connections = [conn_key for conn_key in self.connections if self.connections[conn_key].enabled]
-        self.layers = feed_forward_layers([node.id for node in self.input_nodes],
+        
+        # inputs
+        self.layers = [set([n.id for n in self.input_nodes])]
+
+        self.layers.extend(feed_forward_layers([node.id for node in self.input_nodes],
                                           [node.id for node in self.output_nodes],
-                                          [(conn_key.split(',')[0], conn_key.split(',')[1]) for conn_key in self.enabled_connections])
+                                          [(conn_key.split(',')[0], conn_key.split(',')[1]) for conn_key in self.enabled_connections]))
+        
+        
         for layer_idx, layer in enumerate(self.layers):
             for node_id in layer:
                 self.nodes[node_id].layer = layer_idx
@@ -194,21 +217,21 @@ class CPPN(nn.Module):
         for layer in self.layers:
             for node_id in layer:
                 # Gather inputs from incoming connections
-                node_inputs = self.gather_inputs(node_id)
+                node_inputs = list(self.gather_inputs(node_id))
                 # Sum inputs and apply activation function
-                if len(inputs) > 0:
-                    self.node_states[node_id] = self.nodes[node_id](sum(node_inputs))
-                else:
+                if len(node_inputs) > 0:
+                    self.node_states[node_id] = self.nodes[node_id](torch.sum(torch.stack(node_inputs), dim=0))
+                elif node_id not in self.node_states:
                     # TODO: shouldn't need to do this
                     self.node_states[node_id] = torch.zeros(x.shape[0:2], device=x.device, requires_grad=False)
         # Gather outputs
         outputs = [self.node_states[node_id] for node_id in outputs]
         outputs = torch.stack(outputs, dim=(0 if channel_first else -1))
         
-        outputs = torch.sigmoid(outputs)
+        # outputs = torch.sigmoid(outputs)
         
         # normalize?
-        # outputs = (outputs - outputs.min()) / (outputs.max() - outputs.min())
+        outputs = (outputs - outputs.min()) / (outputs.max() - outputs.min())
         
         # outputs = torch.nn.functional.relu(outputs)
         
@@ -430,7 +453,8 @@ class CPPN(nn.Module):
         for i, connection in enumerate(self.connections.values()):
             if R_delta[i] < prob:
                 delta = random_normal(None, 0, config.weight_mutation_std)
-                connection.weight = torch.add(connection.weight, delta)
+                connection.add_to_weight(delta)
+                
             elif R_reset[i] < config.prob_weight_reinit:
                 connection.weight = self.random_weight()
 
@@ -521,14 +545,14 @@ class CPPN(nn.Module):
           
         # Copy the parent's genome
         for node in self.input_nodes:
-            child.input_nodes.append(Node(type(node.activation), node.id))
+            child.input_nodes.append(Node(type(node.activation), node.id, node.bias.item()))
         for node in self.output_nodes:
-            child.output_nodes.append(Node(type(node.activation), node.id))
+            child.output_nodes.append(Node(type(node.activation), node.id, node.bias.item()))
         for node in self.hidden_nodes:
-            child.hidden_nodes.append(Node(type(node.activation), node.id))
+            child.hidden_nodes.append(Node(type(node.activation), node.id, node.bias.item()))
         
         for node in child.input_nodes + child.output_nodes + child.hidden_nodes:
-            node.bias = nn.Parameter(node.bias.detach().clone())
+            # node.bias = nn.Parameter(node.bias.detach().clone())
             child.nodes[node.id] = node
         
         for conn_key, conn in self.connections.items():
@@ -553,6 +577,83 @@ class CPPN(nn.Module):
             
         return child
     
+    def crossover(self, other, config):
+        child = self.clone(config, new_id=True)
+
+        matching1, matching2 = get_matching_connections(
+            self.connections, other.connections)
+        
+        # copy input and output nodes randomly
+        input_node_ids = range(-1, -child.n_input - 1, -1)
+        output_node_ids = range(-child.n_input - 1, -child.n_input - child.n_output - 1, -1)
+        child.nodes = nn.ModuleDict()
+        child.input_nodes = nn.ModuleList()
+        child.output_nodes = nn.ModuleList()
+        
+        
+        for node_id in input_node_ids:
+            node_id = str(node_id)
+            from_self = np.random.rand() < .5 
+            n = self.nodes[node_id] if from_self else other.nodes[node_id]
+            child.nodes[node_id] = Node(n.activation, n.id, n.bias.item())
+            child.input_nodes.append(child.nodes[node_id])
+                
+                
+        for node_id in output_node_ids:
+            node_id = str(node_id)
+            from_self = np.random.rand() < .5 
+            n = self.nodes[node_id] if from_self else other.nodes[node_id]
+            child.nodes[node_id] = Node(n.activation, n.id, n.bias.item())    
+            child.output_nodes.append(child.nodes[node_id])
+        
+        for match_index in range(len(matching1)):
+            # Matching genes are inherited randomly
+            from_self = np.random.rand() < .5 
+            
+            
+            if from_self:
+                cx_key = matching1[match_index]
+                copy_cx = self.connections[cx_key]
+            else:
+                cx_key = matching2[match_index]
+                copy_cx = other.connections[cx_key]
+            
+            child.connections[cx_key] = Connection(copy_cx.weight.detach().clone(), copy_cx.enabled)
+            
+            # Disable the connection randomly if either parent has it disabled
+            self_enabled = self.connections[cx_key].enabled
+            other_enabled = other.connections[cx_key].enabled
+                
+            if(not self_enabled or not other_enabled):
+                if(np.random.rand() < 0.75):  # from Stanley/Miikulainen 2007
+                    child.connections[cx_key].enabled = False
+            
+        
+        for cx_key in child.connections.keys():
+            to_node, from_node = cx_key.split(',')
+            for node in [to_node, from_node]:
+                if node in child.nodes.keys():
+                    continue
+                in_both = node in self.nodes.keys() and node in other.nodes.keys()
+                if in_both:
+                    from_self = np.random.rand() < .5 
+                else:
+                    from_self = node in self.nodes.keys()
+                n = self.nodes[node] if from_self else other.nodes[node]
+                child.nodes[node] = Node(n.activation, n.id, n.bias.item())
+                            
+            
+        
+        child.hidden_nodes = nn.ModuleList()
+        for node_id in child.nodes.keys():
+            if int(node_id) not in input_node_ids and int(node_id) not in output_node_ids: 
+                child.hidden_nodes.append(child.nodes[node_id])
+        
+        child.update_layers()
+        child.disable_invalid_connections(config)
+        
+        return child
+
     def vis(self, x, fname='cppn_graph'):
         """Visualize the CPPN."""
         make_dot(self.forward(x), show_attrs=True, show_saved=True, params=dict(self.named_parameters())).render(fname, format="pdf")
