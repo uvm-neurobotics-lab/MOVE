@@ -1,0 +1,32 @@
+{
+    "experiment_name": "sgd_learning_rate",
+
+    "additional_controls":{},
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "sgd_learning_rate"
+    ],
+
+
+    "levels":[
+        [1.0, 0.1, 0.01, 0.001, 0.0001]
+    ],
+
+    "name_template": "sgd_learning_rate_{sgd_learning_rate:.4f}"
+
+}

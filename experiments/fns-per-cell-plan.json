@@ -1,0 +1,34 @@
+{
+    "experiment_name": "fns_per_cell",
+
+    "additional_controls":{},
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png",
+        "data/apple.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "move_fns_per_cell"
+    ],
+
+
+    "levels":[
+        [1, 3, 5, 7, 9, 11]
+    ],
+
+    "name_template": "{move_fns_per_cell:02d}_fns_per_cell"
+
+}

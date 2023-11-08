@@ -1,7 +1,10 @@
 {
     "experiment_name": "batch-size",
 
-    "additional_controls":{},
+    "additional_controls":{
+        "num_cells": 64,
+        "population_size": 64
+    },
 
     "targets":[
         "data/skull.png",
@@ -14,37 +17,36 @@
     [
         "L",
         "HSL",
+        "HSL",
         "HSL"
     ],
 
     "mode": "grid",
 
     "variables":[
-       "batch_size",
-       "sgd_steps"
+       "batch_size"
     ],
 
 
     "levels":[
-        [1, 16, 50],
-        [1, 1000]
+        [1, 16, 64]
     ],
 
     "additional_parameters": {
         "batch_size": {
             "num_generations":{
-                "1" : 1000,
-                "16" : 600,
-                "50" : 200
+                "1" : 16384,
+                "16" : 1024,
+                "64" : 256
             },
             "initial_batch_size":{
                 "1" : 1,
                 "16" : 16,
-                "50" : 50
+                "64" : 64
             }
         }
     },
 
-    "name_template": "{batch_size:03d}_batch_{sgd_steps:03d}_sgd_steps"
+    "name_template": "batch-size-{batch_size:02d}"
 
 }

@@ -1,0 +1,45 @@
+{
+    "experiment_name": "num-cells",
+
+    "additional_controls":{},
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png",
+        "data/apple.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "num_cells"
+    ],
+
+
+    "levels":[
+        [16, 32, 64, 100]
+    ],
+
+    "additional_parameters": {
+        "num_cells": {
+            "population_size":{
+                "16" : 16,
+                "32" : 32,
+                "64" : 64,
+                "100" : 100
+            }
+        }
+    },
+
+    "name_template": "num-cells-{num_cells:03d}"
+
+}

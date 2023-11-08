@@ -1,0 +1,32 @@
+{
+    "experiment_name": "single_structural_mutation",
+
+    "additional_controls":{},
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "single_structural_mutation"
+    ],
+
+
+    "levels":[
+        [true,false]
+    ],
+
+    "name_template": "{single_structural_mutation}_single_structural_mutation"
+
+}
