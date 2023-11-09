@@ -4,6 +4,8 @@
         "target": "<TARGET>",
         "color_mode": "<COLOR_MODE>",
         "output_dir": "<OUTPUT>",
+        "stop_condition": "seconds",
+        "stop_condition_value": 28800,
         "alg": "move", <ADDITIONAL_CONTROLS>
     },
     "conditions":
