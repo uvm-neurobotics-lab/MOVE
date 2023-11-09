@@ -532,7 +532,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         torch.save(self.map.fn_mask, os.path.join(self.run_dir, "Fm_mask.pt"))
        
         
-        self.save_best_img(os.path.join(self.image_dir, "best_{self.config.run_id:04d}.png"), do_graph=True)
+        self.save_best_img(os.path.join(self.image_dir, f"best_{self.config.run_id:04d}.png"), do_graph=True)
        
         if not self.config.dry_run:
             dirpath = os.path.join(self.image_dir, "final_map")

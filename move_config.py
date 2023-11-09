@@ -15,10 +15,10 @@ class MoveConfig(CPPNConfig):
 
         self.num_generations = 3_000
         
-        #self.stop_condition = None
-        #self.stop_condition_value = None
-        self.stop_condition = "seconds"
-        self.stop_condition_value = 60*60*8 # 8 hours
+        self.stop_condition = None
+        self.stop_condition_value = None
+        # self.stop_condition = "seconds"
+        # self.stop_condition_value = 60*60*8 # 8 hours
         
 
         self.activations=  [SinActivation,
