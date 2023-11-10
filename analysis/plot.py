@@ -46,10 +46,10 @@ def plot_vs_gens(results, y, save_path=None, show=False, max_ofs=None):
 def plot_vs_offspring(results, y, save_path=None, show=False, mean_by_target=False):
     results = results.drop(columns=[c for c in results.columns if c not in[ "condition", "target", 'run', 'gen', 'total_offspring', y]])
     if mean_by_target:
-        results = results.groupby(["condition", 'run', 'gen']).mean().reset_index()
+        results = results.groupby(["condition", 'run', 'gen']).mean(numeric_only=True).reset_index()
         sns.lineplot(results, x="total_offspring", y=y, hue="condition")
     else:
-        results = results.groupby(["condition", "target", 'run','gen']).mean().reset_index()
+        results = results.groupby(["condition", "target", 'run','gen']).mean(numeric_only=True).reset_index()
         sns.lineplot(results, x="total_offspring", y=y, hue="condition", style="target")
     if save_path:
         plt.savefig(os.path.join(save_path, f"{y}_v_offspring.png"))
@@ -99,10 +99,8 @@ if __name__ == "__main__":
     plot_vs_time(results, "fitness", save_path, args.show, mean_by_target=True)
     plot_vs_time(results, "total_offspring", save_path, args.show, mean_by_target=True)
     plot_vs_offspring(results, "fitness", save_path, args.show, mean_by_target=True)
-    exit()
     
     
-    plot_vs_offspring(results, "diversity", save_path, args.show)
     plot_vs_offspring(results, "avg_num_connections", save_path, args.show)
     plot_vs_offspring(results, "avg_num_hidden_nodes", save_path, args.show)
     plot_vs_offspring(results, "time", save_path, args.show)

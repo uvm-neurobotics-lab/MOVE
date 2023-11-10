@@ -32,7 +32,7 @@ class CPPNEvolutionaryAlgorithm(object):
             torch.autograd.set_grad_enabled(True)
         else:
             torch.autograd.set_grad_enabled(False)
-        if self.config.autoencoder_frequency > 0 and self.gen % self.config.autoencoder_frequency == 0:
+        if self.config.autoencoder_frequency > 0:
             from evolution_torch.autoencoder import initialize_encoders, AutoEncoder
         
         if not hasattr(self, "inputs"):
@@ -42,10 +42,11 @@ class CPPNEvolutionaryAlgorithm(object):
         
         
         self.gen = 0
+        self.current_batch = 0
         self.debug_output = debug_output
         self.show_output = False
         
-        self.results = pd.DataFrame(columns=['condition', 'target', 'run', 'gen', 'fitness', 'mean_fitness', 'diversity', 'population', 'avg_num_connections', 'avg_num_hidden_nodes', 'max_num_connections', 'max_num_hidden_nodes', 'time', 'total_offspring'])
+        # self.results = pd.DataFrame(columns=['condition', 'target', 'run', 'gen', 'batch', 'fitness', 'mean_fitness', 'diversity', 'population', 'avg_num_connections', 'avg_num_hidden_nodes', 'max_num_connections', 'max_num_hidden_nodes', 'time', 'total_offspring'])
                 
         self.solutions_over_time = []
         self.time_elapsed = 0
@@ -80,8 +81,18 @@ class CPPNEvolutionaryAlgorithm(object):
             self.config.res_h = self.target.shape[1]
             logging.warning("Target image height does not match config.res_h. Setting config.res_h to target image height")
 
-        self.fitesses = {}
+        self.fitnesses = {}
+        
+        assert self.config.total_offspring >= self.config.num_cells, "total_offspring must be >= num_cells for now"
     
+        initial_batches = math.ceil(self.config.num_cells / self.config.initial_batch_size)
+        other_batches = math.ceil((self.config.total_offspring-self.config.num_cells) / self.config.batch_size)
+
+    
+        self.total_batches = initial_batches + other_batches
+        print("Expecting", self.total_batches, "batches")
+        
+        
         
     def init_dirs(self):
         self.cond_dir = os.path.join(self.config.output_dir, "conditions", self.config.experiment_condition)
@@ -112,7 +123,7 @@ class CPPNEvolutionaryAlgorithm(object):
         
         if(self.config.use_dynamic_mutation_rates):
             # Behold:
-            run_progress = self.gen / self.config.num_generations
+            run_progress = self.total_offspring / self.config.total_offspring
             end_mod = self.config.dynamic_mutation_rate_end_modifier
             prob_mutate_activation   = get_dynamic_mut_rate(self.config.prob_mutate_activation,     run_progress, end_mod)
             prob_mutate_weight       = get_dynamic_mut_rate(self.config.prob_mutate_weight,         run_progress, end_mod)
@@ -132,7 +143,7 @@ class CPPNEvolutionaryAlgorithm(object):
         self.run_number = run_number
         self.show_output = show_output or self.debug_output
         if initial_population:
-            for i in range(self.config.population_size): 
+            for i in range(self.config.num_cells): 
                 self.population.append(self.genome_type(self.config)) # generate new random individuals as parents
             
             # update novelty encoder 
@@ -148,12 +159,12 @@ class CPPNEvolutionaryAlgorithm(object):
 
         try:
             # Run algorithm
-            pbar = trange(self.config.num_generations, desc=f"Run {self.run_number}")
+            pbar = trange(self.config.total_offspring, desc=f"Run {self.run_number}")
         
-            for self.gen in pbar:
-                self.generation_start()
-                self.run_one_generation()
-                self.generation_end()
+            while self.total_offspring < self.config.total_offspring:
+                self.batch_start()
+                self.run_one_batch()
+                self.batch_end()
                 b = self.get_best()
                 if b is not None:
                     pbar.set_postfix_str(f"bf: {self.agg_fitnesses[b.id]:.4f} (id:{b.id}) d:{self.diversity:.4f} af:{np.mean(list(self.agg_fitnesses.values())):.4f} u:{self.n_unique}")
@@ -162,6 +173,12 @@ class CPPNEvolutionaryAlgorithm(object):
                 
                 if self.stop_condition(self):
                     break
+                
+                self.current_batch += 1
+                
+                # set pbar to self.total_offspring
+                pbar.n = self.total_offspring
+                pbar.refresh()
 
             
         except KeyboardInterrupt:
@@ -173,59 +190,59 @@ class CPPNEvolutionaryAlgorithm(object):
     def on_end(self):
         self.end_time = time.time()     
         self.time_elapsed = self.end_time - self.start_time  
-        print("\n\nEvolution completed with", self.gen+1, "generations", "in", self.time_elapsed, "seconds")
+        print("\n\nEvolution completed with", self.gen, "generations,", self.current_batch+1, "batches, and", self.total_offspring, "offspring", "in", self.time_elapsed, "seconds")
         print("Wrapping up, please wait...")
 
         # save results
         print("Saving data...")
         self.run_number = self.config.run_id
         
-        self.results.loc[self.run_number, "run_id"] = self.config.run_id
         
      
         with open(os.path.join(self.run_dir, f"target.txt"), 'w') as f:
             f.write(self.config.target_name)
         
         # save to run dir
-        filename = os.path.join(self.run_dir, f"results.pkl")
-        self.results.to_pickle(filename)
-        
         # save to output dir
-        filename = os.path.join(self.config.output_dir, f"results.pkl")
-        if os.path.exists(filename):
-            tries = 0
-            while tries < 5:
-                try:
-                    with open(filename, 'rb') as f:
-                        save_results = pd.read_pickle(f)
-                        save_results = pd.concat([save_results, self.results]).reset_index(drop=True)
-                        break
-                except:
-                    tries += 1
-                    time.sleep(1)
-            if tries == 5:
-                logging.warning("Failed to read output_dir results file, overwriting")
+        if False:
+            self.results.loc[self.run_number, "run_id"] = self.config.run_id
+            filename = os.path.join(self.run_dir, f"results.pkl")
+            self.results.to_pickle(filename)
+            filename = os.path.join(self.config.output_dir, f"results.pkl")
+            if os.path.exists(filename):
+                tries = 0
+                while tries < 5:
+                    try:
+                        with open(filename, 'rb') as f:
+                            save_results = pd.read_pickle(f)
+                            save_results = pd.concat([save_results, self.results]).reset_index(drop=True)
+                            break
+                    except:
+                        tries += 1
+                        time.sleep(1)
+                if tries == 5:
+                    logging.warning("Failed to read output_dir results file, overwriting")
+                    save_results = self.results
+            else:
                 save_results = self.results
-        else:
-            save_results = self.results
-        save_results.to_pickle(filename)
+            save_results.to_pickle(filename)
         
             
-    def generation_start(self):
+    def batch_start(self):
         """Called at the start of each generation"""
 
         if self.show_output:
             self.print_fitnesses()
             
         # update the autoencoder used for novelty
-        if self.config.autoencoder_frequency > 0 and self.gen % self.config.autoencoder_frequency == 0:
+        if self.config.autoencoder_frequency > 0 and self.current_batch % self.config.autoencoder_frequency == 0:
             AutoEncoder.instance.update_novelty_network(self.population) 
             
-    def run_one_generation(self):
+    def run_one_batch(self):
         """Run one generation of the algorithm"""
-        raise NotImplementedError("run_one_generation() not implemented for base class")
+        raise NotImplementedError("run_one_batch() not implemented for base class")
 
-    def generation_end(self):
+    def batch_end(self):
         """Called at the end of each generation"""
         self.record_keeping()
 

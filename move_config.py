@@ -13,7 +13,7 @@ class MoveConfig(CPPNConfig):
         # Initialize to default values:
         super().__init__()
 
-        self.num_generations = 3_000
+        self.total_offspring = 3_000
         
         self.stop_condition = None
         self.stop_condition_value = None
@@ -72,17 +72,12 @@ class MoveConfig(CPPNConfig):
         self.fourier_feature_scale = 2.0
         self.fourier_mult_percent = 0.05
         
-        self.sgd_clamp_weights = 10
-        self.sgd_lr = 3e-1
-        self.prob_mutate_weight = 0.0
-        
-        self.mutate_sgd_lr_sigma = 0.1
+
         
         # MOVE specific:
         self.move_fns_per_cell = 3
         self.allow_jumps = torch.inf
         self.num_cells = 50
-        self.population_size = self.num_cells
         self.objective_functions =  None
         # self.objective_functions =  [
         #     "psnr",
@@ -107,14 +102,14 @@ class MoveConfig(CPPNConfig):
         self.prob_remove_node = 0.15
         self.prob_disable_connection = .15
         self.single_structural_mutation = True
-        self.mutation_iters = 1
+        self.topology_mutation_iters = 1
         
         self.low_mem = False # don't record as much data to save memory
         self.thread_count = 1 # don't use multiple threads
         
         self.norm_df_path = 'data/target_fitness_fn_ranges.csv'
         
-        self.record_frequency = 1 # record every offspring
+        self.record_frequency_batch = 1 # record every batch
         
         # Used by baseline:
         self.num_children = 5

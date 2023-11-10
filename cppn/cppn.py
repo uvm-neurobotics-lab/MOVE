@@ -218,8 +218,9 @@ class CPPN(nn.Module):
 
     def gather_inputs(self, node_id):
         for i in self.node_states:
-            if f"{i},{node_id}" in self.enabled_connections:
-                yield self.node_states[i] * self.connections[f"{i},{node_id}"].weight
+            key = f"{i},{node_id}"
+            if key in self.enabled_connections and key in self.connections.keys():
+                yield self.node_states[i] * self.connections[key].weight
              
 
     def forward(self, x, channel_first=True, force_recalculate=True, use_graph=False, act_mode='n/a'):
@@ -262,7 +263,9 @@ class CPPN(nn.Module):
         # outputs = torch.sigmoid(outputs)
         
         # normalize?
-        outputs = (outputs - outputs.min()) / (outputs.max() - outputs.min())
+        out_range = (outputs.max() - outputs.min())
+        if out_range > 0:
+            outputs = (outputs - outputs.min()) / out_range
         
         # outputs = torch.nn.functional.relu(outputs)
         
@@ -271,7 +274,7 @@ class CPPN(nn.Module):
         outputs = torch.clamp(outputs, 0, 1)
         return outputs
 
-    def mutate(self, config):
+    def mutate(self, config:CPPNConfig):
         """Mutates the CPPN based on the algorithm configuration."""
         add_node = config.prob_add_node
         add_connection = config.prob_add_connection
@@ -283,7 +286,7 @@ class CPPN(nn.Module):
         mutate_sgd_lr_sigma = config.mutate_sgd_lr_sigma
         
         rng = lambda: torch.rand(1).item()
-        for _ in range(config.mutation_iters):
+        for _ in range(config.topology_mutation_iters):
             if config.single_structural_mutation:
                 div = max(1.0, (add_node + remove_node +
                                 add_connection + disable_connection))
@@ -309,16 +312,18 @@ class CPPN(nn.Module):
                 if rng() < disable_connection:
                     self.disable_connection()
             
-            self.mutate_activations(mutate_activations, config)
             self.mutate_weights(mutate_weights, config)
             self.mutate_bias(mutate_bias, config)
-            self.mutate_lr(mutate_sgd_lr_sigma)
             self.update_layers()
             self.disable_invalid_connections(config)
             
             self.to(self.device) # TODO shouldn't need this
             
             self.node_states = {} # reset the node states
+        
+        # only mutate the learning rate and activations once per iteration
+        self.mutate_activations(mutate_activations, config)
+        self.mutate_lr(mutate_sgd_lr_sigma)
             
             
     
@@ -505,20 +510,26 @@ class CPPN(nn.Module):
     def mutate_lr(self, sigma):
         if not sigma:
             return # don't mutate
-        self.sgd_lr = self.sgd_lr + random_normal(None, 0, sigma).item()
+        delta =  random_normal(None, 0, sigma).item()
+        self.sgd_lr = self.sgd_lr + delta
         self.sgd_lr = max(1e-8, self.sgd_lr)
 
 
 
     def prune(self, config):
         if config.prune_threshold == 0 and config.min_pruned == 0:
-            return
+            return 0
+        
+        
         removed = 0
         for key, cx in list(self.connections.items())[::-1]:
             if abs(cx.weight.item()) < config.prune_threshold:
                 del self.connections[key]
                 removed += 1
+        
         for _ in range(config.min_pruned - removed):
+            if len(self.connections.keys()) == 0:
+                return removed
             min_weight_key = min(self.connections.keys(), key=lambda k: self.connections[k].weight.item())
             removed += 1
             del self.connections[min_weight_key]
@@ -538,6 +549,7 @@ class CPPN(nn.Module):
         
         self.update_layers()
         self.disable_invalid_connections(config)
+        return removed
 
     
     
@@ -548,8 +560,6 @@ class CPPN(nn.Module):
             return
         cx:str = random_choice(eligible_cxs, 1, False)
         self.connections[cx].enabled = False
-
-    
     
     
     
@@ -586,6 +596,9 @@ class CPPN(nn.Module):
             child.id = self.id 
             child.parents = self.parents
             child.lineage = self.lineage
+            
+        child.sgd_lr = self.sgd_lr
+        
         if cpu:
             child.to(torch.device('cpu'))
         else:

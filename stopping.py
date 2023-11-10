@@ -1,6 +1,6 @@
 import time
 from typing import Any
-
+import math
 
 class StopCondition():
     def __init__(self,value: Any = None) -> None:
@@ -9,7 +9,6 @@ class StopCondition():
     def __call__(self, alg) -> bool:
         return False
     
-    
 class StopAfterGenerations(StopCondition):
     def __init__(self, num_generations: int):
         super().__init__()
@@ -17,6 +16,14 @@ class StopAfterGenerations(StopCondition):
         
     def __call__(self, alg) -> bool:
         return alg.gen >= self.num_generations
+    
+class StopAfterBatches(StopCondition):
+    def __init__(self, num_generations: int):
+        super().__init__()
+        self.num_generations = num_generations
+        
+    def __call__(self, alg) -> bool:
+        return alg.current_batch >= self.num_generations
     
     
 class StopAfterSeconds(StopCondition):

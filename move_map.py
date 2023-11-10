@@ -63,7 +63,6 @@ class MOVEMap(object):
         for c in combs:
             self.cell_names.append("_".join([self.fns[i] for i in c]))
 
-        assert self.n_cells == self.config.population_size, "Must have same number of cells as population size for now"
         print("Number of cells: ", self.n_cells)
         
         # use novelty as a tiebreaker?
@@ -84,7 +83,7 @@ class MOVEMap(object):
         
         # Set up fitness matrix
         self.fitness = torch.ones((self.n_fns, self.n_cells), device=self.config.device)*-torch.inf # fns in each cell
-        
+        self.normed_fitness = torch.ones((self.n_fns, self.n_cells), device=self.config.device)*-torch.inf # fns in each cell
         self.agg_fitness = torch.zeros((self.n_cells), device="cpu") # fitness of each cell (normed)
         
 

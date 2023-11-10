@@ -78,13 +78,13 @@ class CPPNConfig:
         self.prob_weight_reinit = 0.0 # .1 in the original NEAT (.1 of .8)
         self.prob_mutate_bias = 0.0
         
+        self.bias_mutation_std = 0.0
+        self.weight_mutation_std = 0.0
         
         self.initial_mutations = 0 
 
-        self.bias_mutation_std = .30
 
         self.max_weight = 3.0
-        self.weight_mutation_std = 2.0
         self.weight_init_std = 1.0
         self.weight_threshold = 0
         self.prob_random_restart =.001
@@ -93,7 +93,7 @@ class CPPNConfig:
         self.output_activation = IdentityActivation
         self.target_resize = None # use original size
         
-        self.mutation_iters = 1 # number of times to mutate the genome
+        self.topology_mutation_iters = 1 # number of times to mutate the genome
         
         self.output_dir = None
         self.experiment_condition = "_default"
@@ -116,7 +116,11 @@ class CPPNConfig:
         self.sgd_clamp_grad = False
         self.sgd_every = 1
         self.sgd_early_stop = 5
-        self.mutate_sgd_lr_sigma = False # don't mutate learning rate (per genome)
+        self.sgd_clamp_weights = 10
+        self.sgd_lr = 3e-1
+        self.mutate_sgd_lr_sigma = self.sgd_lr * 0.01
+        
+        
         
         # Fourier features:
         self.use_fourier_features = True

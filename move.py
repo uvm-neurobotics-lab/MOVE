@@ -92,9 +92,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.fns_per_cell = self.map.fns_per_cell
         self.use_avg_fit = self.config.get("use_avg_fit", False)
         
-        self.record = Record(self.config, self.n_fns, self.n_cells, self.config.low_mem)
+        self.record = Record(self.config, self.n_fns, self.n_cells, self.total_batches, self.config.low_mem)
         self.norm = read_norm_data(self.config.norm_df_path, self.config.target_name)
-        
         
         self.init_inputs()
         
@@ -166,7 +165,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.mask = torch.stack([torch.index_select(self.map.fn_mask[i], 0, batch_cell_ids) 
                             for i in range(len(self.map.fn_mask)) if i not in skip_fns])
     
-    def run_one_generation(self):
+    def run_one_batch(self):
         # reproduce
         self.selection_and_reproduction()
         self.population = self.map.get_population(include_empty=False)
@@ -292,12 +291,12 @@ class MOVE(CPPNEvolutionaryAlgorithm):
 
         assert len(parents) == self.map.n_cells
         
-        initial_pop_done = self.total_offspring >= self.config.population_size
+        initial_pop_done = self.total_offspring >= self.config.num_cells
         batch_size = self.config.batch_size if initial_pop_done else self.config.initial_batch_size
         
         if self.target.shape[0]>batch_size:
             print(f"WARNING: target batch size is larger than population size, truncating target from {self.target.shape[0]} to {batch_size}")
-            print("Population size:", self.config.population_size)
+            print("Population size:", self.config.num_cells)
             print("Total offspring:", self.total_offspring)
             self.target = self.target[:batch_size]
 
@@ -321,11 +320,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             
             self.total_offspring += 1
             
-            if  len(new_children) >= batch_size:
+            if len(new_children) >= batch_size:
                 break
-        
         steps=0
-        if self.config.with_grad and (self.gen+1) % self.config.grad_every == 0:
+        if self.config.with_grad and (self.current_batch+1) % self.config.grad_every == 0:
             # do SGD update
             self.init_sgd(batch_cell_ids)
             if self.config.thread_count > 1:
@@ -346,21 +344,23 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                             config      = self.config,
                             early_stop  = self.config.sgd_early_stop,
                             )
-            for _,_,child in new_children:
-                child.prune(self.config)
-                    
+                
+        n_pruned = 0
+        for _,_,child in new_children:
+            n_pruned += child.prune(self.config)
                     
         # measure children
         imgs = self.activate_population(new_children)
         fit_children, fc_normed = self.measure_fitness(new_children, imgs)
-        fc_normed = fc_normed.detach().mean(dim=1)
-        # fc_normed = fc_normed.detach().mean(dim=1).to("cpu")
-        
+        agg_fc_normed = fc_normed.detach().mean(dim=1)
+        # agg_fc_normed = agg_fc_normed.detach().mean(dim=1).to("cpu")
         
         # for record keeping
+        n_step_fwds = len(new_children)
+        n_step_fwds_incl_sgd = n_step_fwds+(n_step_fwds * steps) if self.config.with_grad else n_step_evals
         n_step_evals = len(new_children) * len(self.fns)
-        n_step_evals_incl_sgd = (n_step_evals * steps) if self.config.with_grad else n_step_evals
-        self.record.update_counts(self.gen, n_step_evals, n_step_evals_incl_sgd)
+        n_step_evals_incl_sgd = n_step_evals+(n_step_evals * steps) if self.config.with_grad else n_step_evals
+        self.record.update_counts(self.current_batch, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned)
         all_replacements = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
         # all_votes = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
 
@@ -372,6 +372,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             
             # repeat for comparison against current map
             fit_child = fit_child.repeat(self.n_cells, 1).T # (fns, cells)
+            normed_fit_child = fc_normed[child_i].repeat(self.n_cells, 1).T # (fns, cells)
             
             # find where this child is better than the current elite
             votes = None
@@ -432,7 +433,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             
             all_replacements[cell_i] = replaces
             
-            self.map.fitness[:,replaces] = fit_child[:,replaces] # update fitness values
+            self.map.fitness[:,replaces] = fit_child[:,replaces].detach() # update fitness values
+            self.map.normed_fitness[:,replaces] = normed_fit_child[:,replaces].detach() # update fitness values
             
             idxs_to_replace = torch.nonzero(replaces).squeeze().tolist()
             if isinstance(idxs_to_replace, int):
@@ -443,7 +445,6 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 
             # child.to('cpu')
             # child.clear_data() # save memory
-
             for r in idxs_to_replace:
                 # placed = child.clone(new_id=False, cpu=True, deepcopy=False)
                 # placed = child.clone(self.config, new_id=False, cpu=True)
@@ -451,7 +452,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 placed.cell_lineage = child.cell_lineage + [r]
                 placed.n_cells = child.n_cells
                 self.map.map[r] = placed
-                self.map.agg_fitness[r] = fc_normed[child_i] 
+                self.map.agg_fitness[r] = agg_fc_normed[child_i] 
             del child
             
             if not self.allow_multiple_placements:
@@ -459,18 +460,18 @@ class MOVE(CPPNEvolutionaryAlgorithm):
 
         # Record keeping
         
-        # gens_per_population = self.config.population_size // self.config.batch_size
+        # gens_per_population = self.config.num_cells // self.config.batch_size
         
-        if self.total_offspring % self.config.record_frequency != 0:
+        if alg.current_batch % self.config.record_frequency_batch != 0:
             pass # don't record
         else:
-            gen_index = self.total_offspring // self.config.record_frequency - 1
+            index = self.current_batch // self.config.record_frequency_batch
+            self.record.update(index,
+                                all_replacements,
+                                self.map,
+                                self.total_offspring
+                                )
             
-            self.record.update(gen_index, all_replacements, self.map, self.total_offspring)
-            
-            if not self.allow_multiple_placements:
-                    assert self.record.replacements_over_time[:,:,gen_index].sum() <= self.n_cells
-       
        
     def select_by_avg_fit(self, fit_child):
         """For testing without voting, use the average fitness of the child"""
@@ -493,17 +494,19 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         return votes, D, replaces
    
    
-    def generation_end(self):
+    def batch_end(self):
         self.solution_fitness = -torch.inf # force to update
         # self.record_keeping(skip_fitness=False)
-        self.record.gen_end(self, skip_fitness=False)
+        self.record.batch_end(self, skip_fitness=False)
+        
+        self.gen = alg.total_offspring // alg.config.num_cells
         
         if self.gen in [0, ] or (self.gen+1)%10 == 0:
             b = self.get_best()
             if b is not None:
                 b.save(os.path.join(self.genomes_dir, f"gen_{self.gen:04d}.json"))
         
-            
+        
     def on_end(self):
         super().on_end()
         
@@ -535,9 +538,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.save_best_img(os.path.join(self.image_dir, f"best_{self.config.run_id:04d}.png"), do_graph=True)
        
         if not self.config.dry_run:
-            dirpath = os.path.join(self.image_dir, "final_map")
-            self.record.save_map(dirpath, self.map, self.config, self.inputs)
+            self.record.save_map(self.image_dir, self.map, self.config, self.inputs)
         
+        logging.info("Saving lineages")
         lineages = {i:v for i,v in enumerate(self.get_lineages())}
         json.dump(lineages, open(os.path.join(self.run_dir, "lineages.json"), "w"), indent=4)
         

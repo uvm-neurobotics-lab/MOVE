@@ -61,7 +61,7 @@ def run_setup():
         parsed['controls']["num_cells"] = args.population
         parsed['controls']["num_children"] = args.population
     if args.generations > 0 :
-        parsed['controls']["num_generations"] = args.generations
+        parsed['controls']["total_offspring"] = args.generations
     if args.output is not None:
         parsed['controls']["output_dir"] = args.output
         

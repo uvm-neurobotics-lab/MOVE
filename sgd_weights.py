@@ -48,7 +48,7 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         mask = mask[mask.any(dim=1)]
     
     if len(fns) == 0:
-        return
+        return 0
         
     for c in genomes:
         c.loss_delta = 0.0
@@ -64,7 +64,7 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
     # All CPPN weights in one optimizer # TODO allow for different learning rates per genome
     optimizer = torch.optim.Adam(all_params, lr=lr, weight_decay=config.sgd_l2_reg)
     # optimizer = torch.optim.SGD(all_params, lr=lr)
-
+    
     # Compile function
     def f(X, *gs):
         return torch.stack([g(X, force_recalculate=True, use_graph=True) for g in gs[0]])
@@ -149,12 +149,17 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         for param_group in all_params:
             for param in param_group['params']:
                 if param.grad is not None:
-                    param.grad[param.grad != param.grad] = 0        
+                    # if not torch.isfinite(param.grad).all():
+                        # logging.warning("Non-finite gradients")
+                    param.grad[param.grad != param.grad] = 0       
+                else:
+                    param.grad = torch.zeros_like(param)
         
         if config.sgd_clamp_grad:
             torch.nn.utils.clip_grad_norm_(all_params, config.sgd_clamp_grad, error_if_nonfinite=True)
         
-        optimizer.step()
+        if len(all_params) > 0:
+            optimizer.step()
         
         for param_group in all_params:
             for param in param_group['params']:
@@ -167,5 +172,5 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
             pbar.set_postfix_str(f"loss={loss.detach().clone().mean().item():.3f}")
             pbar.set_description_str(f"Optimizing {n_params} params on {len(genomes)} genomes and {len(fns)} fns lr: {lr:.2e} avg:{avg_lr:.2e}")
         
-    return step
+    return step+1
         
