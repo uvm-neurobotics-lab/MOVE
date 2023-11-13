@@ -33,7 +33,7 @@ if __name__ == "__main__":
     addl_controls = plan["additional_controls"]
     addl_params = plan.get("additional_parameters", {})
     conditions = []
-    name_template = plan["name_template"]
+    name_template = plan.get("name_template", "{name}")
 
     if args.output == None:
         args.output = os.path.join("..", "results", plan["experiment_name"])
@@ -68,6 +68,12 @@ if __name__ == "__main__":
            
             cond_dict = {name:vars}
             conditions.append(cond_dict)
+            
+    if plan["mode"] == "enum":
+        # list of conditions
+        for cond in plan["conditions"]:
+            cond_dict = cond
+            conditions.append(cond_dict)
     
     template_string = None
     with open(args.template) as f:
@@ -86,8 +92,9 @@ if __name__ == "__main__":
         
         if len(addl_controls) > 0:
             addl_controls_string = ""
-            for control in addl_controls:
-                addl_controls_string += f"\n\t\"{control}\": {addl_controls[control]}" + ("," if control != list(addl_controls.keys())[-1] else "")
+            addl_controls_string = json.dumps(addl_controls, indent=4)[1:-1]
+            # for control in addl_controls:
+                # addl_controls_string += f"\n\t\"{control}\": {addl_controls[control]}" + ("," if control != list(addl_controls.keys())[-1] else "")
             save_string = save_string.replace("<ADDITIONAL_CONTROLS>", addl_controls_string)
         else:
             save_string = save_string.replace(", <ADDITIONAL_CONTROLS>", "")

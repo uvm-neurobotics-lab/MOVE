@@ -1,0 +1,124 @@
+{
+    "experiment_name": "bloat-prune",
+    "additional_controls": {
+        "total_offspring": 20000,
+        "stop_condition": "fwds",
+        "stop_condition_value": 30000,
+        "enforce_initial_fill": true,
+        "sgd_steps": 1000,
+        "batch_size": 1,
+        "initial_batch_size": 50,
+        "single_structural_mutation": false,
+        "n_fourier_features": 128,
+        "objective_functions": [
+            "psnr",
+            "mse",
+            "lpips",
+            "dists",
+            "ssim",
+            "haarpsi",
+            "vif",
+            "msssim",
+            "dss",
+            "gmsd"
+        ]
+    },
+    "targets": [
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png",
+        "data/apple.png"
+    ],
+    "color_modes": [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL"
+    ],
+    "mode": "enum",
+    "conditions": [
+        {
+            "0-start_1e-4-prune_30-iters_0-min-pruned_3e-4-l2-reg_0.5-node": {
+                "prob_add_node": 0.50,
+                "prob_add_connection": 1.0,
+                "prob_remove_node": 0.15,
+                "prob_disable_connection": 0.00,
+                "prune_threshold": 0.0001,
+                "sgd_l2_reg": 0.0003,
+                "min_pruned": 0,
+                "hidden_nodes_at_start": [0],
+                "topology_mutation_iters": 30
+            }
+        }
+        ,
+        {
+            "0-start_1e-4-prune_30-iters_0-min-pruned_3e-3-l2-reg_0.5-node": {
+                "prob_add_node": 0.50,
+                "prob_add_connection": 1.0,
+                "prob_remove_node": 0.15,
+                "prob_disable_connection": 0.00,
+                "prune_threshold": 0.0001,
+                "sgd_l2_reg": 0.003,
+                "min_pruned": 0,
+                "hidden_nodes_at_start": [0],
+                "topology_mutation_iters": 30
+            }
+        }
+        ,
+        {
+            "0-start_1e-4-prune_30-iters_10-min-pruned_3e-4-l2-reg_0.5-node": {
+                "prob_add_node": 0.50,
+                "prob_add_connection": 1.0,
+                "prob_remove_node": 0.15,
+                "prob_disable_connection": 0.00,
+                "prune_threshold": 0.0001,
+                "sgd_l2_reg": 0.0003,
+                "min_pruned": 10,
+                "hidden_nodes_at_start": [0],
+                "topology_mutation_iters": 30
+            }
+        }
+        ,
+        {
+            "128-start_1e-4-prune_30-iters_0-min-pruned_3e-4-l2-reg_0.5-node": {
+                "prob_add_node": 0.50,
+                "prob_add_connection": 1.0,
+                "prob_remove_node": 0.15,
+                "prob_disable_connection": 0.00,
+                "prune_threshold": 0.0001,
+                "sgd_l2_reg": 0.0003,
+                "min_pruned": 0,
+                "hidden_nodes_at_start": [128],
+                "topology_mutation_iters": 30
+            }
+        }
+        ,
+        {
+            "128-start_1e-4-prune_30-iters_0-min-pruned_3e-3-l2-reg_0.5-node": {
+                "prob_add_node": 0.50,
+                "prob_add_connection": 1.0,
+                "prob_remove_node": 0.15,
+                "prob_disable_connection": 0.00,
+                "prune_threshold": 0.0001,
+                "sgd_l2_reg": 0.003,
+                "min_pruned": 0,
+                "hidden_nodes_at_start": [128],
+                "topology_mutation_iters": 30
+            }
+        }
+        ,
+        {
+            "128-start_1e-4-prune_30-iters_10-min-pruned_3e-4-l2-reg_0.5-node": {
+                "prob_add_node": 0.50,
+                "prob_add_connection": 1.0,
+                "prob_remove_node": 0.15,
+                "prob_disable_connection": 0.00,
+                "prune_threshold": 0.0001,
+                "sgd_l2_reg": 0.0003,
+                "min_pruned": 10,
+                "hidden_nodes_at_start": [128],
+                "topology_mutation_iters": 30
+            }
+        }
+    ]
+}
