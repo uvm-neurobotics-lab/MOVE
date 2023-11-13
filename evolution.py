@@ -88,7 +88,8 @@ class CPPNEvolutionaryAlgorithm(object):
 
     
         self.total_batches = initial_batches + other_batches
-        print("Expecting", self.total_batches, "batches")
+        print("Expecting up to", self.total_batches, "batches")
+        print("Stop condition:", self.stop_condition.__class__.__name__ if self.stop_condition is not None else "None")
         
         
         
@@ -170,6 +171,7 @@ class CPPNEvolutionaryAlgorithm(object):
                     pbar.set_postfix_str(f"d:{self.diversity:.4f}")
                 
                 if self.stop_condition(self):
+                    print(f"Stop condition: {self.stop_condition.__class__.__name__ if self.stop_condition is not None else 'None'} met")
                     break
                 
                 self.current_batch += 1
