@@ -209,3 +209,32 @@ class SoftPlusActivation(torch.nn.Module):
 # TODO: kernels, ie kernel_sharpen, kernel_blur, kernel_edge, kernel_emboss
 
 
+TORCH_ACTIVATION_FUNCTIONS={
+    "Tanh": torch.nn.Tanh,
+    "ReLU": torch.nn.ReLU,
+    "Sigmoid": torch.nn.Sigmoid,
+    "Identity": torch.nn.Identity,
+    "SoftPlus": torch.nn.Softplus,
+    "SoftSign": torch.nn.Softsign,
+    "ELU": torch.nn.ELU,
+    "SELU": torch.nn.SELU,
+    "GLU": torch.nn.GLU,
+    "LeakyReLU": torch.nn.LeakyReLU,
+    "LogSigmoid": torch.nn.LogSigmoid,
+    "Hardshrink": torch.nn.Hardshrink,
+    "Hardtanh": torch.nn.Hardtanh,
+    "Hardswish": torch.nn.Hardswish,
+    "LogSoftmax": torch.nn.LogSoftmax,
+    "PReLU": torch.nn.PReLU,
+    "RReLU": torch.nn.RReLU,
+    "CELU": torch.nn.CELU,
+    "GELU": torch.nn.GELU,
+}
+    
+ACTIVATION_FUNCTIONS={
+    k:v for k,v in locals().items() if isinstance(v, type) and (issubclass(v, torch.nn.Module))
+}
+ACTIVATION_FUNCTIONS.update(TORCH_ACTIVATION_FUNCTIONS)
+
+def register_activation_function(name, fn):
+    ACTIVATION_FUNCTIONS[name] = fn

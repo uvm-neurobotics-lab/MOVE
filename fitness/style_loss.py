@@ -1,5 +1,4 @@
 # TAKEN FROM: https://pytorch.org/tutorials/advanced/neural_style_tutorial.html
-import logging
 import torch
 import torch.nn.functional as F
 from torchvision.models import vgg19, vgg16, VGG16_Weights, VGG19_Weights

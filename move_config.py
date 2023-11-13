@@ -13,7 +13,16 @@ class MoveConfig(CPPNConfig):
         # Initialize to default values:
         super().__init__()
 
+        self.alg = "MOVE"
+        self.name = "default" # name for this configuration
+        self.run_id = None # set later
+        self.target = None # set later
+        self.do_profile = False
+
         self.total_offspring = 3_000
+        
+        self.target_name = "default"
+        
         
         self.stop_condition = None
         self.stop_condition_value = None
@@ -23,8 +32,8 @@ class MoveConfig(CPPNConfig):
 
         self.activations=  [SinActivation,
                             IdentityActivation,
-                            torch.nn.Tanh,
-                            torch.nn.Sigmoid, 
+                            TanhActivation,
+                            SigmoidActivation, 
                             ] # MOVE
         
         self.do_crossover = False
@@ -163,7 +172,7 @@ def apply_condition(config, controls, condition, name, name_to_function_map):
             if k == "target":
                 if 'color_mode' in condition:
                     config.color_mode = condition['color_mode']
-                config.target = v
+                config.target = vtarget_name
                 if isinstance(config.target, str):
                     config.target_name = config.target
                     pilmode = "RGB" if len(config.color_mode) == 3 else "L"

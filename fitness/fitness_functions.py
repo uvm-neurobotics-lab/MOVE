@@ -1,14 +1,8 @@
 """Fitness functions."""
-# from piq.fsim import FSIMLoss
-# from piq.perceptual import DISTS as piq_dists
-# from piq.perceptual import LPIPS as piq_lpips
 import logging
 import piq
-from piq import ContentLoss
-from skimage.transform import resize
 import torch
 from torchvision.transforms import Resize
-# from torchvision.models import vgg16
 import networkx as nx
 
 from torchvision.models import vgg16, VGG16_Weights
@@ -20,8 +14,6 @@ from fitness.dss import dss as piq_dss
 FEATURE_EXTRACTOR = vgg16(weights=VGG16_Weights.DEFAULT).features
 
 from piqa import HaarPSI
-# from piqa import fsim as p_fsim
-# from piqa import vsi as p_vsi
 import piqa
 
 
@@ -566,3 +558,10 @@ NO_GRADIENT = GENOTYPE_FUNCTIONS + [compression_ratio]
 NO_MEAN = NO_GRADIENT
 NO_NORM = GENOTYPE_FUNCTIONS + [compression_ratio]
 name_to_fn = {k:v for k,v in locals().items() if callable(v) and k not in ["name_to_fn", "GENOTYPE_FUNCTIONS"]}
+
+FITNESS_FUNCTIONS={
+    k:v for k,v in locals().items() if callable(v)
+}
+
+def register_fitness_function(name, fn):
+    FITNESS_FUNCTIONS[name] = fn

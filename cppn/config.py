@@ -10,12 +10,11 @@ import typing
 import logging
 
 from cppn.activation_functions import *
-# from cppn.graph_util import name_to_fn
-from cppn.util import name_to_fn
+from cppn.name_to_fn import name_to_fn
 
 class CPPNConfig:
     """Stores configuration parameters for the CPPN."""
-    version = [0, 1, 0]
+    version = [1, 1, 0]
     
     # pylint: disable=too-many-instance-attributes
     def __init__(self, file=None) -> None:
@@ -182,7 +181,9 @@ class CPPNConfig:
         else:
             self.res_w = res[0]
             self.res_h = res[1]
-        
+    
+    def clone(self):
+        return self.__class__.create_from_json(self.to_json(), self.__class__)
     
     #################    
     # Serialization #
@@ -266,8 +267,10 @@ class CPPNConfig:
     def to_json(self):
         """Converts the configuration to a json string."""
         self.fns_to_strings()
-        json_string = json.dumps(self.__dict__, sort_keys=True, indent=4)
-        # self.strings_to_fns()
+        data = self.__dict__.copy()
+        data['version'] = self.version
+        json_string = json.dumps(data, sort_keys=True, indent=4)
+        self.strings_to_fns()
         return json_string
 
 
@@ -278,7 +281,8 @@ class CPPNConfig:
             json_dict = json.loads(json_dict)
         elif isinstance(json_dict, str):
             json_dict = json.loads(json_dict)
-        # self.fns_to_strings()
+        self.fns_to_strings()
+        self.version = json_dict['version']
         for key, value in json_dict.items():
             if print_out:
                 print(f"Setting {key} to {value}")
@@ -294,11 +298,14 @@ class CPPNConfig:
             f.close()
 
     @staticmethod
-    def create_from_json(json_str):
+    def create_from_json(json_str, config_type=None):
         """Creates a configuration from a json string."""
+        if config_type is None:
+            config_type = CPPNConfig
+        config = config_type()
         if isinstance(json_str, str):
             json_str = json.loads(json_str)
-        config = CPPNConfig()
+        config.version = json_str['version']
         for key, value in json_str.items():
             if not key in config.__dict__:
                 logging.warning(f"Unexpected key {key} in config")

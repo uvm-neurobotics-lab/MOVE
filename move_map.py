@@ -5,8 +5,8 @@ import numpy as np
 import torch
 
 class MOVEMap(object):
-    def __init__(self, config) -> None:
-        self.fns = config.fns
+    def __init__(self, config, fns) -> None:
+        self.fns = [fn.__name__ for fn in fns if not isinstance(fn, str)] 
         self.config = config
         
         if self.fns is None:

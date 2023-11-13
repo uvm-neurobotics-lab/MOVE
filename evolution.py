@@ -14,10 +14,8 @@ else:
     from tqdm import trange
 import pandas as pd
 import torch
-import itertools
 import os
 from cppn.cppn import CPPN as ImageCPPN
-import copy 
 import logging
 from stopping import *
 from util import get_dynamic_mut_rate

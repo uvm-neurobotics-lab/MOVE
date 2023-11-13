@@ -1,4 +1,5 @@
 """Contains the CPPN, Node, and Connection classes."""
+from calendar import c
 from itertools import count
 import json
 import torch
@@ -38,6 +39,8 @@ class Node(nn.Module):
         }
     
     def from_json(self, json):
+        if isinstance(json["activation"], str):
+            json["activation"] = af.ACTIVATION_FUNCTIONS[json["activation"]]
         self.id = json["id"]
         self.set_activation(af.__dict__[json["activation"]])
         self.bias = nn.Parameter(torch.tensor(json["bias"]))
@@ -45,6 +48,8 @@ class Node(nn.Module):
     
     @staticmethod
     def create_from_json(json):
+        if isinstance(json["activation"], str):
+            json["activation"] = af.ACTIVATION_FUNCTIONS[json["activation"]]
         n = Node(json["activation"], json["id"], json["bias"])
         n.layer = json["layer"]
         return n
@@ -721,11 +726,23 @@ class CPPN(nn.Module):
 
         self.update_layers()
         
-    def save(self, fname):
+        
+    def save(self, fname, config=None):
         """Saves the CPPN to a file."""
+        import copy
+        config_copy = copy.deepcopy(config)
         with open(fname, 'w') as f:
-            json.dump(self.to_json(), f)
-
+            genome_data = self.to_json()
+            if config is not None:
+                data = {}
+                data["config"] = config_copy.to_json()
+                data["genome"] = genome_data
+                json.dump(data, f)
+                del config_copy
+            else:
+                json.dump(genome_data, f)
+                
+    
 if __name__== "__main__":
     from cppn.fourier_features import add_fourier_features
     from torchviz import make_dot

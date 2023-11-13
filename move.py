@@ -81,11 +81,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 
         
         self.allow_multiple_placements = self.config.allow_jumps > 0
-        self.config.fns = [fn.__name__ for fn in self.fns if not isinstance(fn, str)] # for serialization
         
         super().__init__(self.config, debug_output)
         
-        self.map = MOVEMap(self.config)
+        self.map = MOVEMap(self.config, self.fns)
         
         self.n_cells = self.map.n_cells
         self.n_fns = self.map.n_fns
@@ -502,10 +501,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         self.gen = alg.total_offspring // alg.config.num_cells
         
-        if self.gen in [0, ] or (self.gen+1)%3 == 0:
+        if self.current_batch in [0, ] or (self.current_batch+1)%10 == 0:
             b = self.get_best()
             if b is not None:
-                b.save(os.path.join(self.genomes_dir, f"gen_{self.gen:04d}.json"))
+                b.save(os.path.join(self.genomes_dir, f"batch_{self.current_batch:04d}.json"), self.config)
         
         
     def on_end(self):
