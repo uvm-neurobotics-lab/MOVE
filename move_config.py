@@ -27,7 +27,7 @@ class MoveConfig(CPPNConfig):
                             torch.nn.Sigmoid, 
                             ] # MOVE
         
-        self.do_crossover = True
+        self.do_crossover = False
         self.population_elitism = 0
         self.tiebreak_novel = False
         self.num_upsamples = 0

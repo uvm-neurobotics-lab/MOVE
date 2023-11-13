@@ -84,8 +84,8 @@ class CPPNConfig:
         self.initial_mutations = 0 
 
 
-        self.max_weight = 3.0
-        self.weight_init_std = 1.0
+        self.max_weight = None
+        self.weight_init_std = 2.0
         self.weight_threshold = 0
         self.prob_random_restart =.001
         self.prob_reenable_connection = 0.95
@@ -109,6 +109,7 @@ class CPPNConfig:
         
         self.with_grad = True
         self.sgd_learning_rate = 0.03
+        self.batch_lr_mod = False # don't change sgd lr based on batch size
         self.prob_sgd_weight = 1.0 # update all weights
         self.sgd_early_stop_delta = -0.0005
         self.sgd_l2_reg = 0.0 # don't use L2 regularization
@@ -117,8 +118,7 @@ class CPPNConfig:
         self.sgd_every = 1
         self.sgd_early_stop = 5
         self.sgd_clamp_weights = 10
-        self.sgd_lr = 3e-1
-        self.mutate_sgd_lr_sigma = self.sgd_lr * 0.01
+        self.mutate_sgd_lr_sigma = self.sgd_learning_rate * 0.01
         
         
         

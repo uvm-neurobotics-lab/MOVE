@@ -58,7 +58,7 @@ class Record():
             # self.votes_by_batch[:,:,:,index] = all_votes
             self.ids_by_batch[:,index] = torch.tensor([-1 if g is None else g.id for g in map.map]).cpu()
             self.parents_by_batch[:,:,index] = torch.tensor([[-1 if g is None else g.parents[0] for g in map.map], [-1 if g is None else g.parents[1] for g in map.map]]).cpu()
-            self.lr_by_batch[:,index] = torch.tensor([g.sgd_lr for g in map.map if g is not None])
+            self.lr_by_batch[:,index] = torch.tensor([-torch.inf if g is None else g.sgd_lr for g in map.map], dtype=torch.float32)
             self.offspring_by_batch[index] = total_offspring
             self.cx_by_batch[index,0] = torch.mean(torch.tensor([len(g.enabled_connections) for g in map.map if g is not None], dtype=torch.float32))
             self.nodes_by_batch[index,0] = torch.mean(torch.tensor([len(g.hidden_nodes) for g in map.map if g is not None], dtype=torch.float32))

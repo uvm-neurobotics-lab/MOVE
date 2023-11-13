@@ -1,0 +1,50 @@
+{
+    "name": "MOVE",
+    "controls":
+    {
+        "target": "data/skull.png",
+        "color_mode": "L",
+        "alg": "move"
+    },
+    "conditions": [
+        {
+            "default": {
+                "total_offspring":20000,
+                "sgd_steps":1000,
+                "batch_size":1,
+                "initial_batch_size":50,
+                "prob_add_node": 0.85,
+                "prob_add_connection": 1.0,
+                "prob_remove_node": 0.15,
+                "prob_disable_connection": 0.00,
+
+                "prune_threshold": 0.0001,
+                "sgd_l2_reg": 0.0003,
+                "min_pruned": 0,
+                "hidden_nodes_at_start": [0],
+                "n_fourier_features": 128,
+                "single_structural_mutation": false,
+                "topology_mutation_iters": 30,
+
+                "enforce_initial_fill": true,
+
+                "objective_functions":
+                [
+                        "psnr",
+                        "mse",
+                        "lpips",
+                        "dists",
+                        "ssim",
+                        "haarpsi",
+                        "vif",
+                        "msssim",
+                        "dss",
+                        "gmsd"
+
+                ]
+
+
+            }
+        }
+    ]
+}

@@ -186,14 +186,14 @@ class CPPN(nn.Module):
         for layer in hidden_layers.values():
             for node in layer:
                 for prev_node in prev_layer:
-                    prob = initial_connection_prob if (int(prev_node.id) > -4 and int(prev_node.id) < 0) else init_connection_prob_fourier
+                    prob = initial_connection_prob if (int(prev_node.id) > -4 and int(prev_node.id) < 0) or init_connection_prob_fourier is None else init_connection_prob_fourier
                     if torch.rand(1) < prob:
                         self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
             if len(layer) > 0:
                 prev_layer = layer
         for node in self.output_nodes:
             for prev_node in prev_layer:
-                prob = initial_connection_prob if (int(prev_node.id) > -4 and int(prev_node.id) < 0) else init_connection_prob_fourier
+                prob = initial_connection_prob if (int(prev_node.id) > -4 and int(prev_node.id) < 0) or init_connection_prob_fourier is None else init_connection_prob_fourier
                 if torch.rand(1) < prob:
                     self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
             
@@ -230,14 +230,16 @@ class CPPN(nn.Module):
         all_nodes = list(self.nodes.values()) + list(self.output_nodes) + list(self.input_nodes)
 
         # Initialize node states
-        if len(self.node_states) == 0  or force_recalculate:
-            self.node_states = {node.id: torch.zeros(x.shape[0:2],
-                                                     device=x.device,
-                                                     requires_grad=False) for node in all_nodes}
+        # if len(self.node_states) == 0  or force_recalculate:
+        #     self.node_states = {node.id: torch.zeros(x.shape[0:2],
+        #                                              device=x.device,
+        #                                              requires_grad=False) for node in all_nodes}
             
         # Set input node states
         for i, input_node in enumerate(self.input_nodes):
             self.node_states[input_node.id] = x[:, :, i]
+        for i, output_node in enumerate(self.output_nodes):
+            self.node_states[output_node.id] = torch.zeros(x.shape[0:2], device=x.device, requires_grad=False)
 
         # Feed forward through layers
         # inputs = [node.id for node in self.input_nodes]
@@ -312,14 +314,14 @@ class CPPN(nn.Module):
                 if rng() < disable_connection:
                     self.disable_connection()
             
-            self.mutate_weights(mutate_weights, config)
-            self.mutate_bias(mutate_bias, config)
-            self.update_layers()
-            self.disable_invalid_connections(config)
-            
-            self.to(self.device) # TODO shouldn't need this
-            
-            self.node_states = {} # reset the node states
+        self.mutate_weights(mutate_weights, config)
+        self.mutate_bias(mutate_bias, config)
+        self.update_layers()
+        self.disable_invalid_connections(config)
+        
+        self.to(self.device) # TODO shouldn't need this
+        
+        self.node_states = {} # reset the node states
         
         # only mutate the learning rate and activations once per iteration
         self.mutate_activations(mutate_activations, config)

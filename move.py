@@ -294,18 +294,19 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         initial_pop_done = self.total_offspring >= self.config.num_cells
         batch_size = self.config.batch_size if initial_pop_done else self.config.initial_batch_size
         
-        if self.target.shape[0]>batch_size:
-            print(f"WARNING: target batch size is larger than population size, truncating target from {self.target.shape[0]} to {batch_size}")
-            print("Population size:", self.config.num_cells)
-            print("Total offspring:", self.total_offspring)
-            self.target = self.target[:batch_size]
 
         if initial_pop_done or not self.config.enforce_initial_fill:
             # random parents 
             batch_cell_ids = torch.tensor(np.random.choice(self.map.n_cells, size=batch_size, replace=False), device=self.config.device)
         else:
             # insure each cell is used once at first
-            batch_cell_ids = torch.arange(start=self.total_offspring, end=self.total_offspring+batch_size, device=self.config.device)
+            batch_cell_ids = torch.arange(start=self.total_offspring, end=min(self.map.n_cells, self.total_offspring+batch_size), device=self.config.device)
+       
+        if self.target.shape[0]>len(batch_cell_ids) :
+            print(f"WARNING: target batch size is larger than population size, truncating target from {self.target.shape[0]} to {batch_size}")
+            print("Population size:", self.config.num_cells)
+            print("Total offspring:", self.total_offspring)
+            self.target = self.target[:len(batch_cell_ids)]
         
         # reproduction
         for child_i, cell_i in enumerate(batch_cell_ids):
@@ -501,7 +502,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         self.gen = alg.total_offspring // alg.config.num_cells
         
-        if self.gen in [0, ] or (self.gen+1)%10 == 0:
+        if self.gen in [0, ] or (self.gen+1)%3 == 0:
             b = self.get_best()
             if b is not None:
                 b.save(os.path.join(self.genomes_dir, f"gen_{self.gen:04d}.json"))
@@ -595,6 +596,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             plt.close()
 
 if __name__ == '__main__':
+    # python -m torch.utils.bottleneck /path/to/source/script.py [args]
     for config, verbose in run_setup():
         alg = MOVE(config, debug_output=verbose)
         if config.do_profile:

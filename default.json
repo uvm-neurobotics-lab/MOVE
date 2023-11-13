@@ -9,7 +9,7 @@
     "conditions": [
         {
             "default": {
-                "sgd_steps":100,
+                "sgd_steps":1000,
                 "batch_size":1,
                 "initial_batch_size":1
 

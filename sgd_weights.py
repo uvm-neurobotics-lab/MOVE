@@ -3,6 +3,7 @@ import torch
 from torchvision.transforms import Resize
 
 import __main__ as main
+
 if not hasattr(main, '__file__'):
     try:
         from tqdm.notebook import trange
@@ -59,10 +60,20 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
         return 0 # took no steps
     
     lr = config.sgd_learning_rate
+    if config.batch_lr_mod:
+        # Linear Scaling Rule: When the minibatch size is
+        # multiplied by k, multiply the learning rate by k.
+        # https://arxiv.org/pdf/1706.02677.pdf
+        k = len(inputs)
+        mod = config.batch_lr_mod * k
+        lr = lr * mod
+        for param_group in all_params:
+            param_group['lr'] = param_group['lr'] * mod
+    
     avg_lr = sum([p['lr'] for p in all_params])/len(all_params)
     
     # All CPPN weights in one optimizer # TODO allow for different learning rates per genome
-    optimizer = torch.optim.Adam(all_params, lr=lr, weight_decay=config.sgd_l2_reg)
+    optimizer = torch.optim.AdamW(all_params, lr=lr, weight_decay=config.sgd_l2_reg)
     # optimizer = torch.optim.SGD(all_params, lr=lr)
     
     # Compile function
@@ -132,6 +143,10 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
     for step in pbar:
         imgs = compiled_fn(inputs, genomes)
         loss = loss_fn(imgs, target)
+        
+        if not loss.requires_grad:
+            return step # no gradients, so we're done
+        
         assert torch.isfinite(loss).all(), "Non-finite loss"
         
         optimizer.zero_grad()
