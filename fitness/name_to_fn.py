@@ -1,0 +1,4 @@
+from fitness.fitness_functions import FITNESS_FUNCTIONS
+from cppn.activation_functions import ACTIVATION_FUNCTIONS
+name_to_fn = FITNESS_FUNCTIONS
+name_to_fn.update(ACTIVATION_FUNCTIONS)
