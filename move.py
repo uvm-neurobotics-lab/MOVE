@@ -336,6 +336,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             else:
                 steps = sgd_weights(new_children, 
                             mask        = self.mask,
+                            # mask        = None,
                             inputs      = self.inputs,
                             target      = self.target,
                             fns         = self.sgd_fns,
@@ -345,9 +346,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                             early_stop  = self.config.sgd_early_stop,
                             )
                 
-        n_pruned = 0
+        n_pruned, n_pruned_nodes = 0,0
         for _,_,child in new_children:
-            n_pruned += child.prune(self.config)
+            cx_pruned,nodes_pruned = child.prune(self.config)
+            n_pruned += cx_pruned
+            n_pruned_nodes += nodes_pruned
                     
         # measure children
         imgs = self.activate_population(new_children)
@@ -360,7 +363,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         n_step_fwds_incl_sgd = n_step_fwds+(n_step_fwds * steps) if self.config.with_grad else n_step_evals
         n_step_evals = len(new_children) * len(self.fns)
         n_step_evals_incl_sgd = n_step_evals+(n_step_evals * steps) if self.config.with_grad else n_step_evals
-        self.record.update_counts(self.current_batch, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned)
+        self.record.update_counts(self.current_batch, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes)
         all_replacements = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
         # all_votes = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
 
@@ -498,6 +501,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.solution_fitness = -torch.inf # force to update
         # self.record_keeping(skip_fitness=False)
         self.record.batch_end(self, skip_fitness=False)
+        
+        self.avg_nodes = sum([len(g.nodes) for g in self.population]) / len(self.population)
+        self.avg_enabled_connections = sum([len(g.enabled_connections) for g in self.population]) / len(self.population)
         
         self.gen = alg.total_offspring // alg.config.num_cells
         

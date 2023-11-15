@@ -1,4 +1,5 @@
 """Stores configuration parameters for the MOVE algorithm."""
+from typing import Callable
 from cppn.activation_functions import *
 # from evolution_torch import AlgorithmConfig
 from cppn.config import CPPNConfig
@@ -6,6 +7,8 @@ import torch
 import imageio.v2 as iio
 from cppn.util import center_crop, resize
 import logging
+from fitness.name_to_fn import name_to_fn
+
 
 class MoveConfig(CPPNConfig):
     """Stores configuration parameters for the MOVE algorithm."""
@@ -35,6 +38,20 @@ class MoveConfig(CPPNConfig):
                             TanhActivation,
                             SigmoidActivation, 
                             ] # MOVE
+        
+        # self.activations=  [SinActivation,
+        #                     IdentityActivation,
+        #                     TanhActivation,
+        #                     SigmoidActivation, 
+        #                     Conv3x3Activation,
+        #                     Conv5x5Activation,
+        #                     KernelBlurActivation,
+        #                     KernelSharpenActivation,
+        #                     KernelEdgeActivation,
+        #                     KernelEmbossActivation,
+        #                     torch.nn.Hardshrink,
+                            
+        #                     ] # MOVE
         
         self.do_crossover = False
         self.population_elitism = 0
@@ -70,8 +87,11 @@ class MoveConfig(CPPNConfig):
 
         self.hidden_nodes_at_start = (16, )
         self.init_connection_probability = 0.55
-        self.prune_threshold = 0 # don't prune
+        self.prune_threshold = 0.0 # don't prune
+        self.prune_threshold_nodes = 0.0 # don't prune nodes
         self.min_pruned = 0
+        self.min_pruned_nodes = 0
+        self.node_activation_prune_threshold = 0.0 # don't prune by activation
         self.dense_init_connections = False
         self.enforce_initial_fill = False
         self.fourier_sin_and_cos = False
@@ -122,6 +142,41 @@ class MoveConfig(CPPNConfig):
         
         # Used by baseline:
         self.num_children = 5
+        
+    
+
+    def fns_to_strings(self):
+        """Converts the activation functions to strings."""
+        super().fns_to_strings()
+        if hasattr(self, 'objective_functions'):
+            for i, fn in enumerate(self.objective_functions):
+                if isinstance(fn, Callable):
+                    self.objective_functions[i] = fn.__name__
+            
+        if hasattr(self, "fitness_schedule") and self.fitness_schedule is not None:
+            for i, fn in enumerate(self.fitness_schedule):
+                if isinstance(fn, Callable):
+                    self.fitness_schedule[i] = fn.__name__
+        
+        if hasattr(self, "target_name") and self.target_name is not None:
+            self.target = self.target_name
+        
+        self.dtype = str(self.dtype) # TODO deserialize 
+
+
+    def strings_to_fns(self):
+        """Converts the activation functions to functions."""
+        super().strings_to_fns()
+        if hasattr(self, "objective_functions") and self.objective_functions is not None:
+            for i, fn in enumerate(self.objective_functions):
+                if isinstance(fn, str):
+                    self.objective_functions[i] = name_to_fn[fn]
+    
+        if hasattr(self, "fitness_function") and self.fitness_schedule is not None:
+            for i, fn in enumerate(self.fitness_schedule):
+                if isinstance(fn, str):
+                    self.fitness_schedule[i] = name_to_fn[fn]
+
         
     
 def resize_target(config):
@@ -205,4 +260,4 @@ def apply_condition(config, controls, condition, name, name_to_function_map):
 
     for i in range(len(config.activations)):
         if isinstance(config.activations[i], str):
-            config.activations[i] = af.__dict__.get(config.activations[i])  
+            config.activations[i] = name_to_fn[config.activations[i]]

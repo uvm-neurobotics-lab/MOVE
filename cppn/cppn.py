@@ -13,9 +13,9 @@ from cppn.config import CPPNConfig
 class Node(nn.Module):
     def __init__(self, activation, id, bias=0.0):
         super().__init__()
-        self.set_activation(activation)
         # self.bias = nn.Parameter(torch.randn(1))
         self.bias = nn.Parameter(torch.tensor(bias))
+        self.set_activation(activation)
         self.id:str = id
         self.layer = 999
     
@@ -25,6 +25,7 @@ class Node(nn.Module):
             self.activation = activation()
         else:
             self.activation = activation
+        self.activation.to(self.bias.device)
         
     def forward(self, x):
         # return self.activation(x + self.bias)
@@ -147,6 +148,8 @@ class CPPN(nn.Module):
         self.device = config.device
         self.id = -1
         
+        self.node_states = {}
+        
         self.input_node_ids =   [str(i) for i in range(-1, -self.n_input - 1, -1)]
         self.output_node_ids =  [str(i) for i in range(-self.n_input - 1, -self.n_input - self.n_output - 1, -1)]
         
@@ -219,20 +222,25 @@ class CPPN(nn.Module):
             for node_id in layer:
                 self.nodes[node_id].layer = layer_idx
                 
-        self.node_states = {}
+        # self.node_states = {} # risky to disable, assumes node_states is reset elsewhere TODO
 
-    def gather_inputs(self, node_id):
+    def gather_inputs(self, node_id, just_w=False):
         for i in self.node_states:
             key = f"{i},{node_id}"
             if key in self.enabled_connections and key in self.connections.keys():
-                yield self.node_states[i] * self.connections[key].weight
+                if just_w:
+                    yield self.connections[key].weight
+                else:
+                    yield self.node_states[i] * self.connections[key].weight
              
+    def get_image(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
 
     def forward(self, x, channel_first=True, force_recalculate=True, use_graph=False, act_mode='n/a'):
         #print(self.nodes.keys())
         
         #TODO
-        all_nodes = list(self.nodes.values()) + list(self.output_nodes) + list(self.input_nodes)
+        # all_nodes = list(self.nodes.values()) + list(self.output_nodes) + list(self.input_nodes)
 
         # Initialize node states
         # if len(self.node_states) == 0  or force_recalculate:
@@ -351,13 +359,16 @@ class CPPN(nn.Module):
             #del self.connections[key]
 
 
-    def add_connection(self, config):
+    def add_connection(self, config, specific_cx=None):
         """Adds a connection to the CPPN."""
         self.update_layers()
         
-        for _ in range(20):  # try 20 times max
-            [from_node, to_node] = random_choice(list(self.nodes.values()),
-                                                 2, replace=False)
+        for _ in range(200):  # try 200 times max
+            if specific_cx is not None:
+                [from_node, to_node] = specific_cx.split(',')
+            else:
+                [from_node, to_node] = random_choice(list(self.nodes.values()),
+                                                    2, replace=False)
             if from_node.layer >= to_node.layer:
                 continue  # don't allow recurrent connections
             # look to see if this connection already exists
@@ -438,19 +449,22 @@ class CPPN(nn.Module):
         self.update_layers() # update the layers of the nodes
 
         
-    def remove_node(self, config):
+    def remove_node(self, config, specific_node=None):
         """Removes a node from the CPPN.
             Only hidden nodes are eligible to be removed.
         """
 
         hidden = self.hidden_nodes
         
-        if len(hidden) == 0:
+        if len(hidden) == 0 or specific_node is not None and specific_node not in hidden:
             return # no eligible nodes, don't remove a node
 
         # choose a random node
-        node_id_to_remove = random_choice([n.id for n in hidden], 1, False)
-
+        if not specific_node:
+            node_id_to_remove = random_choice([n.id for n in hidden], 1, False)
+        else:
+            node_id_to_remove = specific_node.id
+        
         # delete all connections to and from the node
         for key, cx in list(self.connections.items())[::-1]:
             if node_id_to_remove in key.split(','):
@@ -522,12 +536,9 @@ class CPPN(nn.Module):
         self.sgd_lr = max(1e-8, self.sgd_lr)
 
 
-
-    def prune(self, config):
+    def prune_connections(self, config):
         if config.prune_threshold == 0 and config.min_pruned == 0:
             return 0
-        
-        
         removed = 0
         for key, cx in list(self.connections.items())[::-1]:
             if abs(cx.weight.item()) < config.prune_threshold:
@@ -535,30 +546,55 @@ class CPPN(nn.Module):
                 removed += 1
         
         for _ in range(config.min_pruned - removed):
-            if len(self.connections.keys()) == 0:
+            if len(list(self.connections.keys())) == 0:
                 return removed
             min_weight_key = min(self.connections.keys(), key=lambda k: self.connections[k].weight.item())
             removed += 1
             del self.connections[min_weight_key]
-       
-        # remove nodes with no connections
-        all_keys = []
-        all_keys.extend([cx.split(',')[0] for cx in self.connections])
-        all_keys.extend([cx.split(',')[1] for cx in self.connections])
-        all_keys.extend([node.id for node in self.input_nodes])
-        all_keys.extend([node.id for node in self.output_nodes])
-
-        for node_id in list(self.nodes.keys())[::-1]:
-            if node_id not in all_keys:
-                del self.nodes[node_id]
-        
         # print("Pruned {} connections".format(removed))
         
-        self.update_layers()
-        self.disable_invalid_connections(config)
+        # TODO connections removed during node pruning not counted here
+            
         return removed
 
-    
+
+    def prune_nodes(self, config):
+        if config.prune_threshold_nodes == 0 and config.min_pruned_nodes == 0 and config.node_activation_prune_threshold == 0:
+            return 0
+        used_node_ids = []
+        used_node_ids.extend(self.input_node_ids)
+        used_node_ids.extend(self.output_node_ids)
+        removed_nodes = 0
+        for key in list(self.nodes.keys())[::-1]:
+            incoming = list(self.gather_inputs(key, just_w=True))
+            if len(incoming) == 0:
+                if key not in used_node_ids:
+                    self.remove_node(config, specific_node=self.nodes[key])
+                    removed_nodes += 1
+                continue
+            l2_norm = torch.norm(torch.stack(incoming), p=2)
+            if l2_norm < config.prune_threshold_nodes:
+                self.remove_node(config, specific_node=self.nodes[key])
+                removed_nodes += 1
+                continue
+            
+            # TODO: won't work if we clear node_states frequently
+            if config.node_activation_prune_threshold > 0 and len(self.node_states)>0:
+                activation = torch.abs(self.node_states.get(key, torch.tensor([0.0], device=self.device))).detach().mean()
+                if activation < config.node_activation_prune_threshold:
+                    self.remove_node(config, specific_node=self.nodes[key])
+                    removed_nodes += 1
+                    continue
+        return removed_nodes
+            
+
+    def prune(self, config):
+        removed_cxs   = self.prune_connections(config)
+        removed_nodes = self.prune_nodes(config)
+        self.update_layers()
+        self.disable_invalid_connections(config)
+        return removed_cxs, removed_nodes
+
     
     def disable_connection(self):
         """Disables a connection."""
@@ -570,12 +606,6 @@ class CPPN(nn.Module):
     
     
     
-    def clear_data(self):
-        raise NotImplementedError() # TODO: remove deprecated
-        
-    def discard_grads(self):
-        raise NotImplementedError() # TODO: remove deprecated
-        
     def rand_weight(self, std=1.0):
         return torch.randn(1) * std
         
@@ -689,9 +719,9 @@ class CPPN(nn.Module):
             json_dict = json.loads(json_dict, strict=False)
         if CPPNClass is None:
             CPPNClass = CPPN
-        i = CPPNClass(config, do_init=False)
-        i.from_json(json_dict)
-        return i
+        new_cppn = CPPNClass(config, do_init=False)
+        new_cppn.from_json(json_dict)
+        return new_cppn
     
     
     def to_json(self):
@@ -701,6 +731,8 @@ class CPPN(nn.Module):
                 "nodes": {k:n.to_json() for k,n in self.nodes.items()},
                 "connections": {k:c.to_json() for k,c in self.connections.items()},
                 "lineage": self.lineage,
+                "age": self.age,
+                "cell_lineage": self.cell_lineage,
                 "sgd_lr": self.sgd_lr
                 }
 

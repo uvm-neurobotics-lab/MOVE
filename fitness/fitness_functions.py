@@ -6,6 +6,7 @@ from torchvision.transforms import Resize
 import networkx as nx
 
 from torchvision.models import vgg16, VGG16_Weights
+
 from fitness.style_loss import StyleLoss
 from fitness.dists import DISTS
 from fitness.lpips import LPIPS
@@ -529,8 +530,6 @@ def avg_width(genomes):
       metric[i] = genome.width(agg=torch.mean)
    return metric
 
-
-
 def age(genomes):
    metric = torch.zeros(len(genomes))
    for i, genome in enumerate(genomes):
@@ -557,7 +556,7 @@ GENOTYPE_FUNCTIONS = [min_nodes, max_nodes, min_connections, max_connections, ma
 NO_GRADIENT = GENOTYPE_FUNCTIONS + [compression_ratio]
 NO_MEAN = NO_GRADIENT
 NO_NORM = GENOTYPE_FUNCTIONS + [compression_ratio]
-name_to_fn = {k:v for k,v in locals().items() if callable(v) and k not in ["name_to_fn", "GENOTYPE_FUNCTIONS"]}
+# name_to_fn = {k:v for k,v in locals().items() if callable(v) and k not in ["name_to_fn", "GENOTYPE_FUNCTIONS"]}
 
 FITNESS_FUNCTIONS={
     k:v for k,v in locals().items() if callable(v)

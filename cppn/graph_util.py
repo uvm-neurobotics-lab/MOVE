@@ -47,22 +47,39 @@ def get_ids_from_individual(individual):
     return inputs, outputs, connections
 
 
-def get_disjoint_connections(this_cxs, other_innovation):
-    """returns connections in this_cxs that do not share an innovation number with a
-        connection in other_innovation"""
-    if(len(this_cxs) == 0 or len(other_innovation) == 0):
+def cx_outside_range(cx, other_cxs):
+    max_node_id = max([int(c.split(',')[0]) for c in other_cxs] + [int(c.split(',')[1]) for c in other_cxs])
+    min_node_id = min([int(c.split(',')[0]) for c in other_cxs] + [int(c.split(',')[1]) for c in other_cxs])
+    cx_from = int(cx.split(',')[0])
+    cx_to = int(cx.split(',')[1])
+    from_outside = cx_from < min_node_id or cx_from > max_node_id
+    to_outside = cx_to < min_node_id or cx_to > max_node_id
+    return from_outside or to_outside
+    
+    
+
+def get_disjoint_connections(this_cxs, other_cxs):
+    """returns connections in this_cxs that are outside the range of other_cxs.
+    Note that this is not the same as disjoint in Ken's paper since we don't
+    have innovation numbers, and instead use the id of the connected nodes.
+    """
+    if(len(this_cxs) == 0 or len(other_cxs) == 0):
         return []
+    
     return [t_cx for t_cx in this_cxs if\
-        (t_cx.key not in other_innovation and t_cx.key < other_innovation[-1])]
+        (t_cx not in other_cxs and not cx_outside_range(t_cx, other_cxs))
+         ]
 
 
-def get_excess_connections(this_cxs, other_innovation):
-    """returns connections in this_cxs that share an innovation number with a
-        connection in other_innovation"""
-    if(len(this_cxs) == 0 or len(other_innovation) == 0):
+def get_excess_connections(this_cxs, other_cxs):
+    """returns connections in this_cxs that are inside the range of other_cxs.
+    Note that this is not the same as excess in Ken's paper since we don't
+    have innovation numbers, and instead use the id of the connected nodes."""
+    if(len(this_cxs) == 0 or len(other_cxs) == 0):
         return []
     return [t_cx for t_cx in this_cxs if\
-            (t_cx.key not in other_innovation and t_cx.key > other_innovation[-1])]
+            (t_cx not in other_cxs and cx_outside_range(t_cx, other_cxs))
+    ]
 
 
 def get_matching_connections(cxs_1, cxs_2):
@@ -79,24 +96,26 @@ def get_matching_connections(cxs_1, cxs_2):
 def genetic_difference(cppn, other) -> float:
     # only enabled connections, sorted by innovation id
     this_cxs = sorted(cppn.enabled_connections,
-                        key=lambda c: c.key)
+                        key=lambda c: c)
     other_cxs = sorted(other.enabled_connections,
-                        key=lambda c: c.key)
+                        key=lambda c: c)
 
     N = max(len(this_cxs), len(other_cxs))
-    other_innovation = [c.key for c in other_cxs]
 
     # number of excess connections
-    n_excess = len(get_excess_connections(this_cxs, other_innovation))
+    n_excess = len(get_excess_connections(this_cxs, other_cxs))
     # number of disjoint connections
-    n_disjoint = len(get_disjoint_connections(this_cxs, other_innovation))
+    n_disjoint = len(get_disjoint_connections(this_cxs, other_cxs))
 
     # matching connections
     this_matching, other_matching = get_matching_connections(
         this_cxs, other_cxs)
     
+    assert len(this_matching) == len(other_matching)
+    assert this_matching == other_matching
+    
     difference_of_matching_weights = [
-        abs(o_cx.weight.item()-t_cx.weight.item()) for o_cx, t_cx in zip(other_matching, this_matching)]
+        abs(other.connections[o_cx].weight.item()-cppn.connections[t_cx].weight.item()) for o_cx, t_cx in zip(other_matching, this_matching)]
     # difference_of_matching_weights = torch.stack(difference_of_matching_weights)
     
     if(len(difference_of_matching_weights) == 0):
@@ -108,8 +127,8 @@ def genetic_difference(cppn, other) -> float:
     # includes an additional argument that counts how many
     # activation functions differ between the two individuals
     n_different_fns = 0
-    for t_node, o_node in zip(cppn.node_genome.values(), other.node_genome.values()):
-        if(t_node.activation.__name__ != o_node.activation.__name__):
+    for t_node, o_node in zip(cppn.nodes.values(), other.nodes.values()):
+        if(t_node.activation.__class__.__name__ != o_node.activation.__class__.__name__):
             n_different_fns += 1
 
     # can normalize by size of network (from Ken's paper)

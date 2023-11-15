@@ -24,7 +24,7 @@ class Record():
         self.n_fwds_incl_sgd = 0
         self.n_evals_incl_sgd = 0
         self.evals_by_batch = torch.ones((total_batches, 4), device='cpu')*-torch.inf
-        self.total_pruned = torch.ones((total_batches), device='cpu')*-torch.inf
+        self.total_pruned = torch.ones((total_batches,2), device='cpu')*-torch.inf
         
         if not self.low_mem:
             self.fitness_by_batch = torch.ones((n_fns, n_cells, num_data_points), device='cpu')*-torch.inf
@@ -38,12 +38,13 @@ class Record():
             self.cx_by_batch = torch.ones((num_data_points,3), device='cpu')*-torch.inf
             self.nodes_by_batch = torch.ones((num_data_points,3), device='cpu')*-torch.inf
     
-    def update_counts(self, index, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned):
+    def update_counts(self, index, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned,n_pruned_nodes):
         self.n_fwds += n_step_fwds
         self.n_fwds_incl_sgd += n_step_fwds_incl_sgd
         self.n_evals += n_step_evals
         self.n_evals_incl_sgd += n_step_evals_incl_sgd
-        self.total_pruned[index] = n_pruned
+        self.total_pruned[index,0] = n_pruned
+        self.total_pruned[index,1] = n_pruned_nodes
         self.evals_by_batch[index,0] = n_step_fwds
         self.evals_by_batch[index,1] = n_step_fwds_incl_sgd
         self.evals_by_batch[index,2] = n_step_evals

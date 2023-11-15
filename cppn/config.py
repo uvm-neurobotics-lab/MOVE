@@ -203,16 +203,6 @@ class CPPNConfig:
         self.activations= [fn.__name__ if (not isinstance(fn, str) and not fn is None) else fn for fn in self.activations]
         if hasattr(self, "fitness_function") and isinstance(self.fitness_function, Callable):
             self.fitness_function = self.fitness_function.__name__
-            
-        if hasattr(self, 'objective_functions'):
-            for i, fn in enumerate(self.objective_functions):
-                if isinstance(fn, Callable):
-                    self.objective_functions[i] = fn.__name__
-            
-        if hasattr(self, "fitness_schedule") and self.fitness_schedule is not None:
-            for i, fn in enumerate(self.fitness_schedule):
-                if isinstance(fn, Callable):
-                    self.fitness_schedule[i] = fn.__name__
         
         if self.output_activation is None:
             self.output_activation = ""
@@ -243,7 +233,7 @@ class CPPNConfig:
                     continue
                 
         self.device = torch.device(self.device)
-        self.activations = [name_to_fn(name) if isinstance(name, str) else name for name in self.activations ]
+        self.activations = [name_to_fn[name] if isinstance(name, str) else name for name in self.activations ]
         if hasattr(self, "target") and isinstance(self.target, str):
             try:
                 self.target = torch.tensor(iio.imread(self.target), dtype=torch.float32, device=self.device)
@@ -251,11 +241,12 @@ class CPPNConfig:
                 self.target = None
         try:
             if hasattr(self, "fitness_function") and isinstance(self.fitness_function, str):
-                self.fitness_function = name_to_fn(self.fitness_function)
+                self.fitness_function = name_to_fn[self.fitness_function]
         except ValueError:
             self.fitness_function = None
-        self.output_activation = name_to_fn(self.output_activation) if isinstance(self.output_activation, str) else self.output_activation
+        self.output_activation = name_to_fn[self.output_activation] if (isinstance(self.output_activation, str) and len(self.output_activation)>0) else self.output_activation
         
+       
         if isinstance(self.dtype, str):
             self.dtype = getattr(torch, self.dtype.removeprefix("torch."))
         
@@ -296,7 +287,12 @@ class CPPNConfig:
         with open(filename, "w") as f:
             f.write(self.to_json())
             f.close()
-
+            
+    def load_saved(self, filename):
+        with open(filename, 'r') as infile:
+            self.from_json(infile.read())
+            infile.close()
+            
     @staticmethod
     def create_from_json(json_str, config_type=None):
         """Creates a configuration from a json string."""

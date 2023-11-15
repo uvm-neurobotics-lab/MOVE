@@ -78,7 +78,7 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
     
     # Compile function
     def f(X, *gs):
-        return torch.stack([g(X, force_recalculate=True, use_graph=True) for g in gs[0]])
+        return torch.stack([g(X, force_recalculate=True, use_graph=True, channel_first=True) for g in gs[0]])
     def fw(f,_): return f
     
     compiled_fn = f
@@ -160,7 +160,7 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
             return step
         
         # make nan grads 0
-        # TODO: prevent this
+        # TODO: prevent this upstream
         for param_group in all_params:
             for param in param_group['params']:
                 if param.grad is not None:

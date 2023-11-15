@@ -179,24 +179,14 @@ class IdentityActivation(torch.nn.Module):
     def forward(self, x):
         return x
 
-
-class ConvActivation(torch.nn.Module):
-    def __init__(self):
-        super(ConvActivation, self).__init__()
-        self.conv = torch.nn.Conv2d(1, 1, 5, padding=2, bias=False)
-        self.activation = torch.nn.ReLU()
-        return
-    def forward(self, x):
-        return self.activation(self.conv(x))
-    
-
 class LinearActivation(torch.nn.Module):
     # todo: add bias?
     def __init__(self):
         super(LinearActivation, self).__init__()
+        self.bias = torch.nn.Parameter(torch.tensor(0.0))
         return
     def forward(self, x):
-        return linear(x)
+        return linear(x) + self.bias
 
 
 class SoftPlusActivation(torch.nn.Module):
@@ -206,7 +196,104 @@ class SoftPlusActivation(torch.nn.Module):
     def forward(self, x):
         return torch.log(1 + torch.exp(x))
 
-# TODO: kernels, ie kernel_sharpen, kernel_blur, kernel_edge, kernel_emboss
+
+
+class BaseConvActivation(torch.nn.Module):
+    def __init__(self):
+        super(BaseConvActivation, self).__init__()
+        
+    def forward(self, x):
+        x = x.unsqueeze(0)
+        return self.activation(self.conv(x)).squeeze(0)
+
+
+class Conv3x3Activation(torch.nn.Module):
+    def __init__(self):
+        super(Conv3x3Activation, self).__init__()
+        self.conv = torch.nn.Conv2d(1, 1, 3, padding=1, bias=False)
+        self.activation = torch.nn.Identity()
+    def forward(self, x):
+        x = x.unsqueeze(0)
+        return self.activation(self.conv(x)).squeeze(0)
+
+
+class Conv5x5Activation(BaseConvActivation):
+    def __init__(self):
+        super(Conv5x5Activation, self).__init__()
+        self.conv = torch.nn.Conv2d(1, 1, 5, padding=2, bias=False)
+        self.activation = torch.nn.Identity()
+    def forward(self, x):
+        x = x.unsqueeze(0)
+        return self.activation(self.conv(x)).squeeze(0)
+   
+
+class Conv7x7Activation(BaseConvActivation):
+    def __init__(self):
+        super(Conv7x7Activation, self).__init__()
+        self.conv = torch.nn.Conv2d(1, 1, 7, padding=3, bias=False)
+        self.activation = torch.nn.Identity()
+    def forward(self, x):
+        x = x.unsqueeze(0)
+        return self.activation(self.conv(x)).squeeze(0)
+   
+    
+class Conv9x9Activation(BaseConvActivation):
+    def __init__(self):
+        super(Conv9x9Activation, self).__init__()
+        self.conv = torch.nn.Conv2d(1, 1, 9, padding=4, bias=False)
+        self.activation = torch.nn.Identity()
+    def forward(self, x):
+        x = x.unsqueeze(0)
+        return self.activation(self.conv(x)).squeeze(0)
+
+
+class KernelSharpenActivation(BaseConvActivation):
+    def __init__(self):
+        super(KernelSharpenActivation, self).__init__()
+        self.conv = torch.nn.Conv2d(1, 1, 3, padding=1, bias=False)
+        self.conv.weight.data = torch.tensor([[[[0, -1, 0], [-1, 5, -1], [0, -1, 0]]]], dtype=torch.float32)
+        self.conv.requires_grad_(False)
+        self.activation = torch.nn.Identity()
+    def forward(self, x):
+        x = x.unsqueeze(0)
+        return self.activation(self.conv(x)).squeeze(0)
+    
+    
+class KernelBlurActivation(BaseConvActivation):
+    def __init__(self):
+        super(KernelBlurActivation, self).__init__()
+        self.conv = torch.nn.Conv2d(1, 1, 3, padding=1, bias=False)
+        self.conv.weight.data = torch.tensor([[[[1, 2, 1], [2, 4, 2], [1, 2, 1]]]], dtype=torch.float32) / 16.0
+        self.conv.requires_grad_(False)
+        self.activation = torch.nn.Identity()
+    def forward(self, x):
+        x = x.unsqueeze(0)
+        return self.activation(self.conv(x)).squeeze(0)
+
+
+class KernelEdgeActivation(BaseConvActivation):
+    def __init__(self):
+        super(KernelEdgeActivation, self).__init__()
+        self.conv = torch.nn.Conv2d(1, 1, 3, padding=1, bias=False)
+        self.conv.weight.data = torch.tensor([[[[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]]]], dtype=torch.float32)
+        self.conv.requires_grad_(False)
+        self.activation = torch.nn.Identity()
+    def forward(self, x):
+        x = x.unsqueeze(0)
+        return self.activation(self.conv(x)).squeeze(0)
+    
+    
+class KernelEmbossActivation(BaseConvActivation):
+    def __init__(self):
+        super(KernelEmbossActivation, self).__init__()
+        self.conv = torch.nn.Conv2d(1, 1, 3, padding=1, bias=False)
+        self.conv.weight.data = torch.tensor([[[[-2, -1, 0], [-1, 1, 1], [0, 1, 2]]]], dtype=torch.float32)
+        self.conv.requires_grad_(False)
+        self.activation = torch.nn.Identity()
+    def forward(self, x):
+        x = x.unsqueeze(0)
+        return self.activation(self.conv(x)).squeeze(0)
+
 
 
 TORCH_ACTIVATION_FUNCTIONS={

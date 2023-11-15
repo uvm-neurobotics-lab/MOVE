@@ -15,7 +15,7 @@ else:
 import pandas as pd
 import torch
 import os
-from cppn.cppn import CPPN as ImageCPPN
+from cppn.cppn import CPPN
 import logging
 from stopping import *
 from util import get_dynamic_mut_rate
@@ -57,11 +57,13 @@ class CPPNEvolutionaryAlgorithm(object):
         self.run_number = 0
         self.diversity = 0
         self.total_offspring = 0
+        self.avg_nodes = 0
+        self.avg_enabled_connections = 0
         
         self.solution_fitness = -math.inf
         self.best_genome = None
         if self.config.genome_type is None:
-            self.config.genome_type = ImageCPPN
+            self.config.genome_type = CPPN
         self.genome_type = config.genome_type
 
         self.target = self.config.target.to(self.device)
@@ -166,7 +168,7 @@ class CPPNEvolutionaryAlgorithm(object):
                 self.batch_end()
                 b = self.get_best()
                 if b is not None:
-                    pbar.set_postfix_str(f"bf: {self.agg_fitnesses[b.id]:.4f} (id:{b.id}) d:{self.diversity:.4f} af:{np.mean(list(self.agg_fitnesses.values())):.4f} u:{self.n_unique}")
+                    pbar.set_postfix_str(f"bf: {self.agg_fitnesses[b.id]:.4f} (id:{b.id}) af:{np.mean(list(self.agg_fitnesses.values())):.4f} n:{self.avg_nodes:.2f} cx:{self.avg_enabled_connections:.2f} u:{self.n_unique} ")
                 else:
                     pbar.set_postfix_str(f"d:{self.diversity:.4f}")
                 
@@ -246,7 +248,7 @@ class CPPNEvolutionaryAlgorithm(object):
         """Called at the end of each generation"""
         self.record_keeping()
 
-    def get_best(self)->ImageCPPN:
+    def get_best(self)->CPPN:
         if len(self.population) == 0:
             print("No individuals in population")
             return None
