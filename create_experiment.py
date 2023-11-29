@@ -57,9 +57,12 @@ if __name__ == "__main__":
     
 
     if plan["mode"] == 'grid':
+        skip_levels = plan.get("skip_levels", [])
         # cartesian product of all variables/levels
         level_pairs = list(itertools.product(*plan["levels"]))
         for pair in level_pairs:
+            if pair in skip_levels:
+                continue
             name = name_template.format(**dict(zip(plan["variables"], pair)))
             vars = dict(zip(plan["variables"], pair))
             for variable in addl_params:
