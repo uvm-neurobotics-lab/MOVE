@@ -1,7 +1,7 @@
-from cv2 import add
 import matplotlib.pyplot as plt
 import numpy as np
 import tqdm
+import multiprocessing as mp
 
 plt.style.use("seaborn-v0_8-whitegrid")
 import torch
@@ -83,7 +83,7 @@ def plot_nodes_over_time(batches, show=True):
         plt.show()
 
 
-def bloat(cppn, config, n=100, node_cx_ratio=0.5):
+def mutate_bloat(cppn, config, n=100, node_cx_ratio=0.5):
     config = config.clone()
     cppn = cppn.clone(new_id=False, config=config)
     
@@ -93,12 +93,19 @@ def bloat(cppn, config, n=100, node_cx_ratio=0.5):
     config.prob_add_connection = 1.0
     config.prob_mutate_activation = 0.0
     config.prob_mutate_bias=0.0
-    config.prob_add_node = 1.0*node_cx_ratio
+    config.prob_add_node = config.prob_add_connection*node_cx_ratio
     config.single_structural_mutation = False
     
-    cppn.mutate(config)
+    cppn.mutate(config, pbar=True)
     
     return cppn
+
+def bloat_connections(cppn, config, n):
+    bloated_cppn = cppn.clone(new_id=False, config=config)
+    bloated_cppn.to('cuda')
+    for _ in range(n):
+        bloated_cppn.add_connection(config)
+    return bloated_cppn
 
 
 def load_inputs(path):
@@ -170,7 +177,7 @@ def set_max_node_id(gens):
 def plot_genetic_difference_after_bloat(start, config, n=100):
     genetic_differences = []
     for _ in range(n):
-        cppn_bloated = bloat(start, config)
+        cppn_bloated = mutate_bloat(start, config)
         genetic_differences.append(genetic_difference(start, cppn_bloated))
     sns.displot(genetic_differences, kde=True)
     plt.show()
@@ -190,37 +197,27 @@ def load_target(path, config):
     return config.target
 
 
-def test_bloat_prune(initial_cppn, target, config, args):
-    if args.plot:
-        plot_genetic_difference_after_bloat(initial_cppn, config)
+def config_for_bloat_prune(config):
+    config_cloned = config.clone()   
+    config_cloned.sgd_l2_reg = .1
+    config_cloned.prune_threshold = 0.01
+    config_cloned.min_pruned = 0
+    config_cloned.sgd_steps = 1000
+    config_cloned.sgd_learning_rate = 0.01 
+    return config_cloned
+
+def test_bloat_prune(initial_cppn, target, config, args, inputs):
+    # if args.plot:
+        # plot_genetic_difference_after_bloat(initial_cppn, config)
         
-    num_added_connections = len(initial_cppn.connections) // 4
+    num_added_connections = len(initial_cppn.connections)
+    # cppn_bloated = mutate_bloat(initial_cppn, config, num_added_connections, 0.0) # extra bloat
+    
+    cppn_bloated = bloat_connections(initial_cppn, config, num_added_connections)
         
-    cppn_bloated = bloat(initial_cppn, config, num_added_connections, 0.0)
     cppn_bloated_after_sgd_prune = cppn_bloated.clone(new_id=False, config=config)
-    print(f"initial_cppn: {len(initial_cppn.nodes)} nodes, {len(initial_cppn.connections)} connections")
-    print(f"cppn_bloated: {len(cppn_bloated.nodes)} nodes, {len(cppn_bloated.connections)} connections")
     
-    print("Genetic difference between cppn_0 and cppn_bloated:")
-    print(genetic_difference(initial_cppn, cppn_bloated))
-    print(genetic_difference(cppn_bloated, cppn_bloated_after_sgd_prune))
-    
-    
-    norm = read_norm_data(os.path.join("../",config.norm_df_path), config.target_name)
-    target = target.unsqueeze(0)
-    if len(target.shape) == 3:
-        # L -> RGB
-        target = target.unsqueeze(1)
-        target = target.repeat(1, 3, 1, 1)
-    else:
-        # RGB -> RGB
-        target = target.permute(0,3,1,2)
-    
-    config.sgd_l2_reg = .1
-    config.prune_threshold = 0.01
-    config.min_pruned = 0
-    config.sgd_steps = 1000
-    config.sgd_learning_rate = 0.001
+    config = config_for_bloat_prune(config)
     
     cppn_bloated_after_sgd_prune.sgd_lr = config.sgd_learning_rate # override learned lr
     
@@ -232,6 +229,11 @@ def test_bloat_prune(initial_cppn, target, config, args):
     
     print("Min weight:", min([abs(cx.weight.item()) for cx in cppn_bloated_after_sgd_prune.connections.values()]))
     
+    cppn_bloated.to('cuda')
+    cppn_bloated_after_sgd_prune.to('cuda')
+    initial_cppn.to('cuda')
+    inputs = inputs.to('cuda')
+        
     if args.plot:
         imgs = [
             target.squeeze(0).permute(1,2,0).cpu(),
@@ -241,13 +243,11 @@ def test_bloat_prune(initial_cppn, target, config, args):
         ]
         show_image_grid(imgs, ["target", "initial_cppn", "bloated", "bloated_then_sgd_prune"])
         
-    
     print()
     print(f"initial: \t\t{len(initial_cppn.nodes)} nodes, {len(initial_cppn.connections)} connections")
     print(f"bloated: \t\t{len(cppn_bloated.nodes)} nodes, {len(cppn_bloated.connections)} connections")
     print(f"bloated_pruned: \t{len(cppn_bloated_after_sgd_prune.nodes)} nodes, {len(cppn_bloated_after_sgd_prune.connections)} connections")
     print()
-    
     
     print("Shared cxs initial : bloated", end="\t\t\t\t")
     print(len(get_matching_connections(initial_cppn.connections, cppn_bloated.connections)[0]))
@@ -270,8 +270,43 @@ def test_bloat_prune(initial_cppn, target, config, args):
     return ratio
   
 
+def show_prune_effect(initial_cppn, config, inputs, target, norm):
+    imgs,titles = [],[]
+    config = config_for_bloat_prune(config)
+    initial_cppn.sgd_lr = config.sgd_learning_rate # override learned lr
+    initial_cppn.to('cuda')
+    inputs = inputs.to('cuda')
+    sgd_weights([initial_cppn], None, inputs, target, config.objective_functions, norm, config, early_stop=10)
+    imgs.append(get_image(initial_cppn, inputs))
+    titles.append(f"initial : {len(initial_cppn.connections)} cxs")
+    
+    num_added_connections = len(initial_cppn.connections)
+    cppn_bloated = bloat_connections(initial_cppn, config, num_added_connections)
+    cppn_bloated.to('cuda')
 
+    # for min_pruned in [0, 8, 16, 32, 128, 1024, 2048, 4096, 8192, 16384, 32768]:
+    for min_pruned_pt in [0, 0.01, 0.05, 0.1, 0.2, 0.5, 0.75, 0.85, 0.90, 0.95, 0.99]:
+        min_pruned = int(min_pruned_pt * len(cppn_bloated.connections))
+        if min_pruned > len(cppn_bloated.connections):
+            continue
+        config.min_pruned = min_pruned
+        config.prune_threshold=0.0
+        test_cppn = cppn_bloated.clone(new_id=False, config=config)
+        test_cppn.to('cuda')
+        test_cppn.sgd_lr = config.sgd_learning_rate # override learned lr
+        sgd_weights([test_cppn], None, inputs, target, config.objective_functions, norm, config, early_stop=10)
+        n_pruned,n_pruned_nodes = test_cppn.prune(config)
+        print(f"Pruned {n_pruned} connections")
+        print(f"Pruned {n_pruned_nodes} nodes")
+        imgs.append(get_image(test_cppn, inputs))
+        titles.append(f"n_pruned={min_pruned} : {len(test_cppn.connections)} cxs")
+    
+    show_image_grid(imgs, titles)
+
+    
 if __name__ == "__main__":
+    mp.set_start_method('spawn')
+    
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("path", type=str, help="path to folder containing genome files")
@@ -295,21 +330,38 @@ if __name__ == "__main__":
         show_img_progression(batches, inputs)
     
     
+    norm = read_norm_data(os.path.join("../",config.norm_df_path), config.target_name)
+    target = target.unsqueeze(0)
+    if len(target.shape) == 3:
+        # L -> RGB
+        target = target.unsqueeze(1)
+        target = target.repeat(1, 3, 1, 1)
+    else:
+        # RGB -> RGB
+        target = target.permute(0,3,1,2)
+    
+    
     set_max_node_id(batches)
     
-    batch_index = -1
+    batch_index = len(batches)//2
     test_batch = list(batches.keys())[batch_index]
     print("Test batch:", test_batch)
 
     initial_cppn = batches[test_batch]
 
+    show_prune_effect(initial_cppn, config, inputs, target, norm)
+
     results = []
-    n_trials = 100
+    n_trials = 30
     
     batch = list(batches.keys())[list(batches.values()).index(initial_cppn)]
 
-    for i in tqdm.tqdm(range(n_trials)):
-        results.append(test_bloat_prune(initial_cppn, target, config, args))
+
+    pool = mp.Pool(mp.cpu_count()//2)
+    results = pool.starmap(test_bloat_prune, [(initial_cppn.clone(config, new_id=False), target.clone(), config, args, inputs.clone()) for _ in range(n_trials)])
+
+    # for i in tqdm.tqdm(range(n_trials)):
+        # results.append(test_bloat_prune(initial_cppn, target, config, args, inputs))
         
     print("Average ratio:", sum(results)/len(results))
     print("Min ratio:", min(results))

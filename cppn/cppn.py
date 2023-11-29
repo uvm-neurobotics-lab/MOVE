@@ -9,6 +9,7 @@ from cppn.util import *
 from cppn.graph_util import *
 import cppn.activation_functions as af
 from cppn.config import CPPNConfig
+from tqdm import trange
 
 class Node(nn.Module):
     def __init__(self, activation, id, bias=0.0):
@@ -289,7 +290,7 @@ class CPPN(nn.Module):
         outputs = torch.clamp(outputs, 0, 1)
         return outputs
 
-    def mutate(self, config:CPPNConfig):
+    def mutate(self, config:CPPNConfig, skip_update=False, pbar=False):
         """Mutates the CPPN based on the algorithm configuration."""
         add_node = config.prob_add_node
         add_connection = config.prob_add_connection
@@ -301,7 +302,8 @@ class CPPN(nn.Module):
         mutate_sgd_lr_sigma = config.mutate_sgd_lr_sigma
         
         rng = lambda: torch.rand(1).item()
-        for _ in range(config.topology_mutation_iters):
+        iters = range(config.topology_mutation_iters) if not pbar else trange(config.topology_mutation_iters, leave=False)
+        for _ in iters:
             if config.single_structural_mutation:
                 div = max(1.0, (add_node + remove_node +
                                 add_connection + disable_connection))
@@ -329,8 +331,9 @@ class CPPN(nn.Module):
             
         self.mutate_weights(mutate_weights, config)
         self.mutate_bias(mutate_bias, config)
-        self.update_layers()
-        self.disable_invalid_connections(config)
+        if not skip_update:
+            self.update_layers()
+            self.disable_invalid_connections(config)
         
         self.to(self.device) # TODO shouldn't need this
         
@@ -548,7 +551,7 @@ class CPPN(nn.Module):
         for _ in range(config.min_pruned - removed):
             if len(list(self.connections.keys())) == 0:
                 return removed
-            min_weight_key = min(self.connections.keys(), key=lambda k: self.connections[k].weight.item())
+            min_weight_key = min(self.connections.keys(), key=lambda k: abs(self.connections[k].weight.item()))
             removed += 1
             del self.connections[min_weight_key]
         # print("Pruned {} connections".format(removed))
