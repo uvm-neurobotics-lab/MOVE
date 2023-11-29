@@ -1,0 +1,73 @@
+{
+    "experiment_name": "bloat-then-min-prune",
+
+    "additional_controls":{
+        "total_offspring": 20000,
+        "stop_condition": "fwds",
+        "stop_condition_value": 30000,
+        "enforce_initial_fill": true,
+        "sgd_steps": 1000,
+        "batch_size": 1,
+        "initial_batch_size": 1,
+        "single_structural_mutation": false,
+        "n_fourier_features": 128,
+        "objective_functions": [
+            "psnr",
+            "mse",
+            "lpips",
+            "dists",
+            "ssim",
+            "haarpsi",
+            "vif",
+            "msssim",
+            "dss",
+            "gmsd"
+        ],
+        "prob_add_node": 0.50,
+        "prob_add_connection": 1.0,
+        "prob_remove_node": 0.15,
+        "prob_disable_connection": 0.00,
+        "prune_threshold": 0.0001,
+        "sgd_l2_reg": 0.0003,
+        "hidden_nodes_at_start": [0]
+    },
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png",
+        "data/apple.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "topology_mutation_iters",
+       "min_pruned"
+    ],
+
+
+    "levels":[
+        [1, 16, 64],
+        [0, 16, 63, 64]
+    ],
+
+    "skip_levels": [
+        [1, 16],
+        [1, 63],
+        [1, 64],
+        [16, 64],
+        [16, 63]
+    ],
+
+    "name_template": "bloat-then-min-prune-{topology_mutation_iters}-{min_pruned}"
+
+}
