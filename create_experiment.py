@@ -15,7 +15,7 @@ DEFAULT_TARGET = "data/skull.png"
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('plan', type=str, help='Path to plan json file.')
-    parser.add_argument('--template', '-t', type=str, default=DEFAULT_TEMPLATE, help='Path to template json file (default: default.json).')
+    parser.add_argument('--template', '-t', type=str, default=DEFAULT_TEMPLATE, help=f'Path to template json file (default: {DEFAULT_TEMPLATE}).')
     parser.add_argument('--output', '-o', type=str, default=None, help='Path to output json file (default: ../results/<experiment-name>).')
     parser.add_argument('--generated-output', '-g', type=str, default=None, help='Path to output json file (default: experiments/generated/<experiment-name>).')
     
@@ -61,7 +61,7 @@ if __name__ == "__main__":
         # cartesian product of all variables/levels
         level_pairs = list(itertools.product(*plan["levels"]))
         for pair in level_pairs:
-            if pair in skip_levels:
+            if list(pair) in skip_levels:
                 continue
             name = name_template.format(**dict(zip(plan["variables"], pair)))
             vars = dict(zip(plan["variables"], pair))

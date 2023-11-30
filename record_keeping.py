@@ -23,8 +23,8 @@ class Record():
         self.n_fwds = 0
         self.n_fwds_incl_sgd = 0
         self.n_evals_incl_sgd = 0
-        self.evals_by_batch = torch.ones((total_batches, 4), device='cpu')*-torch.inf
-        self.total_pruned = torch.ones((total_batches,2), device='cpu')*-torch.inf
+        self.evals_by_batch = torch.ones((num_data_points, 4), device='cpu')*-torch.inf
+        self.total_pruned = torch.ones((num_data_points,2), device='cpu')*-torch.inf
         
         if not self.low_mem:
             self.fitness_by_batch = torch.ones((n_fns, n_cells, num_data_points), device='cpu')*-torch.inf
@@ -37,6 +37,9 @@ class Record():
             self.offspring_by_batch = torch.ones((num_data_points), device='cpu')*-torch.inf
             self.cx_by_batch = torch.ones((num_data_points,3), device='cpu')*-torch.inf
             self.nodes_by_batch = torch.ones((num_data_points,3), device='cpu')*-torch.inf
+            self.time_elapsed = torch.ones((num_data_points), device='cpu')*-torch.inf
+            
+            self.start_time = time.time()
     
     def update_counts(self, index, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned,n_pruned_nodes):
         self.n_fwds += n_step_fwds
@@ -67,13 +70,16 @@ class Record():
             self.nodes_by_batch[index,1] = torch.min(torch.tensor([len(g.hidden_nodes) for g in map.map if g is not None], dtype=torch.float32))
             self.cx_by_batch[index,2] = torch.max(torch.tensor([len(g.enabled_connections) for g in map.map if g is not None], dtype=torch.float32))
             self.nodes_by_batch[index,2] = torch.max(torch.tensor([len(g.hidden_nodes) for g in map.map if g is not None], dtype=torch.float32))
+            self.time_elapsed[index] = time.time() - self.start_time
+            
 
     def save(self, run_dir):
         logging.info("Saving record")
         torch.save(self.agg_fitness_by_batch, os.path.join(run_dir, "agg_fitness_by_batch.pt"))
         
         torch.save(self.evals_by_batch, os.path.join(run_dir, "evals_by_batch.pt"))
-        torch.save(self.total_pruned, os.path.join(run_dir, "pruned_cxs.pt"))
+        torch.save(self.total_pruned[:,0], os.path.join(run_dir, "pruned_cxs.pt"))
+        torch.save(self.total_pruned[:,1], os.path.join(run_dir, "pruned_nodes.pt"))
         
         with open(os.path.join(run_dir, "evals.csv"), 'w') as f:
             f.write("total_fwds,total_fwds_incl_sgd,total_evals,total_evals_incl_sgd,total_fwds_backs\n")
@@ -90,6 +96,7 @@ class Record():
             torch.save(self.cx_by_batch, os.path.join(run_dir, "cx_by_batch.pt"))
             torch.save(self.nodes_by_batch, os.path.join(run_dir, "nodes_by_batch.pt"))
             torch.save(self.normed_fitness_by_batch, os.path.join(run_dir, "normed_fitness_by_batch.pt"))
+            torch.save(self.time_elapsed, os.path.join(run_dir, "time_elapsed_by_batch.pt"))
             
             
      

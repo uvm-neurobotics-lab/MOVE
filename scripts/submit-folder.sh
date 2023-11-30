@@ -9,30 +9,36 @@ folder=$1
 shift # past argument or value
 
 # named arguments from commandline
-while [[ $# -gt 1 ]]
+while [[ $# -gt 0 ]]
 do
-key="$1"
+  key="$1"
 
-case $key in
-    -r|--repeats)
-    repeats="$2"
-    shift # past argument
-    ;;
-    *)
-    echo "Unknown option $key"
-    exit 1
-    ;;
-esac
-shift # past argument or value
+  case $key in
+  # -d | --dry) is a flag (no value after it)
+      -d|--dry)
+      dry_run=1
+      shift # past argument
+      ;;
+      -r|--repeats)
+      repeats="$2"
+      shift # past argument
+      ;;
+      *)
+      echo "Unknown option $key"
+      exit 1
+      ;;
+  esac
+  shift # past argument or value
 done
 
 repeats=${repeats:-1}
+dry_run=${dry_run:-0}
 echo "Running $repeats times"
 
 out_dir="../results/$(basename $folder)"
 
 mkdir -p ../results/jobs
-
+echo "Dry run: $dry_run"
 for i in $(seq 1 $repeats); do
   for filename in ./$folder/*; do
       if [ -d "$filename" ]; then
@@ -40,6 +46,12 @@ for i in $(seq 1 $repeats); do
           continue
       fi
       echo "Submitting $filename to out_dir $out_dir"
-      sbatch scripts/submit-move-experiment.sh $filename $out_dir
+      if [ $dry_run -eq 0 ]; then
+        sbatch scripts/submit-move-experiment.sh $filename $out_dir
+      fi
+      if [ $dry_run -eq 1 ]; then
+        echo "would do: sbatch scripts/submit-move-experiment.sh $filename $out_dir"
+      fi
+
   done
 done
