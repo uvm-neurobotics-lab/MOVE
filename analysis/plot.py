@@ -1,4 +1,5 @@
 import argparse
+import numpy as np
 import pandas as pd
 import os
 import seaborn as sns
@@ -15,7 +16,10 @@ def process_tensor(result, name):
     if name in ['offspring_by_batch']:
         return result
     if name in ['pruned_cxs']:
-        return result[:,0] # only pruned connections (1 is nodes)
+        if len(result.shape) > 1:
+            return result[:,0] # only pruned connections (1 is nodes)
+        else:
+            return result
     if name in ['lr_by_batch']:
         return result.nanmean(dim=0)
     if name in ["fitness_by_batch", "normed_fitness_by_batch"]:
@@ -119,20 +123,28 @@ def plot_vs_batches(results, y, save_path=None, show=False, max_ofs=None):
         results = results[(results["offspring_by_batch"] <= max_ofs) & (results["offspring_by_batch"] > 0)]
     plot_xy(results, "batch", y, save_path, show)
 
-def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False):
+def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,smooth=None):
     results = results.drop(columns=[c for c in results.columns if c not in[ "condition", "target", 'run', 'batch', 'evals_by_batch', y]])
+    
+    num_points = len(results['batch'].unique())
+    if smooth is not None:
+        num_points = int(num_points * (1.0-smooth))
+    evals_by_batch = np.linspace(results['evals_by_batch'].min(),
+                                 results['evals_by_batch'].max(),
+                                 num_points)
+    # find closest evals 
+    results['evals'] = results['evals_by_batch'].apply(lambda x: evals_by_batch[np.argmin(np.abs(evals_by_batch - x))])
+    
     save_name = f"{y}_v_evals.png"
     if mean_by_target:
         results = results.groupby(["condition", 'run', 'batch']).mean(numeric_only=True).reset_index()
-        # take the mean evals_by_batch for each batch
-        results['evals_by_batch'] = results.groupby(["condition", "batch"])['evals_by_batch'].transform('mean')
+        save_name = f"{y}_v_evals_avg.png"
     else:
         results = results.groupby(["condition", "target", 'run','batch']).mean(numeric_only=True).reset_index()
-        # take the mean evals_by_batch for each batch
-        results['evals_by_batch'] = results.groupby(["condition", 'target', "batch"])['evals_by_batch'].transform('mean')
+    
     
     save_path = os.path.join(save_path, save_name)
-    plot_xy(results, "evals_by_batch", y, save_path, show, x_label="Forward passes")
+    plot_xy(results, "evals", y, save_path, show, x_label="Forward passes")
 
 
 def plot_vs_offspring(results, y, save_path=None, show=False, mean_by_target=False):

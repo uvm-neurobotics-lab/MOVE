@@ -5,7 +5,6 @@
         "total_offspring": 20000,
         "stop_condition": "fwds",
         "stop_condition_value": 30000,
-        "enforce_initial_fill": true,
         "sgd_steps": 1000,
         "batch_size": 1,
         "initial_batch_size": 1,
