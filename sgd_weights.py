@@ -38,7 +38,7 @@ def min_resize(imgs):
     return imgs
 
 
-def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
+def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None):
     if isinstance(genomes[0], tuple):
         genomes = [g for c_,ci_,g in genomes]
     all_params = []
@@ -143,6 +143,9 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3):
     for step in pbar:
         imgs = compiled_fn(inputs, genomes)
         loss = loss_fn(imgs, target)
+        
+        if record_loss is not None:
+            record_loss[step] = loss.item()
         
         if not loss.requires_grad:
             return step # no gradients, so we're done
