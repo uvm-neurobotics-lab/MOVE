@@ -13,6 +13,13 @@ import numpy as np
 import tqdm
 
 
+
+        
+def set_max_node_id(genomes_by_batch):
+    max_id = max([max([int(node.id) for node in cppn.nodes.values()]) for cppn in genomes_by_batch.values()])
+    CPPN.current_node_id = max_id + 1
+    
+
 def load_genome(path)->tuple[CPPN, MoveConfig]:
     device = "cuda" if torch.cuda.is_available() else "cpu"
     with open(path, "r") as f:
@@ -83,7 +90,7 @@ def show_image(cppn, inputs):
     plt.show()
 
 
-def show_image_grid(images, titles=[]):
+def show_image_grid(images, titles=[],save_name=None):
     num_images = len(images)
     
     # Calculate rows and cols based on the number of images
@@ -108,10 +115,12 @@ def show_image_grid(images, titles=[]):
         ax.axis("off")
         
     plt.tight_layout()
+    if save_name is not None:
+        plt.savefig(save_name)
     plt.show()
     
     
-def show_img_progression(genomes_by_batch, inputs):
+def show_img_progression(genomes_by_batch, inputs, save_name):
     plt.style.use("default")
     plt.rcParams.update({'font.size': 12})
     sorted_keys = sorted(genomes_by_batch.keys())
@@ -123,7 +132,8 @@ def show_img_progression(genomes_by_batch, inputs):
         num_cxs = len(genomes_by_batch[k].connections)
         titles.append(r"$\bf{"+str(k)+"}$: "+f"{num_nodes};{num_cxs}")
     
-    show_image_grid(imgs, titles)
+    
+    show_image_grid(imgs, titles, save_name)
     
 
 

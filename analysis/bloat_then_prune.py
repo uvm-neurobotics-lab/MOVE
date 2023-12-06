@@ -60,11 +60,6 @@ def bloat_connections(cppn, config, n):
     return bloated_cppn
 
 
-        
-def set_max_node_id(gens):
-    max_id = max([max([int(node.id) for node in cppn.nodes.values()]) for cppn in gens.values()])
-    CPPN.current_node_id = max_id + 1
-    
     
 def plot_genetic_difference_after_bloat(start, config, n=100):
     genetic_differences = []
