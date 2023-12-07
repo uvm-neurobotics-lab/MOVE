@@ -292,7 +292,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             n_pruned_nodes += nodes_pruned
                     
         # measure children
-        imgs = self.activate_population(new_children)
+        imgs = self.activate_population([g for _,_,g in new_children])
         fit_children, fc_normed = self.measure_fitness(new_children, imgs)
         agg_fc_normed = fc_normed.detach().mean(dim=1)
         # agg_fc_normed = agg_fc_normed.detach().mean(dim=1).to("cpu")

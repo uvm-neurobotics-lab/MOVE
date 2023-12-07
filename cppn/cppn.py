@@ -179,7 +179,10 @@ class CPPN(nn.Module):
                 self.nodes[node_id] = node
             
             for node_id in self.output_node_ids:
-                node = Node(config.output_activation, node_id)
+                if config.output_activation is None:
+                    node = Node(random_choice(config.activations), node_id)
+                else:
+                    node = Node(config.output_activation, node_id)
                 self.nodes[node_id] = node
             
             hidden_layers = {}

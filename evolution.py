@@ -226,7 +226,10 @@ class CPPNEvolutionaryAlgorithm(object):
 
         try:
             # Run algorithm
-            pbar = trange(self.config.total_offspring, desc=f"Run {self.run_number}")
+            if self.config.stop_condition is None:
+                pbar = trange(self.config.total_offspring, desc=f"Run {self.run_number}") # default progress
+            else:
+                pbar = trange(self.config.stop_condition_value, desc=f"Run {self.run_number}, {self.config.stop_condition}")
         
             while self.total_offspring < self.config.total_offspring:
                 self.batch_start()
@@ -244,8 +247,10 @@ class CPPNEvolutionaryAlgorithm(object):
                 
                 self.current_batch += 1
                 
-                # set pbar to self.total_offspring
-                pbar.n = self.total_offspring
+                if self.config.stop_condition is None:
+                    pbar.n = self.total_offspring # default progress
+                else:
+                    pbar.n = self.stop_condition.curr
                 pbar.refresh()
 
             

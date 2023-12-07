@@ -4,7 +4,7 @@
     "additional_controls":{
         "total_offspring": 20000,
         "stop_condition": "fwds",
-        "stop_condition_value": 30000,
+        "stop_condition_value": 100000,
         "sgd_steps": 1000,
         "batch_size": 1,
         "initial_batch_size": 1,
@@ -22,7 +22,8 @@
             "dss",
             "gmsd"
         ],
-        "init_connection_probability"
+        "init_connection_probability": 0.5,
+        "init_connection_probability_fourier": 0.10,
         "prob_add_node": 0.85,
         "prob_add_connection": 0.85,
         "prob_remove_node": 0.15,
@@ -51,24 +52,25 @@
     "mode": "grid",
 
     "variables":[
-       "topology_mutation_iters",
+       "connection_bloat",
        "min_pruned"
     ],
 
 
     "levels":[
-        [1, 16, 64],
-        [0, 16, 63, 64]
+        [0, 16, 64, 1024],
+        [0, 16, 64, 1024]
     ],
 
     "skip_levels": [
-        [1, 16],
-        [1, 63],
-        [1, 64],
+        [0, 16],
+        [0, 64],
+        [0, 1024],
         [16, 64],
-        [16, 63]
+        [16, 1024],
+        [64, 1024]
     ],
 
-    "name_template": "bloat-then-min-prune-{topology_mutation_iters}-{min_pruned}"
+    "name_template": "bloat-then-min-prune-{connection_bloat}-{min_pruned}"
 
 }

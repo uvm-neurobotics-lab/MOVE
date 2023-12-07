@@ -4,34 +4,42 @@ import math
 
 class StopCondition():
     def __init__(self,value: int = None) -> None:
+        self.curr = 0
         self.value = value
     
     def __call__(self, alg) -> bool:
+        self.curr = -1
         return False
     
 class StopAfterGenerations(StopCondition):
     def __call__(self, alg) -> bool:
-        return alg.gen >= self.value
+        self.curr = alg.gen
+        return self.curr >= self.value
     
 class StopAfterBatches(StopCondition):
     def __call__(self, alg) -> bool:
-        return alg.current_batch >= self.value
+        self.curr = alg.current_batch
+        return self.curr >= self.value
     
 class StopAfterEvals(StopCondition):
     def __call__(self, alg) -> bool:
-        return alg.record.n_evals_incl_sgd >= self.value
+        self.curr = alg.record.n_evals_incl_sgd
+        return self.curr >= self.value
     
 class StopAfterEvalsNoSGD(StopAfterEvals):
     def __call__(self, alg) -> bool:
-        return alg.record.n_evals >= self.value
+        self.curr = alg.record.n_evals
+        return self.curr >= self.value
     
 class StopAfterFwdCalls(StopCondition):
     def __call__(self, alg) -> bool:
-        return alg.record.n_fwds_incl_sgd >= self.value
+        self.curr = alg.record.n_fwds_incl_sgd
+        return  self.curr >= self.value
     
 class StopAfterFwdCallsNoSGD(StopCondition):
     def __call__(self, alg) -> bool:
-        return alg.record.n_fwds >= self.value
+        self.curr = alg.record.n_fwds
+        return self.curr >= self.value
     
 class StopAfterSeconds(StopCondition):
     def __init__(self, value: float):
@@ -40,7 +48,8 @@ class StopAfterSeconds(StopCondition):
         self.start_time = time.time()
         
     def __call__(self, alg) -> bool:
-        return time.time() - self.start_time >= self.seconds
+        self.curr = time.time() - self.start_time
+        return self.curr >= self.seconds
     
     
 class StopAfterMeanFitness(StopCondition):
@@ -49,7 +58,8 @@ class StopAfterMeanFitness(StopCondition):
         self.mean_fit = value
         
     def __call__(self, alg) -> bool:
-        return alg.solution_fitness >= self.value
+        self.curr = alg.solution_fitness
+        return self.curr >= self.value
     
 
 class StopAfterMaxStagnation(StopCondition):
@@ -66,6 +76,7 @@ class StopAfterMaxStagnation(StopCondition):
         if self.last_fits is None:
             self.last_fits = alg.fitnesses.max(dim=1)
             self.stagnation = [0] * len(self.last_fits)
+            self.curr = 0
             return False
         else:
             new_fits = alg.fitnesses.max(dim=1)
@@ -75,7 +86,8 @@ class StopAfterMaxStagnation(StopCondition):
                 else:
                     self.stagnation[i] += 1
             self.last_fits = new_fits
-            return self.agg(self.stagnation) >= self.patience
+            self.curr = self.agg(self.stagnation)
+            return self.curr >= self.patience
 
 
 class StopAfterMinStagnation(StopCondition):
