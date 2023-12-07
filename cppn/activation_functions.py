@@ -295,6 +295,38 @@ class KernelEmbossActivation(BaseConvActivation):
         return self.activation(self.conv(x)).squeeze(0)
 
 
+class NormalizeActivation(torch.nn.Module):
+    def __init__(self):
+        super(NormalizeActivation, self).__init__()
+        return
+    def forward(self, x):
+        range = torch.max(x) - torch.min(x)
+        if range == 0:
+            return x
+        return (x - torch.min(x)) / range
+    
+class NormalizeNeg1To1Activation(torch.nn.Module):
+    def __init__(self):
+        super(NormalizeNeg1To1Activation, self).__init__()
+        return
+    def forward(self, x):
+        range = torch.max(x) - torch.min(x)
+        if range == 0:
+            return x
+        x = (x - torch.min(x)) / range
+        return x * 2.0 - 1.0
+    
+class StandardizeActivation(torch.nn.Module):
+    def __init__(self):
+        super(StandardizeActivation, self).__init__()
+        return
+    def forward(self, x):
+        mean = torch.mean(x)
+        std = torch.std(x)
+        if std == 0:
+            return x
+        return (x - mean) / std
+
 
 TORCH_ACTIVATION_FUNCTIONS={
     "Tanh": torch.nn.Tanh,

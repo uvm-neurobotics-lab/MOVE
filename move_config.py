@@ -86,7 +86,8 @@ class MoveConfig(CPPNConfig):
         
 
         self.hidden_nodes_at_start = (16, )
-        self.init_connection_probability = 0.55
+        self.init_connection_probability = 0.50
+        self.init_connection_probability_fourier = 0.10
         self.prune_threshold = 0.0 # don't prune
         self.prune_threshold_nodes = 0.0 # don't prune nodes
         self.min_pruned = 0
@@ -130,7 +131,7 @@ class MoveConfig(CPPNConfig):
         self.prob_add_node = .85 # 0.03 in original NEAT
         self.prob_remove_node = 0.15
         self.prob_disable_connection = .15
-        self.single_structural_mutation = True
+        self.single_structural_mutation = False
         self.topology_mutation_iters = 1
         self.connection_bloat = 0 # don't bloat extra connections
         

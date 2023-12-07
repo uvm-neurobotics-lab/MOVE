@@ -160,7 +160,8 @@ class CPPN(nn.Module):
             self.initialize_connection_genome(hidden_layers,
                                               config.init_connection_probability,
                                               config.init_connection_probability_fourier,
-                                              config.weight_init_std)
+                                              config.weight_init_std,
+                                              fourier_cutoff=-(config.num_inputs - config.n_fourier_features))
             
             self.update_layers()
         
@@ -173,8 +174,12 @@ class CPPN(nn.Module):
                 n_hidden = (n_hidden,)
                 
             
-            for node_id in self.input_node_ids + self.output_node_ids:
+            for node_id in self.input_node_ids:
                 node = Node(af.IdentityActivation, node_id)
+                self.nodes[node_id] = node
+            
+            for node_id in self.output_node_ids:
+                node = Node(config.output_activation, node_id)
                 self.nodes[node_id] = node
             
             hidden_layers = {}
@@ -184,26 +189,34 @@ class CPPN(nn.Module):
                     new_id = type(self).get_new_node_id()
                     node = Node(random_choice(config.activations), new_id)
                     self.nodes[new_id] = node
+                    node.layer = i+1
                     hidden_layers[layer].append(node)
                 
             return hidden_layers
             
     
-    def initialize_connection_genome(self, hidden_layers, initial_connection_prob=1.0, init_connection_prob_fourier=1.0, weight_std=1.0):
+    def initialize_connection_genome(self, hidden_layers, initial_connection_prob=1.0, init_connection_prob_fourier=1.0, weight_std=1.0, fourier_cutoff=-4):
         """Initializes the connection genome of the CPPN."""
+        def is_fourier(node_id):
+            if init_connection_prob_fourier is None:
+                return False
+            return int(node_id) < fourier_cutoff
+        
         prev_layer = self.input_nodes
         for layer in hidden_layers.values():
             for node in layer:
                 for prev_node in prev_layer:
-                    prob = initial_connection_prob if (int(prev_node.id) > -4 and int(prev_node.id) < 0) or init_connection_prob_fourier is None else init_connection_prob_fourier
-                    if torch.rand(1) < prob:
+                    prob = init_connection_prob_fourier if is_fourier(prev_node.id) else initial_connection_prob
+                    if torch.rand(1, dtype=torch.float32) < prob:
                         self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
             if len(layer) > 0:
                 prev_layer = layer
+        
+        
         for node in self.output_nodes:
             for prev_node in prev_layer:
-                prob = initial_connection_prob if (int(prev_node.id) > -4 and int(prev_node.id) < 0) or init_connection_prob_fourier is None else init_connection_prob_fourier
-                if torch.rand(1) < prob:
+                prob = init_connection_prob_fourier if is_fourier(prev_node.id) else initial_connection_prob
+                if torch.rand(1, dtype=torch.float32) < prob:
                     self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
             
     
@@ -503,6 +516,7 @@ class CPPN(nn.Module):
                 node.set_activation(random_choice(config.activations))
 
 
+
     def mutate_weights(self, prob, config):
         """
         Each connection weight is perturbed with a fixed probability by
@@ -727,6 +741,7 @@ class CPPN(nn.Module):
             CPPNClass = CPPN
         new_cppn = CPPNClass(config, do_init=False)
         new_cppn.from_json(json_dict)
+        new_cppn.to(config.device)
         return new_cppn
     
     
