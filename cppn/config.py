@@ -93,6 +93,7 @@ class CPPNConfig:
         self.target_resize = None # use original size
         
         self.topology_mutation_iters = 1 # number of times to mutate the genome
+        self.connection_bloat = 0 # don't bloat
         
         self.output_dir = None
         self.experiment_condition = "_default"
@@ -239,18 +240,18 @@ class CPPNConfig:
                 self.target = torch.tensor(iio.imread(self.target), dtype=torch.float32, device=self.device)
             except FileNotFoundError:
                 self.target = None
-        try:
-            if hasattr(self, "fitness_function") and isinstance(self.fitness_function, str):
-                self.fitness_function = name_to_fn[self.fitness_function]
-        except ValueError:
-            self.fitness_function = None
+        # try:
+        #     if hasattr(self, "fitness_function") and isinstance(self.fitness_function, str):
+        #         self.fitness_function = name_to_fn[self.fitness_function]
+        # except ValueError:
+        #     self.fitness_function = None
         self.output_activation = name_to_fn[self.output_activation] if (isinstance(self.output_activation, str) and len(self.output_activation)>0) else self.output_activation
         
        
         if isinstance(self.dtype, str):
             self.dtype = getattr(torch, self.dtype.removeprefix("torch."))
         
-        if hasattr(self, "fitness_function") and self.fitness_schedule is not None:
+        if hasattr(self, "fitness_schedule") and self.fitness_schedule is not None:
             for i, fn in enumerate(self.fitness_schedule):
                 if isinstance(fn, str):
                     self.fitness_schedule[i] = name_to_fn(fn)

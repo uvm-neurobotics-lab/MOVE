@@ -78,6 +78,7 @@ def correct_dims(candidates, target):
 
    if f.shape[0] !=1 and r.shape[0] == 1:
       # only one target in batch, repeat for comparison
+      logging.warning(f"Only one target in batch but {f.shape[0]} candidates. Repeating target for comparison.")
       r = torch.stack([r.squeeze() for _ in range(f.shape[0])])
 
    return f,r

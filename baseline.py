@@ -4,17 +4,29 @@ import pandas as pd
 import torch
 from torchvision.transforms import Resize
 
-from cppn_torch import ImageCPPN
-from cppn_torch.cppn import random_choice
-from cppn_torch.graph_util import activate_population
-from evolution_torch import CPPNEvolutionaryAlgorithm
+from cppn import CPPN as ImageCPPN
+from cppn.cppn import random_choice
+from evolution import CPPNEvolutionaryAlgorithm
+from move_config import MoveConfig
 import logging
 
 import fitness.fitness_functions as ff
 from run_setup import run_setup
 from sgd_weights import sgd_weights
-from cppn_torch.fourier_features import add_fourier_features
+from cppn.fourier_features import add_fourier_features
 from norm import norm_tensor, read_norm_data
+from util import *
+from cppn.util import *
+from record_keeping import Record
+
+class BaselineConfig(MoveConfig):
+    def __init__(self):
+        super().__init__()
+        self.fitness_function = "aggregate"
+        self.name = 'default_baseline'
+        self.alg = "baseline"
+        self.fitness_function = "aggregate"
+        # self.fitness_function = ff.fsim
 
 fns = [
         ff.psnr,
@@ -22,7 +34,7 @@ fns = [
         ff.lpips,
         ff.dists,
         ff.ssim,
-        ff.style,
+        # ff.style,
         ff.haarpsi,
         ff.vif,
         ff.msssim,
@@ -98,6 +110,7 @@ def aggregate_fitness(genomes, target, norm_df, inputs, skip_genotype=False):
             
     return normed_fits.mean(dim=1)
 
+
 class Baseline(CPPNEvolutionaryAlgorithm):
     def __init__(self, config, debug_output=False) -> None:
         self.config = copy.deepcopy(config)
@@ -114,35 +127,18 @@ class Baseline(CPPNEvolutionaryAlgorithm):
         
         
         res_h, res_w = self.config.res_h, self.config.res_w
-        
-        self.inputs = ImageCPPN.initialize_inputs(
-                res_h//2**config.num_upsamples,
-                res_w//2**config.num_upsamples,
-                self.config.use_radial_distance,
-                self.config.use_input_bias,
-                self.config.num_inputs,
-                self.config.device,
-                coord_range=self.config.coord_range
-                )
-        if self.config.use_fourier_features:
-            self.inputs = add_fourier_features(
-                self.inputs,
-                self.config.n_fourier_features,
-                self.config.fourier_feature_scale,
-                dims=self.inputs.shape[-1],
-                include_original=True,
-                mult_percent=self.config.get("fourier_mult_percent", 0.0),
-                sin_and_cos=self.config.fourier_sin_and_cos
-                )
-            self.config.num_inputs = self.inputs.shape[-1]
+        self.init_inputs()
         
         self.is_aggregate = False
         self.skip_norm = False
         if self.config.fitness_function == "aggregate":
             self.is_aggregate = True
             self.config.fitness_function = lambda x,y: aggregate_fitness(x, y, self.norm_df, self.inputs, False)
+            self.config.fitness_function.__name__ = "aggregate"
+            ff.register_fitness_function("aggregate", self.config.fitness_function)
             self.skip_norm = True
             self.sgd_fitness_function = lambda x,y: aggregate_fitness(x, y, self.norm_df, self.inputs, True)
+            self.n_fns = len(fns)
         
         super().__init__(self.config, debug_output)
         
@@ -156,68 +152,123 @@ class Baseline(CPPNEvolutionaryAlgorithm):
             self.config.autoencoder_frequency = 0 # does not use autoencoder
             logging.warning("algorithm does not use autoencoder, setting autoencoder_frequency to 0")
             
-        os.makedirs(os.path.join(self.config.output_dir,"images"), exist_ok=True)
         self.lowest_fitness = torch.inf
         
          # repeat the target for easy comparison
-        self.target = torch.stack([self.target.squeeze() for _ in range(self.config.num_cells)])
-
-        # if len(self.config.color_mode) > 1:
-        self.target = self.target.permute(0, 3, 1, 2) # move color channel to front
+        self.init_target()
         
-        self.target = self.target[:self.config.num_children]
-        print(self.target.shape)
+        self.fitness_function = self.config.fitness_function
         
-        # else:
-            # print(self.target.shape)
-            # self.target = self.target.permute()
-            
-        if self.target.shape[-2] < 32 or self.target.shape[-1] < 32:
-                self.target = Resize((32,32),antialias=True)(self.target)
+        assert config.batch_size == config.initial_batch_size, "Baseline is generational, batch_size must equal initial_batch_size"
         
-    def generation_end(self):
+        self.record = Record(self.config, 1, 1, self.total_batches, self.config.low_mem)
+        
+        self.total_offspring = self.config.initial_batch_size # started with initial batch size
+        
+        self.fitness = torch.ones((1, 1), device=self.config.device)*-torch.inf # fns in each cell
+        self.normed_fitness = torch.ones((1, 1), device=self.config.device)*-torch.inf # fns in each cell
+        self.agg_fitness = torch.zeros((1), device="cpu") # fitness of each cell (normed)
+        
+    def batch_end(self):
         """Called at the end of each generation"""
         self.solution_fitness = -torch.inf # force to update
         global CURRENT_GEN
         CURRENT_GEN += 1 
-        super().record_keeping()
         
+        self.record.batch_end(self, skip_fitness=False)
+        
+        self.avg_nodes = sum([len(g.nodes) for g in self.population]) / len(self.population)
+        self.avg_enabled_connections = sum([len(g.enabled_connections) for g in self.population]) / len(self.population)
+        
+        self.gen = self.total_offspring // self.config.batch_size
+        
+        if self.current_batch in [0, ] or (self.current_batch+1)%10 == 0:
+            b = self.get_best()
+            if b is not None:
+                b.save(os.path.join(self.genomes_dir, f"batch_{self.current_batch:04d}.json"), self.config)
+        
+        
+    def run_one_batch(self):
+        # always generational:
+        self.run_one_generation()
+    
+    
     def run_one_generation(self):
         assert self.fitness_function is not None
             
-        # reproduce
         min_fit = self.population[-1].fitness.item()
         if min_fit < self.lowest_fitness:
             self.lowest_fitness = min_fit
         
+        # reproduce
         self.population = self.selection_and_reproduction()
-        self.population = sorted(self.population, key=lambda x: x.fitness.item(), reverse=True) # sort by fitness
         
-    def update_fitnesses_and_novelty(self):
-        return # handled in selection_and_reproduction
+        # sort
+        self.population = sorted(self.population, key=lambda x: x.fitness.item(), reverse=True) # sort by fitness
+        self.agg_fitnesses = {self.population[i].id:self.population[i].fitness.item() for i in range(len(self.population))}
+        
+        
+        if alg.current_batch % self.config.record_frequency_batch != 0:
+            pass # don't record
+        else:
+            index = self.current_batch // self.config.record_frequency_batch
+            self.record.update(index,
+                                None,
+                                self.fitness,
+                                self.normed_fitness,
+                                self.agg_fitness,
+                                self.population[:1], # elite
+                                self.total_offspring
+                                )
+                                
+                                
+                                
+    def update_fitnesses_and_novelty(self, population=None):
+        if population is None:
+            population = self.population # assume whole population
+            
+        if self.config.dry_run:
+            fits = torch.rand(len(population))
+        else:
+            if self.fit_measures_genomes:
+                fits = self.fitness_function(population, self.target)
+            else:
+                if self.config.activation_mode == "population":
+                    imgs = self.activate_population(population, self.config, self.inputs)
+                else:
+                    imgs = torch.stack([g(self.inputs) for g in population])
+                    
+                imgs, target = ff.correct_dims(imgs, self.target)
+                fits = self.fitness_function(imgs, target)
+                
+        for i, g in enumerate(population):
+            g.fitness = fits[i]
+
 
     def selection_and_reproduction(self):
         assert self.fitness_function is not None
         
         # reproduce
-        new_children = []
-        for i in range(self.config.num_children):
+        new_children:list[ImageCPPN] = []
+        for i in range(self.config.batch_size):
             if self.config.do_crossover:
-                parent1 = self.population[0] 
+                parent1 = self.population[0]
                 parent2 = random_choice(self.population, 1, True)[0]
-                child = parent1.crossover(parent2)
+                child = parent1.crossover(parent2, self.config)
             else:
-                parent = self.population[0]
-                child = parent.clone(new_id=True)
+                parent = self.population[0] # simple hill climber
+                child = parent.clone(self.config, new_id=True)
 
-            child.mutate()
+            child.mutate(self.config)
             new_children.append(child)
+        
+        self.total_offspring += len(new_children)
         
         if self.config.with_grad and (self.gen+1) % self.config.grad_every == 0:
             # do SGD update
             norm = None if self.skip_norm else self.norm_df
             # sgd_weights([(i,g) for g in new_children], 
-            sgd_weights(new_children, 
+            steps = sgd_weights(new_children, 
                     # mask   = self.map.Fm_mask.T,
                     mask    = None, # can mask loss by Fm_mask, results in more exploitation within cells
                     inputs  = self.inputs,
@@ -225,46 +276,50 @@ class Baseline(CPPNEvolutionaryAlgorithm):
                     fns     = [self.sgd_fitness_function],
                     norm    = norm,
                     config  = self.config)
-                
-
-        if self.config.dry_run:
-            fits = torch.rand(len(new_children))
-        else:
-            if self.fit_measures_genomes:
-                fits = self.fitness_function(new_children, self.target)
-            else:
-                if self.config.activation_mode == "population":
-                    imgs = activate_population(new_children, self.config, self.inputs)
-                else:
-                    imgs = torch.stack([g.get_image(inputs=self.inputs) for g in new_children])
+              
+        # Pruning  
+        n_pruned, n_pruned_nodes = 0,0
+        for child in new_children:
+            cx_pruned,nodes_pruned = child.prune(self.config)
+            n_pruned += cx_pruned
+            n_pruned_nodes += nodes_pruned
                     
-                imgs, target = ff.correct_dims(imgs, self.target)
-                fits = self.fitness_function(imgs, target)
-                
+
+        self.update_fitnesses_and_novelty(new_children)
+        
+        # replace parent
         for i, g in enumerate(new_children):
-            g.fitness = fits[i]
             if g.fitness > self.population[0].fitness:
                 self.population[0] = g
+
+        self.fitness = torch.tensor([self.population[0].fitness.item()], device=self.config.device).unsqueeze(0)
+        self.normed_fitness = torch.tensor([self.population[0].fitness.item()], device=self.config.device).unsqueeze(0)
+        self.agg_fitness = torch.tensor([self.population[0].fitness.item()], device=self.config.device).unsqueeze(0)
+        
+        n_step_fwds = len(new_children)
+        n_step_fwds_incl_sgd = n_step_fwds+(n_step_fwds * steps) if self.config.with_grad else n_step_evals
+        n_step_evals = len(new_children) * (1 if not self.is_aggregate else self.n_fns)
+        n_step_evals_incl_sgd = n_step_evals+(n_step_evals * steps) if self.config.with_grad else n_step_evals
+        self.record.update_counts(self.current_batch, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes)
+
 
         return self.population
     
     def on_end(self):
+        super().on_end()
+                
+        # save fitness over time
+        self.record.save(self.run_dir) # save statistics
+        
         sorted_pop = sorted(self.population, key=lambda x: x.fitness.item(), reverse=True) # sort by fitness
         highest_fitness = sorted_pop[0].fitness.item()
-        img_path = os.path.join(self.config.output_dir, "images", "top", self.config.experiment_condition)
-        os.makedirs(img_path, exist_ok=True)
-        self.save_best_img(os.path.join(img_path, f"run_{self.config.run_id}_{self.config.target_name.replace('/','-')}_{highest_fitness}.png"))
         
         if self.is_aggregate:
-            cond_dir = os.path.join(self.config.output_dir, "conditions", self.config.experiment_condition)
-            run_dir = os.path.join(cond_dir, f"run_{self.config.run_id}")
-            os.makedirs(run_dir, exist_ok=True)
-            # fit_df.to_csv(os.path.join(cond_dir, f"run_{self.config.run_id}_max_fits.csv"))
             global fit_df
-            # fit_df = fit_df.reset_index()
             fit_df["target"] = self.config.target_name
-            fit_df.to_pickle(os.path.join(run_dir, f"fits.pkl"))
+            fit_df.to_pickle(os.path.join(self.run_dir, f"fits.pkl"))
         
+        # record ranges
         filename_max = os.path.join(self.config.output_dir, "fits", self.config.experiment_condition, f"max_fit.txt")
         filename_min = os.path.join(self.config.output_dir, "fits", self.config.experiment_condition, f"min_fit.txt")
         
@@ -285,10 +340,11 @@ class Baseline(CPPNEvolutionaryAlgorithm):
             if self.lowest_fitness < old_min:
                 old_min = self.lowest_fitness
             f.write(str(old_min))
-        return super().on_end()
+    
     
 
+
 if __name__ == '__main__':
-    for config, verbose in run_setup():
+    for config, verbose in run_setup(BaselineConfig):
         alg = Baseline(config, debug_output=verbose)
-        alg.evolve()
+        alg.evolve(initial_population=True)

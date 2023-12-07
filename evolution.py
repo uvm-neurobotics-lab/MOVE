@@ -1,3 +1,5 @@
+import copy
+import json
 import math
 import random
 import time
@@ -16,10 +18,15 @@ import pandas as pd
 import torch
 import os
 from cppn.cppn import CPPN
-import logging
+from cppn.util import *
 from stopping import *
+import logging
 from util import get_dynamic_mut_rate
+import fitness.fitness_functions as ff
+from torchvision.transforms import Resize
+from cppn.visualize import visualize_network
 
+from cppn.fourier_features import add_fourier_features
 
 class CPPNEvolutionaryAlgorithm(object):
     def __init__(self, config, debug_output=False) -> None:
@@ -49,7 +56,7 @@ class CPPNEvolutionaryAlgorithm(object):
         self.solutions_over_time = []
         self.time_elapsed = 0
         self.solution_generation = -1
-        self.population = []
+        self.population: list[CPPN] = []
         self.solution = None
         self.this_gen_best = None
         self.novelty_archive = []
@@ -105,6 +112,48 @@ class CPPNEvolutionaryAlgorithm(object):
         self.genomes_dir = os.path.join(self.run_dir, "genomes")
         os.makedirs(self.genomes_dir, exist_ok=True)
 
+    def init_inputs(self):
+        res_h, res_w = self.config.res_h, self.config.res_w
+        self.inputs = initialize_inputs(
+                res_h//2**self.config.num_upsamples,
+                res_w//2**self.config.num_upsamples,
+                self.config.use_radial_distance,
+                self.config.use_input_bias,
+                self.config.num_inputs,
+                self.config.device,
+                coord_range=self.config.coord_range
+                )
+        if self.config.use_fourier_features:
+            self.inputs = add_fourier_features(
+                self.inputs,
+                self.config.n_fourier_features,
+                self.config.fourier_feature_scale,
+                dims=2,
+                include_original=True,
+                mult_percent=self.config.get("fourier_mult_percent", 0.0),
+                sin_and_cos=self.config.fourier_sin_and_cos
+                )
+        self.config.num_inputs = self.inputs.shape[-1]
+        self.inputs = self.inputs.to(self.config.device)
+        
+        
+    def init_target(self):
+        # repeat the target for easy comparison
+        self.target = torch.stack([self.target.squeeze() for _ in range(self.config.initial_batch_size)])
+
+        if len(self.target.shape) > 3:
+            self.target = self.target.permute(0, 3, 1, 2) # move color channel to front
+        else:
+            self.target = self.target.unsqueeze(1).repeat(1,3,1,1) # add color channel
+            
+        if self.target.shape[-2] < 32 or self.target.shape[-1] < 32:
+                self.target = Resize((32,32), antialias=True)(self.target)
+        
+        self.target = torch.clamp(self.target, 0, 1)
+        
+        # save target to output directory
+        target_path = os.path.join(self.cond_dir, "target.png")
+        plt.imsave(target_path, self.target[0].permute(1,2,0).cpu().numpy())
     
     def get_mutation_rates(self):
         """Get the mutate rates for the current generation 
@@ -139,24 +188,41 @@ class CPPNEvolutionaryAlgorithm(object):
             # just return the config values directly
             return  self.config.prob_mutate_activation, self.config.prob_mutate_weight, self.config.prob_add_connection, self.config.prob_add_node, self.config.prob_remove_node, self.config.prob_disable_connection, self.config.weight_mutation_max, self.config.prob_reenable_connection
 
+
+    def activate_population(self, genomes):
+        if self.config.activation_mode == 'population':
+            imgs = activate_population(genomes, self.config, self.inputs)
+        else:
+            if self.config.thread_count > 1:
+                imgs = activate_population_async(genomes,
+                                                 self.in_queue,
+                                                 self.out_queue,
+                                                 self.target,
+                                                 self.config)
+            else:
+                imgs = torch.stack([g(self.inputs) for g in genomes])
+            
+            imgs = imgs.clamp_(0,1)
+        imgs, self.target = ff.correct_dims(imgs, self.target)
+        return imgs
+
     def evolve(self, run_number = 1, show_output=False, initial_population=True):
         self.start_time = time.time()
         self.run_number = run_number
         self.show_output = show_output or self.debug_output
         if initial_population:
-            for i in range(self.config.num_cells): 
+            for i in range(self.config.initial_batch_size): 
                 self.population.append(self.genome_type(self.config)) # generate new random individuals as parents
             
             # update novelty encoder 
-            if self.config.novelty_mode == "encoder":  
+            if self.config.get("novelty_mode", None) == "encoder":  
                 initialize_encoders(self.config, self.target)  
-            if self.config.activation_mode == "population":
-                activate_population(self.population, self.config, self.inputs)
-            else:
-                for g in self.population: g(inputs=self.inputs)
+                
+            self.activate_population(self.population)
+            
             self.update_fitnesses_and_novelty()
-            self.population = sorted(self.population, key=lambda x: x.fitness.item(), reverse=True) # sort by fitness
-            self.solution = self.population[0].clone(cpu=True) 
+            self.population:list[CPPN] = sorted(self.population, key=lambda x: x.fitness.item(), reverse=True) # sort by fitness
+            self.solution = self.population[0].clone(self.config, cpu=True) 
 
         try:
             # Run algorithm
@@ -198,11 +264,23 @@ class CPPNEvolutionaryAlgorithm(object):
         # save results
         print("Saving data...")
         self.run_number = self.config.run_id
+
+             
+        # save config file
+        with open(os.path.join(self.run_dir, "config.json"), "w") as f:
+            json.dump(copy.deepcopy(self.config).to_json(), f, indent=4)
         
+        with open(os.path.join(self.run_dir, "total_offspring.txt"), "w") as f:
+            f.write(str(self.total_offspring))
+            
+        torch.save(self.inputs, os.path.join(self.run_dir, "inputs.pt")) # save inputs
         
      
         with open(os.path.join(self.run_dir, f"target.txt"), 'w') as f:
             f.write(self.config.target_name)
+        
+        self.save_best_img(os.path.join(self.image_dir, f"best_{self.config.run_id:04d}.png"), do_graph=True)
+        print("Saved run to: ", self.run_dir)
         
         # save to run dir
         # save to output dir
@@ -254,4 +332,43 @@ class CPPNEvolutionaryAlgorithm(object):
             return None
         max_fitness_individual = max(self.population, key=lambda x: self.agg_fitnesses[x.id])
         return max_fitness_individual
+    
+    def save_best_img(self, fname, do_graph=False, show_target=False):
+        # if not do_graph and not self.gen % 10 == 0:
+        #     return
+        b = self.get_best()
+        if b is None:
+            return
+        # b.to(self.config.device)
+        img = b(self.inputs, channel_first=False, act_mode="node")
+        if len(self.config.color_mode)<3:
+            img = img.repeat(1, 1, 3)
+        
+        img = torch.clamp(img,0,1).detach().cpu().numpy()
+        
+        # show as subplots
+        if show_target:
+            fig, (ax1, ax2) = plt.subplots(1, 2)
+            ax1.imshow(img, cmap='gray')
+            ax2.imshow(self.target.squeeze(), cmap='gray')
+            ax1.set_title("Champion")
+            ax2.set_title("Target")
+            plt.savefig(fname)
+
+        else:
+            plt.imsave(fname, img, cmap='gray')
+        
+        plt.close()
+        
+        # if self.gen % 10 == 0:
+        #     do_graph = True # always do graph 
+        
+        if do_graph:
+            c_b = b.clone(self.config, new_id=False)
+            # c_b.forward(self.inputs)
+            # c_b.vis(fname.replace(".png", "_torch_graph"))
+            c_b.vis(self.inputs, fname.replace(".png", "_torch_graph"))
+            
+            visualize_network(b, self.config, save_name=fname.replace(".png", "_graph.png"))
+            plt.close()
     

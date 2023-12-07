@@ -328,7 +328,10 @@ class CPPN(nn.Module):
                     self.add_connection(config)
                 if rng() < disable_connection:
                     self.disable_connection()
-            
+        
+        for _ in range(config.connection_bloat):
+            self.add_connection(config)
+        
         self.mutate_weights(mutate_weights, config)
         self.mutate_bias(mutate_bias, config)
         if not skip_update:

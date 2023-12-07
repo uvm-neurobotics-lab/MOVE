@@ -53,24 +53,25 @@ class Record():
         self.evals_by_batch[index,2] = n_step_evals
         self.evals_by_batch[index,3] = n_step_evals_incl_sgd
     
-    def update(self, index, all_replacements, map, total_offspring):
-        self.agg_fitness_by_batch[:,index] = map.agg_fitness.cpu()
+    def update(self, index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring):
+        self.agg_fitness_by_batch[:,index] = agg_fitnesses.cpu()
         if not self.low_mem:
-            self.fitness_by_batch[:,:,index] = map.fitness.cpu()
-            self.normed_fitness_by_batch[:,:,index] = map.normed_fitness.cpu()
-            self.replacements_by_batch[:,:,index] = all_replacements.cpu()
+            self.fitness_by_batch[:,:,index] = fitnesses.cpu()
+            self.normed_fitness_by_batch[:,:,index] = normed_fitnesses.cpu()
             # self.votes_by_batch[:,:,:,index] = all_votes
-            self.ids_by_batch[:,index] = torch.tensor([-1 if g is None else g.id for g in map.map]).cpu()
-            self.parents_by_batch[:,:,index] = torch.tensor([[-1 if g is None else g.parents[0] for g in map.map], [-1 if g is None else g.parents[1] for g in map.map]]).cpu()
-            self.lr_by_batch[:,index] = torch.tensor([-torch.inf if g is None else g.sgd_lr for g in map.map], dtype=torch.float32)
+            self.ids_by_batch[:,index] = torch.tensor([-1 if g is None else g.id for g in population]).cpu()
+            self.parents_by_batch[:,:,index] = torch.tensor([[-1 if g is None else g.parents[0] for g in population], [-1 if g is None else g.parents[1] for g in population]]).cpu()
+            self.lr_by_batch[:,index] = torch.tensor([-torch.inf if g is None else g.sgd_lr for g in population], dtype=torch.float32)
             self.offspring_by_batch[index] = total_offspring
-            self.cx_by_batch[index,0] = torch.mean(torch.tensor([len(g.enabled_connections) for g in map.map if g is not None], dtype=torch.float32))
-            self.nodes_by_batch[index,0] = torch.mean(torch.tensor([len(g.hidden_nodes) for g in map.map if g is not None], dtype=torch.float32))
-            self.cx_by_batch[index,1] = torch.min(torch.tensor([len(g.enabled_connections) for g in map.map if g is not None], dtype=torch.float32))
-            self.nodes_by_batch[index,1] = torch.min(torch.tensor([len(g.hidden_nodes) for g in map.map if g is not None], dtype=torch.float32))
-            self.cx_by_batch[index,2] = torch.max(torch.tensor([len(g.enabled_connections) for g in map.map if g is not None], dtype=torch.float32))
-            self.nodes_by_batch[index,2] = torch.max(torch.tensor([len(g.hidden_nodes) for g in map.map if g is not None], dtype=torch.float32))
+            self.cx_by_batch[index,0] = torch.mean(torch.tensor([len(g.enabled_connections) for g in population if g is not None], dtype=torch.float32))
+            self.nodes_by_batch[index,0] = torch.mean(torch.tensor([len(g.hidden_nodes) for g in population if g is not None], dtype=torch.float32))
+            self.cx_by_batch[index,1] = torch.min(torch.tensor([len(g.enabled_connections) for g in population if g is not None], dtype=torch.float32))
+            self.nodes_by_batch[index,1] = torch.min(torch.tensor([len(g.hidden_nodes) for g in population if g is not None], dtype=torch.float32))
+            self.cx_by_batch[index,2] = torch.max(torch.tensor([len(g.enabled_connections) for g in population if g is not None], dtype=torch.float32))
+            self.nodes_by_batch[index,2] = torch.max(torch.tensor([len(g.hidden_nodes) for g in population if g is not None], dtype=torch.float32))
             self.time_elapsed[index] = time.time() - self.start_time
+            if all_replacements is not None:
+                self.replacements_by_batch[:,:,index] = all_replacements.cpu()
             
 
     def save(self, run_dir):
@@ -144,48 +145,48 @@ class Record():
             plt.imsave(os.path.join(images_path, f"avg_{config.run_id:04d}.png"), average_image, cmap='gray')
         
     
-    def batch_end(self, move, skip_fitness=False):
-        if len(move.agg_fitnesses) > 0:
-            if len(move.population) > 0:
-                move.population = sorted(move.population, key=lambda x: move.agg_fitnesses[x.id], reverse=True) # sort by fitness
-                # if move.config.with_grad:
-                    # move.population[0].discard_grads()
-                move.this_gen_best = move.population[0].clone(move.config, cpu=True)  # still sorted by fitness
+    def batch_end(self, alg, skip_fitness=False):
+        if hasattr(alg, 'agg_fitnesses') and len(alg.agg_fitnesses) > 0:
+            if len(alg.population) > 0:
+                alg.population = sorted(alg.population, key=lambda x: alg.agg_fitnesses[x.id], reverse=True) # sort by fitness
+                # if alg.config.with_grad:
+                    # alg.population[0].discard_grads()
+                alg.this_gen_best = alg.population[0].clone(alg.config, cpu=True)  # still sorted by fitness
         
-        div_mode = move.config.get('diversity_mode', None)
+        div_mode = alg.config.get('diversity_mode', None)
         if div_mode == 'full':
-            std_distance, avg_distance, max_diff = calculate_diversity_full(move.population)
+            std_distance, avg_distance, max_diff = calculate_diversity_full(alg.population)
         elif div_mode == 'stochastic':
-            std_distance, avg_distance, max_diff = calculate_diversity_stochastic(move.population)
+            std_distance, avg_distance, max_diff = calculate_diversity_stochastic(alg.population)
         else:
             std_distance, avg_distance, max_diff = torch.zeros(1)[0], torch.zeros(1)[0], torch.zeros(1)[0]
-        move.diversity = avg_distance
-        # n_nodes = get_avg_number_of_hidden_nodes(move.population)
-        # n_connections = get_avg_number_of_connections(move.population)
-        # max_connections = get_max_number_of_connections(move.population)
-        # max_nodes = get_max_number_of_hidden_nodes(move.population)
+        alg.diversity = avg_distance
+        # n_nodes = get_avg_number_of_hidden_nodes(alg.population)
+        # n_connections = get_avg_number_of_connections(alg.population)
+        # max_connections = get_max_number_of_connections(alg.population)
+        # max_nodes = get_max_number_of_hidden_nodes(alg.population)
 
-        move.n_unique = len(set([g.id for g in move.population]))
+        alg.n_unique = len(set([g.id for g in alg.population]))
 
-        if not skip_fitness and len(move.population) > 0:
+        if not skip_fitness and len(alg.population) > 0:
             # fitness
-            if move.agg_fitnesses[move.population[0].id] > move.solution_fitness: # if the new parent is the best found so far
-                move.solution = move.population[0]                 # update best solution records
-                move.solution_fitness = move.agg_fitnesses[move.population[0].id]
-                move.solution_generation = move.gen
-                move.best_genome = move.solution
+            if alg.agg_fitnesses[alg.population[0].id] > alg.solution_fitness: # if the new parent is the best found so far
+                alg.solution = alg.population[0]                 # update best solution records
+                alg.solution_fitness = alg.agg_fitnesses[alg.population[0].id]
+                alg.solution_generation = alg.gen
+                alg.best_genome = alg.solution
             
-            move.save_best_img(os.path.join(move.run_dir, "images", f"current_best_output.png"))
+            alg.save_best_img(os.path.join(alg.run_dir, "images", f"current_best_output.png"))
         
-        if move.solution is not None:
-            # move.results.loc[len(move.results.index)] = [move.config.experiment_condition, move.config.target_name, move.config.run_id, move.gen, move.current_batch, move.solution_fitness, np.mean(list(move.agg_fitnesses.values())),avg_distance.item(), float(len(move.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - move.start_time, move.total_offspring]
+        if alg.solution is not None:
+            # alg.results.loc[len(alg.results.index)] = [alg.config.experiment_condition, alg.config.target_name, alg.config.run_id, alg.gen, alg.current_batch, alg.solution_fitness, np.mean(list(alg.agg_fitnesses.values())),avg_distance.item(), float(len(alg.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - alg.start_time, alg.total_offspring]
             plt.close()
             plt.plot(self.normed_fitness_by_batch.mean(dim=0).max(dim=0)[0], label='Best')
             plt.plot(self.normed_fitness_by_batch.mean(dim=(0,1)), label='Mean')
             plt.legend()
             plt.xlabel("Batch")
             plt.ylabel("Aggregated fitness")
-            plt.savefig(os.path.join(move.run_dir, "current_fitness.png"))
+            plt.savefig(os.path.join(alg.run_dir, "current_fitness.png"))
             plt.close()
         # else:
-            # move.results.loc[len(move.results.index)] = [move.config.experiment_condition, move.config.target_name, move.config.run_id, move.gen, move.current_batch, 0.0,  np.mean(list(move.agg_fitnesses.values())), avg_distance.item(), float(len(move.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - move.start_time, move.total_offspring]
+            # alg.results.loc[len(alg.results.index)] = [alg.config.experiment_condition, alg.config.target_name, alg.config.run_id, alg.gen, alg.current_batch, 0.0,  np.mean(list(alg.agg_fitnesses.values())), avg_distance.item(), float(len(alg.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - alg.start_time, alg.total_offspring]

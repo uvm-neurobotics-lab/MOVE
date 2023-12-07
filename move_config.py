@@ -132,6 +132,7 @@ class MoveConfig(CPPNConfig):
         self.prob_disable_connection = .15
         self.single_structural_mutation = True
         self.topology_mutation_iters = 1
+        self.connection_bloat = 0 # don't bloat extra connections
         
         self.low_mem = False # don't record as much data to save memory
         self.thread_count = 1 # don't use multiple threads
@@ -139,16 +140,12 @@ class MoveConfig(CPPNConfig):
         self.norm_df_path = 'data/target_fitness_fn_ranges.csv'
         
         self.record_frequency_batch = 1 # record every batch
-        
-        # Used by baseline:
-        self.num_children = 5
-        
     
 
     def fns_to_strings(self):
         """Converts the activation functions to strings."""
         super().fns_to_strings()
-        if hasattr(self, 'objective_functions'):
+        if hasattr(self, 'objective_functions') and self.objective_functions is not None:
             for i, fn in enumerate(self.objective_functions):
                 if isinstance(fn, Callable):
                     self.objective_functions[i] = fn.__name__
@@ -172,7 +169,7 @@ class MoveConfig(CPPNConfig):
                 if isinstance(fn, str):
                     self.objective_functions[i] = name_to_fn[fn]
     
-        if hasattr(self, "fitness_function") and self.fitness_schedule is not None:
+        if hasattr(self, "fitness_schedule") and self.fitness_schedule is not None:
             for i, fn in enumerate(self.fitness_schedule):
                 if isinstance(fn, str):
                     self.fitness_schedule[i] = name_to_fn[fn]

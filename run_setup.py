@@ -28,12 +28,12 @@ def fix_target_dimensions(config):
 def assertions(config):
     assert config.initial_batch_size >= config.batch_size, f"Initial batch size {config.initial_batch_size} must be >= batch size {config.batch_size}"
 
-def run_setup():
+def run_setup(config_class = MoveConfig):
     import argparse
     import uuid
     default_device = "cuda:0" if torch.cuda.is_available() else "cpu"
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', '-c', type=str, default='default.json', help='Path to config json file (default: default.json).')
+    parser.add_argument('--config', '-c', type=str, default=None, help='Path to config json file (default: default.json).')
     parser.add_argument('--generations', '-g', type=int, default=-1, help='Number of generations to run (default: 1000).')
     parser.add_argument('--population', '-p', type=int, default=-1, help='Population size.')
     parser.add_argument('--output', '-o', type=str, default=None, help='Output directory.')
@@ -46,6 +46,12 @@ def run_setup():
     parser.add_argument('-pr','--profile', action='store_true', help=f'Profile the code (default: False).')
     
     args = parser.parse_args()
+    
+    if args.config is None:
+        if config_class == MoveConfig:
+            args.config = "default.json"
+        else:
+            raise Exception("Must specify config file")
     
     with open(args.config) as f:
         json_str = f.read()
@@ -75,7 +81,7 @@ def run_setup():
     if args.num_hidden_nodes > 0:
         parsed['controls']["hidden_nodes_at_start"] = args.num_hidden_nodes
     
-    config = MoveConfig()
+    config = config_class()
     config.device = torch.device(args.device)
     apply_condition(config, parsed.get("controls", {}), {}, parsed.get("name", "Default"), ff.__dict__)
     

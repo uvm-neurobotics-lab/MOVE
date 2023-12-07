@@ -11,21 +11,17 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from torchvision.transforms import Resize
 from tqdm import tqdm
 
 # from cppn_torch import ImageCPPN
 
 # from cppn_torch.graph_util import activate_population
 # from cppn.util import visualize_network, initialize_inputs
-from cppn.visualize import visualize_network
 from cppn.util import *
-from cppn.fourier_features import add_fourier_features
 # from evolution_torch import CPPNEvolutionaryAlgorithm
 from evolution import CPPNEvolutionaryAlgorithm
 import torch.multiprocessing as mp
 
-from cppn import CPPN
 from util import *
 
 from move_map import MOVEMap
@@ -110,48 +106,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         print("Initialized MOVE on device:", self.config.device)
     
-    def init_inputs(self):
-        res_h, res_w = self.config.res_h, self.config.res_w
-        self.inputs = initialize_inputs(
-                res_h//2**self.config.num_upsamples,
-                res_w//2**self.config.num_upsamples,
-                self.config.use_radial_distance,
-                self.config.use_input_bias,
-                self.config.num_inputs,
-                self.device,
-                coord_range=self.config.coord_range
-                )
-        if self.config.use_fourier_features:
-            self.inputs = add_fourier_features(
-                self.inputs,
-                self.config.n_fourier_features,
-                self.config.fourier_feature_scale,
-                dims=2,
-                include_original=True,
-                mult_percent=self.config.get("fourier_mult_percent", 0.0),
-                sin_and_cos=self.config.fourier_sin_and_cos
-                )
-        self.config.num_inputs = self.inputs.shape[-1]
-        self.inputs = self.inputs.to(self.device)
-        
-        
-    def init_target(self):
-        # repeat the target for easy comparison
-        self.target = torch.stack([self.target.squeeze() for _ in range(self.config.initial_batch_size)])
 
-        if len(self.target.shape) > 3:
-            self.target = self.target.permute(0, 3, 1, 2) # move color channel to front
-        else:
-            self.target = self.target.unsqueeze(1).repeat(1,3,1,1) # add color channel
-            
-        if self.target.shape[-2] < 32 or self.target.shape[-1] < 32:
-                self.target = Resize((32,32), antialias=True)(self.target)
-        
-        self.target = torch.clamp(self.target, 0, 1)
-        
-        # save target to output directory
-        target_path = os.path.join(self.cond_dir, "target.png")
-        plt.imsave(target_path, self.target[0].permute(1,2,0).cpu().numpy())
         
                             
     def init_sgd(self, batch_cell_ids=None):
@@ -207,22 +162,6 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             return child
   
     
-    def activate_population(self, genomes):
-        if self.config.activation_mode == 'population':
-            imgs = activate_population(genomes, self.config, self.inputs)
-        else:
-            if self.config.thread_count > 1:
-                imgs = activate_population_async(genomes,
-                                                 self.in_queue,
-                                                 self.out_queue,
-                                                 self.target,
-                                                 self.config)
-            else:
-                imgs = torch.stack([g(self.inputs) for _,_, g in genomes])
-            
-            # imgs = imgs.clamp_(0,1)
-        imgs, self.target = ff.correct_dims(imgs, self.target)
-        return imgs
     
     
     def measure_fitness(self, genomes, imgs, skip_genotype=False):
@@ -471,7 +410,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             index = self.current_batch // self.config.record_frequency_batch
             self.record.update(index,
                                 all_replacements,
-                                self.map,
+                                self.map.fitness,
+                                self.map.normed_fitness,
+                                self.map.agg_fitness,
+                                self.map.map,
                                 self.total_offspring
                                 )
             
@@ -505,7 +447,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.avg_nodes = sum([len(g.nodes) for g in self.population]) / len(self.population)
         self.avg_enabled_connections = sum([len(g.enabled_connections) for g in self.population]) / len(self.population)
         
-        self.gen = alg.total_offspring // alg.config.num_cells
+        self.gen = self.total_offspring // self.config.num_cells
         
         if self.current_batch in [0, ] or (self.current_batch+1)%10 == 0:
             b = self.get_best()
@@ -519,30 +461,18 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         if self.config.thread_count > 1:
             for w in self.workers:
                 w.close()
-        
         # save fitness over time
-        
         self.record.save(self.run_dir) # save statistics
-        
-        torch.save(self.inputs, os.path.join(self.run_dir, "inputs.pt")) # save inputs
-        
-        # save config file
-        with open(os.path.join(self.run_dir, "config.json"), "w") as f:
-            json.dump(copy.deepcopy(self.config).to_json(), f, indent=4)
-        
+           
         # save other data
         with open(os.path.join(self.run_dir, "cell_names.csv"), "w") as f:
             f.write(",".join(self.map.cell_names))
         with open(os.path.join(self.run_dir, "function_names.csv"), "w") as f:
             f.write(",".join([fn.__name__ for fn in self.fns]))
-        with open(os.path.join(self.run_dir, "total_offspring.txt"), "w") as f:
-            f.write(str(self.total_offspring))
+      
             
         torch.save(self.map.fn_mask, os.path.join(self.run_dir, "Fm_mask.pt"))
-       
         
-        self.save_best_img(os.path.join(self.image_dir, f"best_{self.config.run_id:04d}.png"), do_graph=True)
-       
         if not self.config.dry_run:
             self.record.save_map(self.image_dir, self.map, self.config, self.inputs)
         
@@ -550,7 +480,6 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         lineages = {i:v for i,v in enumerate(self.get_lineages())}
         json.dump(lineages, open(os.path.join(self.run_dir, "lineages.json"), "w"), indent=4)
         
-        print("Saved run to: ", self.run_dir)
     
     
     def get_lineages(self):
@@ -561,44 +490,6 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 yield g.cell_lineage       
         
        
-    def save_best_img(self, fname, do_graph=False, show_target=False):
-        # if not do_graph and not self.gen % 10 == 0:
-        #     return
-        b = self.get_best()
-        if b is None:
-            return
-        # b.to(self.config.device)
-        img = b(self.inputs, channel_first=False, act_mode="node")
-        if len(self.config.color_mode)<3:
-            img = img.repeat(1, 1, 3)
-        
-        img = torch.clamp(img,0,1).detach().cpu().numpy()
-        
-        # show as subplots
-        if show_target:
-            fig, (ax1, ax2) = plt.subplots(1, 2)
-            ax1.imshow(img, cmap='gray')
-            ax2.imshow(self.target.squeeze(), cmap='gray')
-            ax1.set_title("Champion")
-            ax2.set_title("Target")
-            plt.savefig(fname)
-
-        else:
-            plt.imsave(fname, img, cmap='gray')
-        
-        plt.close()
-        
-        # if self.gen % 10 == 0:
-        #     do_graph = True # always do graph 
-        
-        if do_graph:
-            c_b = b.clone(self.config, new_id=False)
-            # c_b.forward(self.inputs)
-            # c_b.vis(fname.replace(".png", "_torch_graph"))
-            c_b.vis(self.inputs, fname.replace(".png", "_torch_graph"))
-            
-            visualize_network(b, self.config, save_name=fname.replace(".png", "_graph.png"))
-            plt.close()
 
 if __name__ == '__main__':
     # python -m torch.utils.bottleneck /path/to/source/script.py [args]
