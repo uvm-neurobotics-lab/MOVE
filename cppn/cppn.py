@@ -161,7 +161,8 @@ class CPPN(nn.Module):
                                               config.init_connection_probability,
                                               config.init_connection_probability_fourier,
                                               config.weight_init_std,
-                                              fourier_cutoff=-(config.num_inputs - config.n_fourier_features))
+                                              fourier_cutoff=-(config.num_inputs - config.n_fourier_features),
+                                              dense=config.dense_init_connections)
             
             self.update_layers()
         
@@ -198,7 +199,7 @@ class CPPN(nn.Module):
             return hidden_layers
             
     
-    def initialize_connection_genome(self, hidden_layers, initial_connection_prob=1.0, init_connection_prob_fourier=1.0, weight_std=1.0, fourier_cutoff=-4):
+    def initialize_connection_genome(self, hidden_layers, initial_connection_prob=1.0, init_connection_prob_fourier=1.0, weight_std=1.0, dense=False, fourier_cutoff=-4):
         """Initializes the connection genome of the CPPN."""
         def is_fourier(node_id):
             if init_connection_prob_fourier is None:
@@ -221,7 +222,18 @@ class CPPN(nn.Module):
                 prob = init_connection_prob_fourier if is_fourier(prev_node.id) else initial_connection_prob
                 if torch.rand(1, dtype=torch.float32) < prob:
                     self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
-            
+        
+        self.update_layers()
+        
+        # if config.dense_init_connections, connect all nodes to all nodes
+        if dense:
+            for from_node in self.nodes.values():
+                for to_node in self.nodes.values():
+                    if from_node.layer >= to_node.layer:
+                        continue
+                    if from_node.id != to_node.id:
+                        self.connections[f"{from_node.id},{to_node.id}"] = Connection(self.rand_weight(weight_std))
+
     
 
     def update_layers(self):
