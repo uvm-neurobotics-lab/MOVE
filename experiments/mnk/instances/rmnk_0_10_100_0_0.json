@@ -1,0 +1,18 @@
+{
+    "name": "MOVE",
+    "controls":
+    {
+        "target": null,
+        "alg": "move"
+    },
+    "conditions": [
+        {
+            "rmnk_0_10_100_0_0": {
+                "sgd_steps":0,
+                "batch_size":100,
+                "initial_batch_size":100,
+                "rmnk_instance_file": "data/rmnk_0_10_100_0_0.dat"
+            }
+        }
+    ]
+}

@@ -1,0 +1,18 @@
+{
+    "name": "MOVE",
+    "controls":
+    {
+        "target": null,
+        "alg": "move",
+        "sgd_steps":0,
+        "stop_condition": "evals",
+        "stop_condition_value":50000
+    },
+    "conditions": [
+        {
+            "rmnk_0_20_100_5_0": {
+                "rmnk_instance_file": "data/rmnk_0_20_100_5_0.dat"
+            }
+        }
+    ]
+}
