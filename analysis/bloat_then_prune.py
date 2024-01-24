@@ -54,7 +54,7 @@ def mutate_bloat(cppn, config, n=100, node_cx_ratio=0.5):
 
 def bloat_connections(cppn, config, n):
     bloated_cppn = cppn.clone(new_id=False, config=config)
-    bloated_cppn.to('cuda')
+    bloated_cppn.to(config.device)
     for _ in range(n):
         bloated_cppn.add_connection(config)
     return bloated_cppn
@@ -81,11 +81,13 @@ def config_for_bloat_prune(config):
     config_cloned.sgd_learning_rate = 0.01 
     return config_cloned
 
-def test_bloat_prune(initial_cppn, target, config, args, inputs):
+def test_bloat_prune(initial_cppn, target, config, inputs, norm, plot=False, num_to_add=None, return_cppn=False, override_lr=None):
     # if args.plot:
         # plot_genetic_difference_after_bloat(initial_cppn, config)
-        
-    num_added_connections = len(initial_cppn.connections)
+    if num_to_add is None:
+        num_added_connections = len(initial_cppn.connections)
+    else:
+        num_added_connections = num_to_add
     # cppn_bloated = mutate_bloat(initial_cppn, config, num_added_connections, 0.0) # extra bloat
     
     cppn_bloated = bloat_connections(initial_cppn, config, num_added_connections)
@@ -94,6 +96,9 @@ def test_bloat_prune(initial_cppn, target, config, args, inputs):
     
     config = config_for_bloat_prune(config)
     
+    if override_lr is not None:
+        config.sgd_learning_rate = override_lr
+        
     cppn_bloated_after_sgd_prune.sgd_lr = config.sgd_learning_rate # override learned lr
     
     sgd_weights([cppn_bloated_after_sgd_prune], None, inputs, target, config.objective_functions, norm, config, early_stop=10)
@@ -104,12 +109,12 @@ def test_bloat_prune(initial_cppn, target, config, args, inputs):
     
     print("Min weight:", min([abs(cx.weight.item()) for cx in cppn_bloated_after_sgd_prune.connections.values()]))
     
-    cppn_bloated.to('cuda')
-    cppn_bloated_after_sgd_prune.to('cuda')
-    initial_cppn.to('cuda')
-    inputs = inputs.to('cuda')
+    cppn_bloated.to(config.device)
+    cppn_bloated_after_sgd_prune.to(config.device)
+    initial_cppn.to(config.device)
+    inputs = inputs.to(config.device)
         
-    if args.plot:
+    if plot:
         imgs = [
             target.squeeze(0).permute(1,2,0).cpu(),
             get_image(initial_cppn, inputs),
@@ -140,24 +145,34 @@ def test_bloat_prune(initial_cppn, target, config, args, inputs):
     print("-"*80)
     
     if n_pruned == 0:
-        return 0.0
-    ratio = len(pruned_from_added) / n_pruned
+        ratio = 0.0
+    else:
+        ratio = len(pruned_from_added) / n_pruned
+    if return_cppn:
+        return ratio, cppn_bloated_after_sgd_prune
+
+    
     return ratio
   
 
-def show_prune_effect(initial_cppn, config, inputs, target, norm):
+def show_prune_effect(initial_cppn, config, inputs, target, norm, num_added=None):
     imgs,titles = [],[]
     config = config_for_bloat_prune(config)
     initial_cppn.sgd_lr = config.sgd_learning_rate # override learned lr
-    initial_cppn.to('cuda')
-    inputs = inputs.to('cuda')
+    initial_cppn.to(config.device)
+    inputs = inputs.to(config.device)
     sgd_weights([initial_cppn], None, inputs, target, config.objective_functions, norm, config, early_stop=10)
     imgs.append(get_image(initial_cppn, inputs))
     titles.append(f"initial : {len(initial_cppn.connections)} cxs")
     
-    num_added_connections = len(initial_cppn.connections)
+    if num_added is None:
+        num_added_connections = len(initial_cppn.connections)
+    else:
+        num_added_connections = num_added
     cppn_bloated = bloat_connections(initial_cppn, config, num_added_connections)
-    cppn_bloated.to('cuda')
+    cppn_bloated.to(config.device)
+    
+    pruned_cppns = []
 
     # for min_pruned in [0, 8, 16, 32, 128, 1024, 2048, 4096, 8192, 16384, 32768]:
     for min_pruned_pt in [0, 0.01, 0.05, 0.1, 0.2, 0.5, 0.75, 0.85, 0.90, 0.95, 0.99]:
@@ -167,7 +182,7 @@ def show_prune_effect(initial_cppn, config, inputs, target, norm):
         config.min_pruned = min_pruned
         config.prune_threshold=0.0
         test_cppn = cppn_bloated.clone(new_id=False, config=config)
-        test_cppn.to('cuda')
+        test_cppn.to(config.device)
         test_cppn.sgd_lr = config.sgd_learning_rate # override learned lr
         sgd_weights([test_cppn], None, inputs, target, config.objective_functions, norm, config, early_stop=10)
         n_pruned,n_pruned_nodes = test_cppn.prune(config)
@@ -175,8 +190,10 @@ def show_prune_effect(initial_cppn, config, inputs, target, norm):
         print(f"Pruned {n_pruned_nodes} nodes")
         imgs.append(get_image(test_cppn, inputs))
         titles.append(f"n_pruned={min_pruned} : {len(test_cppn.connections)} cxs")
+        pruned_cppns.append(test_cppn)
     
     show_image_grid(imgs, titles)
+    return pruned_cppns
 
     
 if __name__ == "__main__":
@@ -225,7 +242,7 @@ if __name__ == "__main__":
 
 
     pool = mp.Pool(mp.cpu_count()//2)
-    results = pool.starmap(test_bloat_prune, [(initial_cppn.clone(config, new_id=False), target.clone(), config, args, inputs.clone()) for _ in range(n_trials)])
+    results = pool.starmap(test_bloat_prune, [(initial_cppn.clone(config, new_id=False), target.clone(), config, inputs.clone(), norm, args.plot) for _ in range(n_trials)])
 
     # for i in tqdm.tqdm(range(n_trials)):
         # results.append(test_bloat_prune(initial_cppn, target, config, args, inputs))

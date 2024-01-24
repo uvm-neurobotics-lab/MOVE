@@ -119,14 +119,18 @@ class Record():
                 img = individual(inputs, channel_first=True, act_mode="node").detach().cpu()
                 if len(config.color_mode)<3:
                     img = img.repeat(3, 1, 1)
-                img = img.permute(1,2,0) # (H,W,C)
-                img = torch.clamp(img,0,1).numpy()
-                imgs.append(img)
-                name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"{len(list(individual.enabled_connections))}c"
-                name = name + ".png"
                 
-                plt.imsave(os.path.join(map_path, name), img, cmap='gray')
-                plt.close()
+                try:
+                    img = img.permute(1,2,0) # (H,W,C)
+                    img = torch.clamp(img,0,1).numpy()
+                    imgs.append(img)
+                    name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"{len(list(individual.enabled_connections))}c"
+                    name = name + ".png"
+                    
+                    plt.imsave(os.path.join(map_path, name), img, cmap='gray')
+                    plt.close()
+                except:
+                    ...
                 # if config.with_grad:
                     # flat_map[i].discard_grads()
                 genomes.append(flat_map[i].clone(config, new_id=False).to_json())
@@ -176,17 +180,13 @@ class Record():
                 alg.solution_generation = alg.gen
                 alg.best_genome = alg.solution
             
-            alg.save_best_img(os.path.join(alg.run_dir, "images", f"current_best_output.png"))
-        
-        if alg.solution is not None:
-            # alg.results.loc[len(alg.results.index)] = [alg.config.experiment_condition, alg.config.target_name, alg.config.run_id, alg.gen, alg.current_batch, alg.solution_fitness, np.mean(list(alg.agg_fitnesses.values())),avg_distance.item(), float(len(alg.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - alg.start_time, alg.total_offspring]
-            plt.close()
-            plt.plot(self.normed_fitness_by_batch.mean(dim=0).max(dim=0)[0], label='Best')
-            plt.plot(self.normed_fitness_by_batch.mean(dim=(0,1)), label='Mean')
-            plt.legend()
-            plt.xlabel("Batch")
-            plt.ylabel("Aggregated fitness")
-            plt.savefig(os.path.join(alg.run_dir, "current_fitness.png"))
-            plt.close()
-        # else:
-            # alg.results.loc[len(alg.results.index)] = [alg.config.experiment_condition, alg.config.target_name, alg.config.run_id, alg.gen, alg.current_batch, 0.0,  np.mean(list(alg.agg_fitnesses.values())), avg_distance.item(), float(len(alg.population)), n_connections, n_nodes, max_connections, max_nodes, time.time() - alg.start_time, alg.total_offspring]
+            # alg.save_best_img(os.path.join(alg.run_dir, "images", f"current_best_output.png"))
+        # if alg.solution is not None:
+        #     plt.close()
+        #     plt.plot(self.normed_fitness_by_batch.mean(dim=0).max(dim=0)[0], label='Best')
+        #     plt.plot(self.normed_fitness_by_batch.mean(dim=(0,1)), label='Mean')
+        #     plt.legend()
+        #     plt.xlabel("Batch")
+        #     plt.ylabel("Aggregated fitness")
+        #     plt.savefig(os.path.join(alg.run_dir, "current_fitness.png"))
+        #     plt.close()

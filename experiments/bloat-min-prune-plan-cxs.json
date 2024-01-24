@@ -6,8 +6,8 @@
         "stop_condition": "fwds",
         "stop_condition_value": 100000,
         "sgd_steps": 1000,
-        "batch_size": 1,
-        "initial_batch_size": 1,
+        "batch_size": 2,
+        "initial_batch_size": 2,
         "single_structural_mutation": false,
         "n_fourier_features": 128,
         "objective_functions": [
@@ -23,15 +23,16 @@
             "gmsd"
         ],
         "init_connection_probability": 0.5,
-        "init_connection_probability_fourier": 0.10,
+        "init_connection_probability_fourier": 0.50,
         "prob_add_node": 0.85,
         "prob_add_connection": 0.85,
         "prob_remove_node": 0.15,
         "prob_disable_connection": 0.15,
         "prune_threshold": 0.0,
         "sgd_l2_reg": 0.0003,
-        "hidden_nodes_at_start": [0],
-        "topology_mutation_iters": 1
+        "hidden_nodes_at_start": [16],
+        "topology_mutation_iters": 4,
+        "node_activation_prune_threshold": 0.01
     },
 
     "targets":[

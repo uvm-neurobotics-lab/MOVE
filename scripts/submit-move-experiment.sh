@@ -21,15 +21,16 @@
 # Allow for the use of conda activate
 source ~/.bashrc
 
+
 # Move to submission directory
 cd ${SLURM_SUBMIT_DIR}
 
 # your job execution follows:
 echo "starting job"
-conda activate move
 
 EXPERIMENT_FILE="../default.json"
 OUTDIR="../results/default"
+CONDA_ENV="move"
 
 if [ ! -z "$1" ]
   then
@@ -42,6 +43,17 @@ if [ ! -z "$2" ]
     echo "Using $2 as output directory"
     OUTDIR=$2
 fi
+
+if [ ! -z "$3" ]
+  then
+    echo "Using $3 as conda env"
+    CONDA_ENV=$3
+fi
+
+
+conda activate "$CONDA_ENV"
+
+nvidia-smi
 
 
 CMDS=()

@@ -22,7 +22,7 @@ class MoveConfig(CPPNConfig):
         self.target = None # set later
         self.do_profile = False
 
-        self.total_offspring = 3_000
+        self.total_offspring = 300_000
         
         self.target_name = "default"
         
@@ -88,6 +88,7 @@ class MoveConfig(CPPNConfig):
         self.hidden_nodes_at_start = (16, )
         self.init_connection_probability = 0.50
         self.init_connection_probability_fourier = 0.10
+        self.force_init_path_inputs_outputs = True
         self.prune_threshold = 0.0 # don't prune
         self.prune_threshold_nodes = 0.0 # don't prune nodes
         self.min_pruned = 0
@@ -175,8 +176,18 @@ class MoveConfig(CPPNConfig):
                 if isinstance(fn, str):
                     self.fitness_schedule[i] = name_to_fn[fn]
 
-        
+
+def resize_image(image, size, device):
+    res_fact = image.shape[0] / size[0], image.shape[1] / size[1]
+    if res_fact[0] == 0.0 or res_fact[1] == 0.0:
+        raise Exception("Target is too small to resize to target_resize")
+    image = resize(image, (image.shape[0] // int(res_fact[0]), image.shape[1] // int(res_fact[1])))
+    image = center_crop(image, size[0], size[1])
     
+    resized_img = torch.tensor(image, dtype=torch.float32, device=device)
+    return resized_img
+
+
 def resize_target(config):
     if not config.target_resize:
         return 
@@ -186,14 +197,8 @@ def resize_target(config):
     # check if shape is already correct
     if tar.shape[:2] == config.target_resize:
         return
-    
-    res_fact = tar.shape[0] / config.target_resize[0], tar.shape[1] / config.target_resize[1]
-    if res_fact[0] == 0.0 or res_fact[1] == 0.0:
-        raise Exception("Target is too small to resize to target_resize")
-    tar = resize(tar, (tar.shape[0] // int(res_fact[0]), tar.shape[1] // int(res_fact[1])))
-    tar = center_crop(tar, config.target_resize[0], config.target_resize[1])
-    
-    config.target = torch.tensor(tar, dtype=torch.float32, device=device)
+
+    config.target = resize_image(tar, config.target_resize, device)
     config.set_res(*config.target_resize)
     
     
@@ -210,6 +215,8 @@ def apply_condition(config, controls, condition, name, name_to_function_map):
             if k == "target":
                 config.target = v
                 config.target_name = config.target
+                if v is None:
+                    continue
                 if 'color_mode' in controls:
                     config.color_mode = controls['color_mode']
                 pilmode = "RGB" if len(config.color_mode) == 3 else "L"
@@ -225,7 +232,9 @@ def apply_condition(config, controls, condition, name, name_to_function_map):
             if k == "target":
                 if 'color_mode' in condition:
                     config.color_mode = condition['color_mode']
-                config.target = vtarget_name
+                config.target = target_name
+                if v is None:
+                    continue
                 if isinstance(config.target, str):
                     config.target_name = config.target
                     pilmode = "RGB" if len(config.color_mode) == 3 else "L"
@@ -235,27 +244,30 @@ def apply_condition(config, controls, condition, name, name_to_function_map):
    
     # if config.color_mode=="L":
         # config.target = config.target.mean(dim=2)
-
-    if config.target.max() > 1.0:
-        config.target = config.target.to(torch.float32) /255.0
-    
-    resize_target(config)
-    
-    if len(config.target.shape) < len(config.color_mode):
-        logging.warning("Color mode is RGB or HSV but target is grayscale. Setting color mode to L.")
-        config.color_mode = "L"
-        
-    if config.color_mode == "L":
-        if len(config.target.shape) == 2:
-            config.target = config.target.unsqueeze(-1).repeat(1,1,3) # loss functions expect 3 channels
-                
-    
-    if len(config.color_mode) != config.num_outputs:
-        logging.warning("WARNING: color_mode does not match num_outputs. Setting num_outputs to len(color_mode)")
-        config.num_outputs = len(config.color_mode)
     config.device = torch.device(config.device)
-    config.target = config.target.to(config.device)     
+    if config.target is not None:
+        if config.target.max() > 1.0:
+            config.target = config.target.to(torch.float32) / 255.0
+        
+        resize_target(config)
+        
+        if len(config.target.shape) < len(config.color_mode):
+            logging.warning("Color mode is RGB or HSV but target is grayscale. Setting color mode to L.")
+            config.color_mode = "L"
+            
+        if config.color_mode == "L":
+            if len(config.target.shape) == 2:
+                config.target = config.target.unsqueeze(-1).repeat(1,1,3) # loss functions expect 3 channels
+                
+        
+        if len(config.color_mode) != config.num_outputs:
+            logging.warning("WARNING: color_mode does not match num_outputs. Setting num_outputs to len(color_mode)")
+            config.num_outputs = len(config.color_mode)
+        config.target = config.target.to(config.device)     
 
     for i in range(len(config.activations)):
         if isinstance(config.activations[i], str):
             config.activations[i] = name_to_fn[config.activations[i]]
+        if hasattr(config, "fitness_function") and isinstance(config.fitness_function, str):
+            if config.fitness_function in name_to_fn:
+                config.fitness_function = name_to_fn[config.fitness_function]

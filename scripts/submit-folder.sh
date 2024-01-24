@@ -23,6 +23,18 @@ do
       repeats="$2"
       shift # past argument
       ;;
+      -t|--target)
+      target="$2"
+      shift # past argument
+      ;;
+      -c|--condition)
+      condition="$2"
+      shift # past argument
+      ;;
+      -hc|--hillclimber)
+      hillclimber=1
+      shift # past argument
+      ;;
       *)
       echo "Unknown option $key"
       exit 1
@@ -33,6 +45,8 @@ done
 
 repeats=${repeats:-1}
 dry_run=${dry_run:-0}
+target=${target:-"."}
+condition=${condition:-"."}
 echo "Running $repeats times"
 
 out_dir="../results/$(basename $folder)"
@@ -45,13 +59,30 @@ for i in $(seq 1 $repeats); do
         echo "Skipping directory $filename"
           continue
       fi
-      echo "Submitting $filename to out_dir $out_dir"
-      if [ $dry_run -eq 0 ]; then
-        sbatch scripts/submit-move-experiment.sh $filename $out_dir
+      if [[ "$filename" != *"$target"* ]];then
+        printf 'skip %s\n' "$filename"
+        continue
       fi
-      if [ $dry_run -eq 1 ]; then
-        echo "would do: sbatch scripts/submit-move-experiment.sh $filename $out_dir"
+      if [[ "$filename" != *"$condition"* ]];then
+        printf 'skip %s\n' "$filename"
+        continue
       fi
+
+     echo "Submitting $filename to out_dir $out_dir"
+
+    script_name=""
+    if [ $hillclimber -eq 1 ]; then
+      script_name="submit-hillclimber-experiment.sh"
+    else
+      script_name="submit-move-experiment.sh"
+    fi
+
+    if [ $dry_run -eq 0 ]; then
+      sbatch scripts/$script_name $filename $out_dir
+    else
+      echo "would do: sbatch scripts/$script_name $filename $out_dir"
+    fi
+
 
   done
 done

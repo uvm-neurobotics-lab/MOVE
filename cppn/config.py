@@ -40,6 +40,7 @@ class CPPNConfig:
         self.allow_recurrent = False
         self.init_connection_probability = 0.85
         self.init_connection_probability_fourier = 0.1
+        self.force_init_path_inputs_outputs = True
         self.dense_init_connections = False
         # self.activations = [sin, cos, gauss, linear, tanh]
         self.activations = [SinActivation, CosActivation, GaussActivation, IdentityActivation, TanhActivation]

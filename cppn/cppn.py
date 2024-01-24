@@ -137,7 +137,8 @@ class CPPN(nn.Module):
         self.nodes = nn.ModuleDict()  # key: node_id (string)
         self.connections = nn.ModuleDict()  # key: (from, to) (string)
         
-        self.n_input = config.num_inputs
+        self.n_input = 2 + config.n_fourier_features + int(config.use_input_bias) + int(config.use_radial_distance)   
+
         self.n_output = config.num_outputs
         
         self.sgd_lr = config.sgd_learning_rate
@@ -161,7 +162,8 @@ class CPPN(nn.Module):
                                               config.init_connection_probability,
                                               config.init_connection_probability_fourier,
                                               config.weight_init_std,
-                                              fourier_cutoff=-(config.num_inputs - config.n_fourier_features))
+                                              fourier_cutoff=-(config.num_inputs - config.n_fourier_features),
+                                              force_init_path_inputs_outputs= config.force_init_path_inputs_outputs)
             
             self.update_layers()
         
@@ -172,7 +174,10 @@ class CPPN(nn.Module):
             n_hidden = config.hidden_nodes_at_start
             if isinstance(n_hidden, int):
                 n_hidden = (n_hidden,)
-                
+            
+            
+            # n_inputs = 2 + config.n_fourier_features + int(config.use_input_bias) + int(config.use_radial_distance)   
+            # assert config.num_inputs == n_inputs == len(self.input_node_ids), f"Number of inputs ({len(self.input_node_ids)}) does not match number of inputs in config ({config.num_inputs}) or predicted ({n_inputs})"
             
             for node_id in self.input_node_ids:
                 node = Node(af.IdentityActivation, node_id)
@@ -187,18 +192,19 @@ class CPPN(nn.Module):
             
             hidden_layers = {}
             for i, layer in enumerate(n_hidden):
-                hidden_layers[layer] = []
+                this_layer_id = i+1
+                hidden_layers[this_layer_id] = []
                 for j in range(layer):
                     new_id = type(self).get_new_node_id()
                     node = Node(random_choice(config.activations), new_id)
                     self.nodes[new_id] = node
                     node.layer = i+1
-                    hidden_layers[layer].append(node)
+                    hidden_layers[this_layer_id].append(node)
                 
             return hidden_layers
             
     
-    def initialize_connection_genome(self, hidden_layers, initial_connection_prob=1.0, init_connection_prob_fourier=1.0, weight_std=1.0, fourier_cutoff=-4):
+    def initialize_connection_genome(self, hidden_layers, initial_connection_prob=1.0, init_connection_prob_fourier=1.0, weight_std=1.0, fourier_cutoff=-4, force_init_path_inputs_outputs=False):
         """Initializes the connection genome of the CPPN."""
         def is_fourier(node_id):
             if init_connection_prob_fourier is None:
@@ -206,7 +212,7 @@ class CPPN(nn.Module):
             return int(node_id) < fourier_cutoff
         
         prev_layer = self.input_nodes
-        for layer in hidden_layers.values():
+        for layer in sorted(list(hidden_layers.values()), key=lambda x: x[0].layer):
             for node in layer:
                 for prev_node in prev_layer:
                     prob = init_connection_prob_fourier if is_fourier(prev_node.id) else initial_connection_prob
@@ -215,14 +221,53 @@ class CPPN(nn.Module):
             if len(layer) > 0:
                 prev_layer = layer
         
-        
         for node in self.output_nodes:
             for prev_node in prev_layer:
                 prob = init_connection_prob_fourier if is_fourier(prev_node.id) else initial_connection_prob
                 if torch.rand(1, dtype=torch.float32) < prob:
                     self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
+                    
             
+        
+     
+        if force_init_path_inputs_outputs:
+            for output_node in self.output_nodes:
+                path = []
+                path_end = output_node
+                for layer in sorted(list(hidden_layers.values()), key=lambda x: x[0].layer, reverse=True):
+                    # check to see if there is already a connection from this layer to the output node
+                    if any([f"{node.id},{path_end.id}" in self.connections.keys() for node in layer]):
+                        existing = [node for node in layer if f"{node.id},{path_end.id}" in self.connections.keys()][0]
+                        path.append(f"{existing.id},{path_end.id}")
+                        print("found existing connection", f"{existing.id},{path_end.id}")
+                        path_end = existing
+                    else:
+                        random_node = random_choice(layer)
+                        self.connections[f"{random_node.id},{path_end.id}"] = Connection(self.rand_weight(weight_std))
+                        path.append(f"{random_node.id},{path_end.id}") 
+                        path_end = random_node
+                    
+                    
+                
+                if any([f"{input_node_id},{path_end.id}" in self.connections.keys() for input_node_id in self.input_node_ids]):
+                    path_start = [node for node in self.input_nodes if f"{node.id},{path_end.id}" in self.connections.keys()][0]
+                    print("found existing connection", f"{path_start.id},{path_end.id}")
+                    path.append(f"{path_start.id},{path_end.id}")
+                else:
+                    random_node = random_choice(self.input_nodes)
+                    self.connections[f"{random_node.id},{path_end.id}"] = Connection(self.rand_weight(weight_std))
+                    path.append(f"{random_node.id},{path_end.id}")
+                    
+                print(output_node.id, ":", path[::-1])
+                print("weights:",[self.connections[cx].weight.item() for cx in path[::-1]])
+                
+                for cx in path:
+                    self.connections[cx].enabled = True
     
+    def reinitialize_weights(self, config):
+        for cx in self.connections.values():
+            cx.weight = self.rand_weight(config.weight_init_std)
+        
 
     def update_layers(self):
         self.enabled_connections = [conn_key for conn_key in self.connections if self.connections[conn_key].enabled]
@@ -233,6 +278,9 @@ class CPPN(nn.Module):
         self.layers.extend(feed_forward_layers([node.id for node in self.input_nodes],
                                           [node.id for node in self.output_nodes],
                                           [(conn_key.split(',')[0], conn_key.split(',')[1]) for conn_key in self.enabled_connections]))
+        
+        
+        
         
         
         for layer_idx, layer in enumerate(self.layers):
@@ -366,6 +414,11 @@ class CPPN(nn.Module):
     
     def disable_invalid_connections(self, config):
         """Disables connections that are not compatible with the current configuration."""
+        # delete any connections to or from nodes that don't exist
+        for key, connection in list(self.connections.items()):
+            if key.split(',')[0] not in self.nodes.keys() or key.split(',')[1] not in self.nodes.keys():
+                del self.connections[key]
+        
         return # TODO: test, but there should never be invalid connections
         invalid = []
         for key, connection in self.connections.items():
@@ -608,6 +661,7 @@ class CPPN(nn.Module):
                     self.remove_node(config, specific_node=self.nodes[key])
                     removed_nodes += 1
                     continue
+        # print(f"Pruned {removed_nodes} nodes")
         return removed_nodes
             
 

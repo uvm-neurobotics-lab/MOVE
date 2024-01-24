@@ -8,39 +8,59 @@ import torch
 from tqdm import tqdm
 import multiprocessing as mp
 import traceback
+import csv
 
-def process_tensor(result, name):
+def repeat_for_num_fns(tensor, num_fns):
+    return tensor.unsqueeze(0).repeat(num_fns, 1)
+
+def process_tensor(result, name, fns=None, reduce=True):
     result = result.clone()
     result[result == float('inf')] = float('nan')
     result[result == float('-inf')] = float('nan')
+    result[result == float('nan')] = float('nan')
+
     if name in ['offspring_by_batch']:
-        return result
+        ...
     if name in ['pruned_cxs']:
         if len(result.shape) > 1:
-            return result[:,0] # only pruned connections (1 is nodes)
+            result= result[:,0] # only pruned connections (1 is nodes)
         else:
-            return result
+            ...
     if name in ['lr_by_batch']:
-        return result.nanmean(dim=0)
+        if reduce:
+            result = result.nanmean(dim=0)
     if name in ["fitness_by_batch", "normed_fitness_by_batch"]:
-        #replace inf with nan
-        return result.nanmean(dim=(0,1))
+        if fns is None:
+            if reduce:
+                return result.nanmean(dim=(0,1))
+        else:
+            if reduce:
+                result = result.nanmean(dim=(1))
     if name in ['evals_by_batch']:
-        fwds_sgd = result[:,1] # only n_fwds_incl_sgd
+        # to int
+        n_evals = result[:,1] # only sgd_fwds
         # cumlative sum:
-        fwds_sgd = fwds_sgd.cumsum(dim=0)
-        return fwds_sgd
+        n_evals = n_evals.cumsum(dim=0)
+        result = n_evals
     if name in ['nodes_by_batch', 'cx_by_batch']:
-        return result[:,1] # average over pop
+        result = result[:,1] # average over pop
+    
+    return result
 
-
-def read_tensor_results(results_path, names, max_runs=None):
+def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=True, only_final=False, condition_filter=None):
     cond_dir = os.path.join(results_path, "conditions")
     results = []
+
+    # if not reduce and fns is None:
+    #     print("Must specify fns to use for non-reduced results")
+    #     return pd.DataFrame()
+
     for name in tqdm(names, desc="Loading"):
         try:
             df_index_offset = 0
             for cond in os.listdir(cond_dir):
+                if condition_filter is not None and cond not in condition_filter:
+                    continue
                 cond_path = os.path.join(cond_dir, cond)
                 if not os.path.isdir(cond_path):
                             continue
@@ -50,33 +70,89 @@ def read_tensor_results(results_path, names, max_runs=None):
                     if not os.path.exists(pt_path):
                         continue
                     t = torch.load(pt_path)
-                    t = process_tensor(t, name)
+                    t = process_tensor(t, name, fns, reduce)
+
+                    if only_final:
+                        last_row_not_nan = torch.isnan(t).sum(dim=0) == 0
+                        t = t[:, last_row_not_nan]
+
+                        t = t[..., -1].unsqueeze(-1)
+
                     if t is None:
                         print("Did not find tensor for", name, "at", pt_path)
                         continue
 
-                    with open(os.path.join(cond_path, run, "target.txt"), 'r') as f:
-                        target = f.read().strip()
+                    target_path = os.path.join(cond_path, run, "target.txt")
+                    if not os.path.exists(target_path):
+                        target = "None"
+                    else:
+                        with open(target_path, 'r') as f:
+                            target = f.read().strip()
                     
-                    names = [name]
-                    if len(t.shape) > 1:
-                        print("Found multiple columns for", name)
-                        while len(names) < t.shape[1]:
-                            names.append(name + f"_{len(names)}")
-                    df = pd.DataFrame(t.numpy(), columns=names)
+                    with open(os.path.join(cond_path, run, "cell_names.csv"), 'r') as f:
+                        cells = list(csv.reader(f))[0]
+
+                    if t.shape[0] == len(cells) and not reduce:
+                        # t = t[t!= float('-inf')]
+                        num_batches = t.shape[1]
+                        num_cells = t.shape[0]
+                        # Flatten the data and repeat the cell names
+                        values = t.flatten()
+                        cells = np.repeat(cells, num_batches)
+
+                        # Create a list of batch numbers
+                        batches = np.tile(np.arange(num_batches), num_cells)
+
+                        # Create the DataFrame
+                        df = pd.DataFrame({
+                            'cell': cells,
+                            # 'batch': batches,
+                            name: values
+                        })
+                        # return
+                        # df = pd.DataFrame(columns=[name, "cell"])
+                        # cells_data = [] 
+                        # # long format
+                        # for i, cell in enumerate(cells):
+                        #     t_i = t[i] # num batches long
+                        #     cells_data.append({'cell': cell, name: t_i, "batch": np.arange(len(t_i))})
+
+                        # df = pd.DataFrame(cells_data, columns=[name, "cell", "batch"])
+
+                        
+                    else:
+                        names = [name]
+                        if len(t.shape) > 1 and fns is not None:
+                            names += [f for f in fns]     
+                        if fns is not None and (name=='normed_fitness_by_batch' or name=='fitness_by_batch'):
+                            use_fns = fns
+                            if "normed" in name:
+                                use_fns = [f+"_normed" for f in fns]
+                            df = pd.DataFrame(t.T.numpy(), columns=use_fns) 
+                            for f in use_fns:
+                                df = df[df[f].notna()]
+                                df = df[df[f] != float('inf')]
+                                df = df[df[f] != float('-inf')]
+                                df = df[df[f] != float('nan')]
+                                df = df[df[f] != float('NaN')]
+                                df = df[df[f] != 'NaN']
+                                # df = df.reset_index(drop=True)
+                        else:
+                            df = pd.DataFrame(t.numpy(), columns=names)
+
+                            df = df[df[name].notna()]
+                            df = df[df[name] != float('inf')]
+                            df = df[df[name] != float('-inf')]
+                            df = df[df[name] != float('nan')]
+                            df = df[df[name] != float('NaN')]
+                            df = df[df[name] != 'NaN']
+                            df = df.reset_index(drop=True)
+
                     df["condition"] = cond
                     df["run"] = str(run)
                     df["target"] = target
-                    df["batch"] = df.index
-
-                    df = df[df[name].notna()]
-                    df = df[df[name] != float('inf')]
-                    df = df[df[name] != float('-inf')]
-                    df = df[df[name] != float('nan')]
-                    df = df[df[name] != float('NaN')]
-                    df = df[df[name] != 'NaN']
-                    df = df.reset_index(drop=True)
-
+                    if not only_final:
+                        df["batch"] = df.index
 
                     df.index = df.index + df_index_offset
                     df_index_offset += len(df)
@@ -86,7 +162,10 @@ def read_tensor_results(results_path, names, max_runs=None):
             print(e)
             print(traceback.format_exc())
             continue
-            
+    
+    if len(results) == 0:
+        print("No results found")
+        return pd.DataFrame() 
     final_df = results[0]
     for df in tqdm(results[1:], desc="Merging"):
         final_df = final_df.combine_first(df)
@@ -94,7 +173,7 @@ def read_tensor_results(results_path, names, max_runs=None):
 
 
 
-def plot_xy(results, x, y, save_path=None, show=False, x_label=None, y_label=None):
+def plot_xy(results, x, y, save_path=None, show=False, x_label=None, y_label=None, title=None):
     plt.figure(figsize=(10,10))
     # use_save_path = os.path.join(save_path, f"{y}.png")
     use_save_path = save_path
@@ -109,6 +188,8 @@ def plot_xy(results, x, y, save_path=None, show=False, x_label=None, y_label=Non
         plt.xlabel(x_label)
     if y_label is not None:
         plt.ylabel(y_label)
+    if title is not None:
+        plt.title(title)
 
     # plt.tight_layout(rect=[0, 0, .8, 1])
     if save_path:
@@ -123,11 +204,11 @@ def plot_vs_batches(results, y, save_path=None, show=False, max_ofs=None):
         results = results[(results["offspring_by_batch"] <= max_ofs) & (results["offspring_by_batch"] > 0)]
     plot_xy(results, "batch", y, save_path, show)
 
-def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,smooth=None):
+def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,smooth=None, title=None, y_label=None, x_label=None):
     results = results.drop(columns=[c for c in results.columns if c not in[ "condition", "target", 'run', 'batch', 'evals_by_batch', y]])
     
     num_points = len(results['batch'].unique())
-    if smooth is not None:
+    if smooth is not None and smooth > 0:
         num_points = int(num_points * (1.0-smooth))
     evals_by_batch = np.linspace(results['evals_by_batch'].min(),
                                  results['evals_by_batch'].max(),
@@ -144,7 +225,7 @@ def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,s
     
     
     save_path = os.path.join(save_path, save_name)
-    plot_xy(results, "evals", y, save_path, show, x_label="Forward passes")
+    plot_xy(results, "evals", y, save_path, show, x_label="Forward passes", y_label=y_label, title=title)
 
 
 def plot_vs_offspring(results, y, save_path=None, show=False, mean_by_target=False):

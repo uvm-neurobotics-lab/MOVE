@@ -34,15 +34,15 @@ fns = [
         ff.lpips,
         ff.dists,
         ff.ssim,
-        # ff.style,
         ff.haarpsi,
         ff.vif,
         ff.msssim,
         ff.dss,
         ff.gmsd,
-        ff.fsim,
-        ff.mdsi,
-        ff.vsi,
+        # ff.style,
+        # ff.fsim,
+        # ff.mdsi,
+        # ff.vsi,
         ]
 
 

@@ -160,16 +160,16 @@ def visualize_network(individual, config, visualize_disabled=False, show_weights
     graph = nx.DiGraph()
     
     # decrease font size
-    plt.rcParams.update({'font.size': 8})
+    plt.rcParams.update({'font.size': 4})
 
     # configure plot
-    plt.figure(figsize=(8, 8))
+    plt.figure(figsize=(20, 20))
     plt.subplots_adjust(left=0, bottom=0, right=1.25,
                         top=1.25, wspace=0, hspace=0)
 
     # nodes:
     add_nodes_to_graph(individual, node_labels, graph, config)
-    pos = nx.multipartite_layout(graph, scale=4, subset_key='layer')
+    pos = nx.multipartite_layout(graph, scale=3, subset_key='layer')
     
     draw_nodes(graph, pos, node_labels, node_size)
 

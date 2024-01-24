@@ -43,7 +43,7 @@ def build_fits(cond, target, run_id, run_dir, cell_names, function_names, overwr
 
     # (n_fns, n_cells, num_generations)
     fit = torch.load(os.path.join(
-        run_dir, "fitness_over_time.pt"), map_location=device)
+        run_dir, "fitness_by_batch.pt"), map_location=device)
 
     # Initialize fits_df dataframe with data from fit tensor
     fits_df = pd.DataFrame(
@@ -338,9 +338,12 @@ def collect_data(dir, overwrite_run_dfs=False, one_run=None, one_cond=None, load
         for run_dir in run_dirs:
             run_id = np.uint(os.path.basename(run_dir).split("_")[-1])
             # (n_cells)
-            cell_names = list(csv.reader(
-                open(os.path.join(run_dir, "cell_names.csv"))))[0]
-
+            try:
+                cell_names = list(csv.reader(
+                    open(os.path.join(run_dir, "cell_names.csv"))))[0]
+            except FileNotFoundError:
+                print("No cell_names.csv found in", run_dir)
+                continue
             # (n_fns)
             function_names = list(csv.reader(
                 open(os.path.join(run_dir, "function_names.csv"))))[0]

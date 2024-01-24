@@ -222,6 +222,30 @@ def get_candidate_nodes(s, connections):
     return set(b for (a, b) in connections if a in s and b not in s)
 
 
+def creates_cycle(connections, test):
+    """
+    Returns true if the addition of the 'test' connection would create a cycle,
+    assuming that no cycle already exists in the graph represented by 'connections'.
+    """
+    i, o = test
+    if i == o:
+        return True
+
+    visited = {o}
+    while True:
+        num_added = 0
+        for a, b in connections:
+            if a in visited and b not in visited:
+                if b == i:
+                    return True
+
+                visited.add(b)
+                num_added += 1
+
+        if num_added == 0:
+            return False
+
+
 def required_for_output(inputs, outputs, connections):
     """
     Collect the nodes whose state is required to compute the final network output(s).
@@ -276,22 +300,28 @@ def feed_forward_layers(inputs, outputs, connections):
     dangling_inputs = set()
     for n in required:
         has_input = False
+        has_output = False
         for (a, b) in connections:
             if b == n:
                 has_input = True
                 break
-    
+            if a==n:
+                has_output = True
+                
+        if has_output and not has_input:
+            dangling_inputs.add(n)
+            
     # add dangling inputs to the input set
     s = s.union(dangling_inputs)
     
     while 1:
 
         c = get_candidate_nodes(s, connections)
-        # Keep only the used nodes whose entire input set is contained in s.
         t = set()
         for n in c:
-            entire_input_set_in_s = all(a in s for (a, b) in connections if b == n)
-            if n in required and entire_input_set_in_s:
+            # check if all inputs are in s
+            all_inputs_in_s = all(a in s for (a, b) in connections if b == n)
+            if n in required and all_inputs_in_s:
                 t.add(n)
         # t = set(a for (a, b) in connections if b in s and a not in s)
         if not t:

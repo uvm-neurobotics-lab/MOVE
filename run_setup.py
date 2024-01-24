@@ -12,6 +12,8 @@ from move_config import MoveConfig
 from cppn.cppn import CPPN as ImageCPPN
 
 def fix_target_dimensions(config):
+    if config.target is None:
+        return
     dims = config.target.shape
     new_dims = []
     if config.num_upsamples == 0:
@@ -67,7 +69,7 @@ def run_setup(config_class = MoveConfig):
         parsed['controls']["num_cells"] = args.population
         parsed['controls']["num_children"] = args.population
     if args.generations > 0 :
-        parsed['controls']["total_offspring"] = args.generations
+        parsed['controls']["num_generation"] = args.generations
     if args.output is not None:
         parsed['controls']["output_dir"] = args.output
         
@@ -82,6 +84,7 @@ def run_setup(config_class = MoveConfig):
         parsed['controls']["hidden_nodes_at_start"] = args.num_hidden_nodes
     
     config = config_class()
+    print("TO:", config.total_offspring)
     config.device = torch.device(args.device)
     apply_condition(config, parsed.get("controls", {}), {}, parsed.get("name", "Default"), ff.__dict__)
     
@@ -104,9 +107,10 @@ def run_setup(config_class = MoveConfig):
         config.genome_type = ImageCPPN
         config.run_id = uuid.uuid1().int>>64 # generate a random (based on clock) 64-bit integer for id
         
-    
-        fix_target_dimensions(config)
-        print("Target shape: {}".format(list(config.target.shape)))
+
+        if config.target is not None:
+            fix_target_dimensions(config)
+            print("Target shape: {}".format(list(config.target.shape)))
         
         assertions(config)
         

@@ -563,5 +563,7 @@ FITNESS_FUNCTIONS={
     k:v for k,v in locals().items() if callable(v)
 }
 
-def register_fitness_function(name, fn):
+def register_fitness_function(name, fn, is_genotype=False):
     FITNESS_FUNCTIONS[name] = fn
+    if is_genotype:
+        GENOTYPE_FUNCTIONS.append(fn)

@@ -73,20 +73,21 @@ class CPPNEvolutionaryAlgorithm(object):
             self.config.genome_type = CPPN
         self.genome_type = config.genome_type
 
-        self.target = self.config.target.to(self.device)
-        
-        if len(self.target.shape) < 3:
-            # grayscale image
-            if self.config.color_mode != "L":
-                logging.warning("Target image is grayscale, but color_mode is not set to 'L'. Setting color_mode to 'L'")
-                self.config.color_mode = "L"
-                
-        if self.config.res_w != self.target.shape[0]:
-            self.config.res_w = self.target.shape[0]
-            logging.warning("Target image width does not match config.res_w. Setting config.res_w to target image width")
-        if self.config.res_h != self.target.shape[1]:
-            self.config.res_h = self.target.shape[1]
-            logging.warning("Target image height does not match config.res_h. Setting config.res_h to target image height")
+        if self.config.target is not None:
+            self.target = self.config.target.to(self.device)
+            
+            if len(self.target.shape) < 3:
+                # grayscale image
+                if self.config.color_mode != "L":
+                    logging.warning("Target image is grayscale, but color_mode is not set to 'L'. Setting color_mode to 'L'")
+                    self.config.color_mode = "L"
+                    
+            if self.config.res_w != self.target.shape[0]:
+                self.config.res_w = self.target.shape[0]
+                logging.warning("Target image width does not match config.res_w. Setting config.res_w to target image width")
+            if self.config.res_h != self.target.shape[1]:
+                self.config.res_h = self.target.shape[1]
+                logging.warning("Target image height does not match config.res_h. Setting config.res_h to target image height")
 
         self.fitnesses = {}
         
@@ -95,7 +96,6 @@ class CPPNEvolutionaryAlgorithm(object):
         initial_batches = math.ceil(self.config.num_cells / self.config.initial_batch_size)
         other_batches = math.ceil((self.config.total_offspring-self.config.num_cells) / self.config.batch_size)
 
-    
         self.total_batches = initial_batches + other_batches
         print("Expecting up to", self.total_batches, "batches")
         print("Stop condition:", self.stop_condition.__class__.__name__ if self.stop_condition is not None else "None")
@@ -138,6 +138,8 @@ class CPPNEvolutionaryAlgorithm(object):
         
         
     def init_target(self):
+        if self.config.target is None:
+            return
         # repeat the target for easy comparison
         self.target = torch.stack([self.target.squeeze() for _ in range(self.config.initial_batch_size)])
 
@@ -191,20 +193,21 @@ class CPPNEvolutionaryAlgorithm(object):
 
     def activate_population(self, genomes):
         if self.config.activation_mode == 'population':
-            imgs = activate_population(genomes, self.config, self.inputs)
+            outputs = activate_population(genomes, self.config, self.inputs)
         else:
             if self.config.thread_count > 1:
-                imgs = activate_population_async(genomes,
+                outputs = activate_population_async(genomes,
                                                  self.in_queue,
                                                  self.out_queue,
                                                  self.target,
                                                  self.config)
             else:
-                imgs = torch.stack([g(self.inputs) for g in genomes])
+                outputs = torch.stack([g(self.inputs) for g in genomes])
             
-            imgs = imgs.clamp_(0,1)
-        imgs, self.target = ff.correct_dims(imgs, self.target)
-        return imgs
+            outputs = outputs.clamp_(0,1)
+        if hasattr(self, "target"):
+            outputs, self.target = ff.correct_dims(outputs, self.target)
+        return outputs
 
     def evolve(self, run_number = 1, show_output=False, initial_population=True):
         self.start_time = time.time()
@@ -282,7 +285,7 @@ class CPPNEvolutionaryAlgorithm(object):
         
      
         with open(os.path.join(self.run_dir, f"target.txt"), 'w') as f:
-            f.write(self.config.target_name)
+            f.write(str(self.config.target_name))
         
         self.save_best_img(os.path.join(self.image_dir, f"best_{self.config.run_id:04d}.png"), do_graph=True)
         print("Saved run to: ", self.run_dir)
@@ -361,7 +364,11 @@ class CPPNEvolutionaryAlgorithm(object):
             plt.savefig(fname)
 
         else:
-            plt.imsave(fname, img, cmap='gray')
+            try:
+                plt.imsave(fname, img, cmap='gray')
+            except:
+                print("Failed to save image")
+                return
         
         plt.close()
         

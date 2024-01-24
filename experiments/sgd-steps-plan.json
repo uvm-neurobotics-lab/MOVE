@@ -1,17 +1,53 @@
 {
-    "experiment_name": "sgd-steps_early-stop",
+    "experiment_name": "sgd-steps",
 
-    "additional_controls":{},
+    "additional_controls":{
+        "total_offspring": 1000000,
+        "stop_condition": "fwds",
+        "stop_condition_value": 100000,
+        "sgd_early_stop": 1000,
+        "batch_size": 1,
+        "initial_batch_size": 1,
+        "single_structural_mutation": false,
+        "n_fourier_features": 128,
+        "objective_functions": [
+            "psnr",
+            "mse",
+            "lpips",
+            "dists",
+            "ssim",
+            "haarpsi",
+            "vif",
+            "msssim",
+            "dss",
+            "gmsd"
+        ],
+        "init_connection_probability": 0.5,
+        "init_connection_probability_fourier": 0.50,
+        "prob_add_node": 0.85,
+        "prob_add_connection": 0.85,
+        "prob_remove_node": 0.15,
+        "prob_disable_connection": 0.15,
+        "sgd_l2_reg": 0.0003,
+        "hidden_nodes_at_start": [16],
+        "topology_mutation_iters": 2,
+        "node_activation_prune_threshold": 0.01,
+        "prune_threshold": 0.0001,
+        "min_pruned": 1
+
+    },
 
     "targets":[
         "data/skull.png",
         "data/sunrise.png",
-        "data/dolphin.png"
+        "data/dolphin.png",
+        "data/apple.png"
     ],
 
     "color_modes":
     [
         "L",
+        "HSL",
         "HSL",
         "HSL"
     ],
@@ -19,16 +55,43 @@
     "mode": "grid",
 
     "variables":[
-       "sgd_steps",
-       "sgd_early_stop"
+       "sgd_steps"
     ],
 
 
     "levels":[
-        [1, 16, 100],
-        [1, 100]
+        [0, 16, 100, 1000]
     ],
 
-    "name_template": "{sgd_steps:03d}_steps_{sgd_early_stop:03d}_early_stop"
+    "additional_parameters": {
+        "sgd_steps": {
+            "prob_mutate_weight":{
+                "0" : 0.35,
+                "16" : 0,
+                "100" : 0,
+                "1000" : 0
+            },
+            "weight_mutation_std":{
+                "0" : 0,
+                "16" : 0,
+                "100" : 0,
+                "1000" : 0
+            },
+            "batch_size": {
+                "0" : 8,
+                "16" : 1,
+                "100" : 1,
+                "1000" : 1
+                },
+            "initial_batch_size":{
+                "0" : 8,
+                "16" : 1,
+                "100" : 1,
+                "1000" : 1
+            }
+        }
+    },
+
+    "name_template": "{sgd_steps:03d}_steps_"
 
 }

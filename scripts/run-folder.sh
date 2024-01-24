@@ -31,6 +31,10 @@ case $key in
     output="$2"
     shift # past argument
     ;;
+    -t|--target)
+    target="$2"
+    shift # past argument
+    ;;
     *)
     echo "Unknown option $key"
     exit 1
@@ -43,6 +47,7 @@ gens=${gens:--1}
 repeats=${repeats:-1}
 workers=${workers:-1}
 output=${output:-"output"}
+target=${target:-"."}
 
 echo "Using $gens gens"
 echo "Running $repeats times"
@@ -64,7 +69,12 @@ for i in $(seq 1 $repeats); do
   echo "Running all scripts in $folder with $gens gens"
   run_id=$(date +%Y%m%d%H%M%S)
   running=0
-  for filename in ./$folder/*; do
+  for filename in $folder/*.json; do
+    #  if [[ "$filename" != *"$target"* ]];then
+    #     printf 'skip %s\n' "$file"
+    #     continue
+    #   fi
+
       echo "Running: $filename"
       
       # trap ctrl-c and call ctrl_c()
@@ -79,7 +89,6 @@ for i in $(seq 1 $repeats); do
       }
 
       python3 -O move.py -c $filename -g $gens -pr -o $output & #  >$logdir/$(basename $filename)_$run_id.log &
-      # python3 move.py -c $filename -g $gens -pr -o $output & #  >$logdir/$(basename $filename)_$run_id.log &
       
       running=$((running+1))
       if [ $running -eq $workers ]; then

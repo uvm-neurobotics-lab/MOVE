@@ -110,6 +110,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
                             
     def init_sgd(self, batch_cell_ids=None):
+        if self.config.sgd_steps == 0:
+            return
         if batch_cell_ids is None:
             # all of them
             batch_cell_ids = torch.arange(self.n_cells, device=self.config.device)    
@@ -210,14 +212,15 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 else:
                     # use raw as fitness
                     fit_children[:,i] = fitness.detach()
-        
-        fc_normed = torch.stack(fc_normed, dim=1)
+        if len(fc_normed) > 0:
+            fc_normed = torch.stack(fc_normed, dim=1)
+        else:
+            fc_normed = fit_children.clone() # not normalizing anything
                 
         # take the mean of fitness values as overall fitness (not used in selection)
         for g, f in zip(genomes, fc_normed):
             f = f[f != -torch.inf] # no need to include -inf (un-normed fitness)
             g[2].fitness = f.mean().detach()
-            
         return fit_children, fc_normed
 
 
@@ -239,12 +242,13 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         else:
             # insure each cell is used once at first
             batch_cell_ids = torch.arange(start=self.total_offspring, end=min(self.map.n_cells, self.total_offspring+batch_size), device=self.config.device)
-       
-        if self.target.shape[0]>len(batch_cell_ids) :
-            print(f"WARNING: target batch size is larger than population size, truncating target from {self.target.shape[0]} to {batch_size}")
-            print("Population size:", self.config.num_cells)
-            print("Total offspring:", self.total_offspring)
-            self.target = self.target[:len(batch_cell_ids)]
+
+        if hasattr(self, "target"):
+            if self.target.shape[0]>len(batch_cell_ids) :
+                print(f"WARNING: target batch size is larger than population size, truncating target from {self.target.shape[0]} to {batch_size}")
+                print("Population size:", self.config.num_cells)
+                print("Total offspring:", self.total_offspring)
+                self.target = self.target[:len(batch_cell_ids)]
         
         # reproduction
         for child_i, cell_i in enumerate(batch_cell_ids):
@@ -262,7 +266,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             if len(new_children) >= batch_size:
                 break
         steps=0
-        if self.config.with_grad and (self.current_batch+1) % self.config.grad_every == 0:
+        if self.config.sgd_steps > 0 and self.config.with_grad and (self.current_batch+1) % self.config.grad_every == 0:
             # do SGD update
             self.init_sgd(batch_cell_ids)
             if self.config.thread_count > 1:
@@ -404,7 +408,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         # gens_per_population = self.config.num_cells // self.config.batch_size
         
-        if alg.current_batch % self.config.record_frequency_batch != 0:
+        if self.current_batch % self.config.record_frequency_batch != 0:
             pass # don't record
         else:
             index = self.current_batch // self.config.record_frequency_batch

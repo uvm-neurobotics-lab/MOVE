@@ -4,13 +4,13 @@ from torchvision.transforms import Resize
 
 import __main__ as main
 
-if not hasattr(main, '__file__'):
-    try:
-        from tqdm.notebook import trange
-    except ImportError:
-        from tqdm import trange
-else:
-    from tqdm import trange
+# if not hasattr(main, '__file__'):
+#     try:
+#         from tqdm.notebook import trange
+#     except ImportError:
+#         from tqdm import trange
+# else:
+from tqdm import trange
 from tqdm import tqdm
 from norm import norm_tensor, norm_tensor_by_tensor
 
@@ -38,7 +38,7 @@ def min_resize(imgs):
     return imgs
 
 
-def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None):
+def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False):
     if isinstance(genomes[0], tuple):
         genomes = [g for c_,ci_,g in genomes]
     all_params = []
@@ -82,10 +82,12 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, 
     def fw(f,_): return f
     
     compiled_fn = f
-    pbar = trange(config.sgd_steps, leave=False, disable=config.sgd_steps <= 5)
+    if not skip_pbar:
+        pbar = trange(config.sgd_steps, leave=False, disable=config.sgd_steps <= 5)
     
     if hasattr(config, 'use_aot') and config.use_aot:
-        pbar.set_description_str("Compiling population AOT function... ")
+        if not skip_pbar:
+            pbar.set_description_str("Compiling population AOT function... ")
         if torch.__version__.startswith("1") or config.activation_mode != 'node':
             if hasattr(config, 'use_aot') and config.use_aot:
                 # super slow unless there are a ton of SGD steps
@@ -140,6 +142,9 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, 
     # Optimize
     step = 0
     stopping = EarlyStopping(patience=early_stop if early_stop else config.sgd_steps, min_delta=config.sgd_early_stop_delta)
+    if skip_pbar:
+        pbar = range(config.sgd_steps)
+    
     for step in pbar:
         imgs = compiled_fn(inputs, genomes)
         loss = loss_fn(imgs, target)
