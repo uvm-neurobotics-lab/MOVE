@@ -239,7 +239,6 @@ class CPPN(nn.Module):
                     if any([f"{node.id},{path_end.id}" in self.connections.keys() for node in layer]):
                         existing = [node for node in layer if f"{node.id},{path_end.id}" in self.connections.keys()][0]
                         path.append(f"{existing.id},{path_end.id}")
-                        print("found existing connection", f"{existing.id},{path_end.id}")
                         path_end = existing
                     else:
                         random_node = random_choice(layer)
@@ -251,16 +250,12 @@ class CPPN(nn.Module):
                 
                 if any([f"{input_node_id},{path_end.id}" in self.connections.keys() for input_node_id in self.input_node_ids]):
                     path_start = [node for node in self.input_nodes if f"{node.id},{path_end.id}" in self.connections.keys()][0]
-                    print("found existing connection", f"{path_start.id},{path_end.id}")
                     path.append(f"{path_start.id},{path_end.id}")
                 else:
                     random_node = random_choice(self.input_nodes)
                     self.connections[f"{random_node.id},{path_end.id}"] = Connection(self.rand_weight(weight_std))
                     path.append(f"{random_node.id},{path_end.id}")
                     
-                print(output_node.id, ":", path[::-1])
-                print("weights:",[self.connections[cx].weight.item() for cx in path[::-1]])
-                
                 for cx in path:
                     self.connections[cx].enabled = True
     
@@ -470,13 +465,11 @@ class CPPN(nn.Module):
                 new_cx = Connection(self.rand_weight(config.weight_init_std))
                 
                 new_cx_key = f"{from_node.id},{to_node.id}"
-                
                 self.connections[new_cx_key] = new_cx
                 self.update_layers()
                 break # found a valid connection
             
             # else failed to find a valid connection, don't add and try again
-
 
 
     def add_node(self, config):
@@ -500,14 +493,16 @@ class CPPN(nn.Module):
             "Node ID already exists: {}".format(new_node.id)
         
         self.nodes[new_node.id] =  new_node # add a new node between two nodes
-        self.connections[old_cx_key].enabled = False  # disable old connection
+        # self.connections[old_cx_key].enabled = False  # disable old connection
+        old_weight = self.connections[old_cx_key].weight
+        old_from, old_to = old_cx_key.split(',')
+        del self.connections[old_cx_key]  # delete old connection
 
         # The connection between the first node in the chain and the
         # new node is given a weight of one and the connection between
         # the new node and the last node in the chain
         # is given the same weight as the connection being split
         
-        old_from, old_to = old_cx_key.split(',')
         new_cx_1_key = f"{old_from},{new_node.id}"
         new_cx_1 = Connection(torch.tensor([1.0], device=self.device))
         
@@ -517,7 +512,7 @@ class CPPN(nn.Module):
         self.connections[new_cx_1_key] = new_cx_1
 
         new_cx_2_key = f"{new_node.id},{old_to}"
-        new_cx_2 = Connection(self.connections[old_cx_key].weight)
+        new_cx_2 = Connection(old_weight)
         assert new_cx_2_key not in self.connections.keys()
         self.connections[new_cx_2_key] = new_cx_2
 
