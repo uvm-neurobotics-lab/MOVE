@@ -1,7 +1,42 @@
 {
-    "experiment_name": "fns_per_cell",
+    "experiment_name": "fns-per-cell",
 
-    "additional_controls":{},
+    "additional_controls":{
+        "total_offspring": 1000000,
+        "stop_condition": "fwds",
+        "stop_condition_value": 300000,
+        "sgd_early_stop": 10,
+        "batch_size": 8,
+        "initial_batch_size": 8,
+        "single_structural_mutation": false,
+        "objective_functions": [
+            "psnr",
+            "mse",
+            "lpips",
+            "dists",
+            "ssim",
+            "haarpsi",
+            "vif",
+            "msssim",
+            "dss",
+            "gmsd"
+        ],
+        "init_connection_probability": 0.5,
+        "init_connection_probability_fourier": 0.50,
+        "prob_add_node": 0.85,
+        "prob_add_connection": 0.85,
+        "prob_remove_node": 0.15,
+        "prob_disable_connection": 0.15,
+        "sgd_l2_reg": 0.0003,
+        "hidden_nodes_at_start": [16],
+        "topology_mutation_iters": 2,
+        "node_activation_prune_threshold": 0.01,
+        "prune_threshold": 0.0001,
+        "min_pruned": 1,
+        "sgd_steps" : 1000,
+        "n_fourier_features": 16
+
+    },
 
     "targets":[
         "data/skull.png",
@@ -26,9 +61,10 @@
 
 
     "levels":[
-        [1, 3, 5, 7, 9, 11]
+        [1, 3, 5, 9]
     ],
 
-    "name_template": "{move_fns_per_cell:02d}_fns_per_cell"
+
+    "name_template": "{move_fns_per_cell:03d}_per_cell"
 
 }

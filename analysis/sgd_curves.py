@@ -95,6 +95,32 @@ from tqdm import tqdm
 import multiprocessing as mp
 mp.set_start_method('spawn', force=True)
 
+def mean_confidence_interval(data, confidence=0.95):
+    from scipy import stats
+    a = 1.0 * np.array(data)
+    n = len(a)
+    m, se = np.mean(a), stats.sem(a)
+    h = se * stats.t.ppf((1 + confidence) / 2., n-1)
+    return h
+
+def stats(df, batch1, batch2, var):
+    from scipy.stats import wilcoxon
+    print(var, batch1, batch2)
+    batch1_df = df[df['batch']==batch1]
+    batch2_df = df[df['batch']==batch2]
+    batch1_losses = batch1_df[var].values
+    batch2_losses = batch2_df[var].values
+    print('mean', batch1_losses.mean(), batch2_losses.mean())
+    print('std', batch1_losses.std(), batch2_losses.std())
+    
+    ci_1 = mean_confidence_interval(batch1_losses)
+    ci_2 = mean_confidence_interval(batch2_losses)
+    
+    print('95% CI ', batch1, batch1_losses.mean() - ci_1, '-', batch1_losses.mean() + ci_1, f'${batch1_losses.mean()} \pm ' + str(ci_1) + '$')
+    print('95% CI ', batch2, batch2_losses.mean() - ci_2, '-', batch2_losses.mean() + ci_2, f'${batch2_losses.mean()} \pm ' + str(ci_2) + '$')
+    
+    return wilcoxon(batch1_losses, batch2_losses)
+
 if __name__=='__main__':
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(device)
@@ -102,6 +128,24 @@ if __name__=='__main__':
 
     # results.to_csv('sgd-steps-inner-loop.csv')
     results = pd.read_csv('100-steps-inner-loop-all.csv')
+    
+    max_step = results.groupby(['run', 'condition_path', 'batch']).max().reset_index()
+    min_step = results.groupby(['run', 'condition_path', 'batch']).min().reset_index()
+    
+    max_step['step'] = max_step['step'].astype(int)
+    min_step['step'] = min_step['step'].astype(int)
+    
+    diff_first_step_last_step = pd.merge(max_step, min_step, on=['run', 'condition_path', 'batch'], suffixes=('_max', '_min'))
+    
+    diff_first_step_last_step['loss_diff'] = diff_first_step_last_step['loss_max'] - diff_first_step_last_step['loss_min']
+    diff_first_step_last_step['loss_diff'] = diff_first_step_last_step['loss_diff'].abs()    
+    
+    print(diff_first_step_last_step)
+    sns.barplot(data=diff_first_step_last_step, x='condition_path', y='loss_diff', hue='batch')
+    plt.savefig('sgd-steps-inner-loop-diff.png')
+    
+    print(stats(diff_first_step_last_step, 'first', 'last', 'loss_diff'))
+    exit()
     
     import seaborn as sns
     import matplotlib.pyplot as plt
