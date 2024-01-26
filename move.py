@@ -288,7 +288,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                             config      = self.config,
                             early_stop  = self.config.sgd_early_stop,
                             )
-                
+        
+        else:
+            # we need to populate the node activations or else they will be pruned for inactivity
+            imgs = self.activate_population([g for _,_,g in new_children])
+               
         n_pruned, n_pruned_nodes = 0,0
         for _,_,child in new_children:
             cx_pruned,nodes_pruned = child.prune(self.config)
