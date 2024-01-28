@@ -785,10 +785,16 @@ class CPPN(nn.Module):
         make_dot(self.forward(x), show_attrs=True, show_saved=True, params=dict(self.named_parameters())).render(fname, format="pdf")
         
     @staticmethod
-    def create_from_json(json_dict, config, CPPNClass=None):
+    def create_from_json(json_dict, config=None, CPPNClass=None, ConfigClass=None):
         """Constructs a CPPN from a json dict or string."""
         if isinstance(json_dict, str):
             json_dict = json.loads(json_dict, strict=False)
+        if config is None and 'config' in json_dict:
+            if ConfigClass is None:
+                ConfigClass = CPPNConfig
+            config = ConfigClass.create_from_json(json_dict["config"], ConfigClass)
+            json_dict = json_dict["genome"]
+            print("created config of type", type(config))
         if CPPNClass is None:
             CPPNClass = CPPN
         new_cppn = CPPNClass(config, do_init=False)

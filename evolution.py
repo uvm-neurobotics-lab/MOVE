@@ -119,11 +119,14 @@ class CPPNEvolutionaryAlgorithm(object):
                 res_w//2**self.config.num_upsamples,
                 self.config.use_radial_distance,
                 self.config.use_input_bias,
-                self.config.num_inputs,
+                2+self.config.use_radial_distance+self.config.use_input_bias,
                 self.config.device,
                 coord_range=self.config.coord_range
                 )
         if self.config.use_fourier_features:
+            if self.config.fourier_seed == 'random':
+                self.config.fourier_seed = random.randint(0, 1000000)
+            
             self.inputs = add_fourier_features(
                 self.inputs,
                 self.config.n_fourier_features,
@@ -131,7 +134,8 @@ class CPPNEvolutionaryAlgorithm(object):
                 dims=2,
                 include_original=True,
                 mult_percent=self.config.get("fourier_mult_percent", 0.0),
-                sin_and_cos=self.config.fourier_sin_and_cos
+                sin_and_cos=self.config.fourier_sin_and_cos,
+                seed = self.config.fourier_seed
                 )
         self.config.num_inputs = self.inputs.shape[-1]
         self.inputs = self.inputs.to(self.config.device)

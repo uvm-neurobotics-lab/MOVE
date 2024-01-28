@@ -40,6 +40,7 @@ class CPPNConfig:
         self.allow_recurrent = False
         self.init_connection_probability = 0.85
         self.init_connection_probability_fourier = 0.1
+        self.fourier_seed = 'random'
         self.force_init_path_inputs_outputs = True
         self.dense_init_connections = False
         # self.activations = [sin, cos, gauss, linear, tanh]
@@ -280,7 +281,7 @@ class CPPNConfig:
             if print_out:
                 print(f"Setting {key} to {value}")
             if not key in self.__dict__:
-                logging.warning(f"Unexpected key {key} in config")
+                logging.warning(f"Unexpected key {key} in config {self.__class__.__name__}")
             setattr(self, key, value)
         self.strings_to_fns()
         
@@ -306,7 +307,7 @@ class CPPNConfig:
         config.version = json_str['version']
         for key, value in json_str.items():
             if not key in config.__dict__:
-                logging.warning(f"Unexpected key {key} in config")
+                logging.warning(f"Unexpected key {key} in config {config_type}")
             setattr(config, key, value)
         config.strings_to_fns()
         return config

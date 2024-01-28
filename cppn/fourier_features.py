@@ -29,9 +29,14 @@ def input_mapping(x, b_scale:float, mapping_size:int, dims:int=2, sin_and_cos=Fa
     return apply_mapping(x, B_gauss, sin_and_cos=sin_and_cos)
   
 
-def add_fourier_features(x, n_features, B_scale=10.0, dims=2, include_original=False, mult_percent=.5, sin_and_cos=False):
+def add_fourier_features(x, n_features, B_scale=10.0, dims=2, include_original=False, mult_percent=.5, sin_and_cos=False, seed=None):
     assert n_features % dims == 0, "mapping_size must be divisible by dims"
     
+    original_seed = torch.initial_seed()
+    if seed is not None:
+      print(f"using fourier seed: {seed}")
+      torch.manual_seed(seed) # force reproducibility of fourier features
+      
     # get first dims features
     feats = x[:,:, :dims]
     
@@ -52,5 +57,7 @@ def add_fourier_features(x, n_features, B_scale=10.0, dims=2, include_original=F
     else:
       X = f_feats
 
+    torch.manual_seed(original_seed) # reset seed
+    
     return X
 

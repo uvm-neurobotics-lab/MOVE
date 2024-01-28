@@ -205,27 +205,33 @@ def plot_vs_batches(results, y, save_path=None, show=False, max_ofs=None):
     plot_xy(results, "batch", y, save_path, show)
 
 def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,smooth=None, title=None, y_label=None, x_label=None):
-    results = results.drop(columns=[c for c in results.columns if c not in[ "condition", "target", 'run', 'batch', 'evals_by_batch', y]])
-    
-    num_points = len(results['batch'].unique())
-    if smooth is not None and smooth > 0:
-        num_points = int(num_points * (1.0-smooth))
-    evals_by_batch = np.linspace(results['evals_by_batch'].min(),
-                                 results['evals_by_batch'].max(),
-                                 num_points)
-    # find closest evals 
-    results['evals'] = results['evals_by_batch'].apply(lambda x: evals_by_batch[np.argmin(np.abs(evals_by_batch - x))])
-    
-    save_name = f"{y}_v_evals.png"
-    if mean_by_target:
-        results = results.groupby(["condition", 'run', 'batch']).mean(numeric_only=True).reset_index()
-        save_name = f"{y}_v_evals_avg.png"
-    else:
-        results = results.groupby(["condition", "target", 'run','batch']).mean(numeric_only=True).reset_index()
-    
-    
-    save_path = os.path.join(save_path, save_name)
-    plot_xy(results, "evals", y, save_path, show, x_label="Forward passes", y_label=y_label, title=title)
+    try:
+        results = results.drop(columns=[c for c in results.columns if c not in[ "condition", "target", 'run', 'batch', 'evals_by_batch', y]])
+        
+        num_points = len(results['batch'].unique())
+        if smooth is not None and smooth > 0:
+            num_points = int(num_points * (1.0-smooth))
+        evals_by_batch = np.linspace(results['evals_by_batch'].min(),
+                                    results['evals_by_batch'].max(),
+                                    num_points)
+        # find closest evals 
+        results['evals'] = results['evals_by_batch'].apply(lambda x: evals_by_batch[np.argmin(np.abs(evals_by_batch - x))])
+        
+        save_name = f"{y}_v_evals.png"
+        if mean_by_target:
+            results = results.groupby(["condition", 'run', 'batch']).mean(numeric_only=True).reset_index()
+            save_name = f"{y}_v_evals_avg.png"
+        else:
+            results = results.groupby(["condition", "target", 'run','batch']).mean(numeric_only=True).reset_index()
+        
+        
+        save_path = os.path.join(save_path, save_name)
+        plot_xy(results, "evals", y, save_path, show, x_label="Forward passes", y_label=y_label, title=title)
+    except Exception as e:
+        print(e)
+        print(traceback.format_exc())
+        print("Error plotting", y)
+        return
 
 
 def plot_vs_offspring(results, y, save_path=None, show=False, mean_by_target=False):
