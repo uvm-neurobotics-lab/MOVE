@@ -12,12 +12,11 @@ shift # past argument or value
 while [[ $# -gt 0 ]]
 do
   key="$1"
-
   case $key in
   # -d | --dry) is a flag (no value after it)
       -d|--dry)
       dry_run=1
-      shift # past argument
+      # shift # past argument
       ;;
       -r|--repeats)
       repeats="$2"
@@ -33,7 +32,7 @@ do
       ;;
       -hc|--hillclimber)
       hillclimber=1
-      shift # past argument
+      # shift # past argument
       ;;
       *)
       echo "Unknown option $key"
