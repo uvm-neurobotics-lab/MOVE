@@ -6,10 +6,11 @@
         "stop_condition": "fwds",
         "stop_condition_value": 100000,
         "sgd_early_stop": 1000,
-        "batch_size": 1,
-        "initial_batch_size": 1,
+        "batch_size": 5,
+        "initial_batch_size": 5,
         "single_structural_mutation": false,
-        "n_fourier_features": 128,
+        "n_fourier_features": 16,
+        "num_inputs": 19,
         "objective_functions": [
             "psnr",
             "mse",
@@ -33,8 +34,8 @@
         "topology_mutation_iters": 2,
         "node_activation_prune_threshold": 0.01,
         "prune_threshold": 0.0001,
-        "min_pruned": 1
-
+        "min_pruned": 1,
+        "target_resize": [64,64]
     },
 
     "targets":[
@@ -72,7 +73,7 @@
                 "1000" : 0
             },
             "weight_mutation_std":{
-                "0" : 0,
+                "0" : 1.0,
                 "16" : 0,
                 "100" : 0,
                 "1000" : 0
@@ -92,6 +93,6 @@
         }
     },
 
-    "name_template": "{sgd_steps:03d}_steps_"
+    "name_template": "{sgd_steps:03d}_steps"
 
 }
