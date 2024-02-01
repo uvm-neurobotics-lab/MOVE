@@ -1,0 +1,62 @@
+{
+    "name": "soft-mask",
+    "controls": {
+        "target": "data/apple.png",
+        "color_mode": "HSL",
+        "output_dir": "../results/soft-mask",
+        "alg": "move", 
+        "total_offspring": 10000000,
+        "stop_condition": "fwds",
+        "stop_condition_value": 100,
+        "sgd_early_stop": 5,
+        "sgd_learning_rate": 0.01,
+        "batch_size": 16,
+        "initial_batch_size": 16,
+        "single_structural_mutation": false,
+        "objective_functions": [
+            "psnr",
+            "mse",
+            "lpips",
+            "dists",
+            "ssim",
+            "haarpsi",
+            "vif",
+            "msssim",
+            "dss",
+            "gmsd"
+        ],
+        "init_connection_probability": 0.5,
+        "init_connection_probability_fourier": 0.5,
+        "n_fourier_features": 16,
+        "num_inputs": 19,
+        "prob_add_node": 0.85,
+        "prob_add_connection": 0.85,
+        "prob_remove_node": 0.15,
+        "prob_disable_connection": 0.15,
+        "sgd_l2_reg": 0.0003,
+        "hidden_nodes_at_start": [
+            16
+        ],
+        "topology_mutation_iters": 2,
+        "min_pruned": 1,
+        "connection_bloat": 0,
+        "sgd_steps": 10,
+
+        "num_cells": 256,
+        "population_size": 256,
+        "target_resize":[64,64],
+        "low_mem":true,
+        "prune_threshold": 0.001,
+        "node_activation_prune_threshold": 0.01
+},
+"conditions":
+[
+    {
+        "test": {
+            "soft_mask_mu": 0.5,
+            "soft_mask_sigma": 1.0,
+            "soft_mask_min":-1.0
+        }
+    }
+]
+}

@@ -15,78 +15,112 @@ class MOVEMap(object):
         self.n_fns = len(self.fns)
         self.fns_per_cell = self.config.move_fns_per_cell
         
+        self.using_soft_mask = self.config.soft_mask_sigma is not None and self.config.soft_mask_sigma > 0
+
+
         assert self.fns_per_cell <= self.n_fns, "Cannot have more functions per cell than total functions"
         assert self.fns_per_cell % 2 == 1, "Must have an odd number of functions per cell"
         
-        if hasattr(self.config, "load_cell_fns"):
-            fn_names = self.fns
-            
-            with open(self.config.load_cell_fns, "r") as f:
-                cell_names = f.readlines()
-            for i, cell_name in enumerate(cell_names):
-                cell_names[i] = cell_name.strip()
-            cell_names = [cell_name.split("_") for cell_name in cell_names]
-            combs = [[fn_names.index(cell_name) for cell_name in cell_names[i]] for i in range(len(cell_names))]
-            self.n_cells = len(cell_names)
-            print("Using loaded cells: ", combs)
-            
-        else:
-            # assign combinations to cells
-            combs = list(itertools.combinations(torch.arange(len(self.fns)),  self.fns_per_cell))
-            max_count = len(combs)
-            if not hasattr(self.config, "cell_fns_seed"):
-                combs_random = random
-            else:
-                combs_random  = random.Random(self.config.cell_fns_seed)
-                
-            if hasattr(self.config, "num_cells"):
-                if len(combs) > self.config.num_cells:
-                    combs = combs_random.sample(combs, self.config.num_cells)
-                elif len(combs) < self.config.num_cells:
-                    print("WARN: less combinations than cells, filling with random repeats")
-                    while len(combs) < self.config.num_cells:
-                        if not hasattr(self.config, "cell_fns_seed"):
-                            combs.append(combs_random.choice(combs))
-                        else:
-                            combs.append(combs_random.choice(combs))
-            else:
-                raise ValueError("Must specify num_cells")
-            
-            if hasattr(self.config, "cell_fns_seed"):
-                print("Using fixed combs: ", combs)
-        
-        self.n_cells = len(combs)
-        print(f"Using {self.n_cells} out of {max_count} possible combinations")
-        self.map = [None] * np.prod(self.n_cells) # fill with None
-        self.cell_fn_inds = torch.tensor(combs, device=self.config.device)
-        self.cell_names = []
-        for c in combs:
-            self.cell_names.append("_".join([self.fns[i] for i in c]))
+       
 
-        print("Number of cells: ", self.n_cells)
+
+        # Set up fn mask matrix
+        if self.using_soft_mask:
+            # use a softened mask
+            self.n_cells = self.config.num_cells
+            self.fn_mask = torch.randn((self.n_fns, self.n_cells), device=self.config.device) # fns in each cell
+            self.fn_mask *= self.config.soft_mask_sigma
+            self.fn_mask += self.config.soft_mask_mu # mean of the mask
+
+            self.fn_mask = torch.clamp(self.fn_mask, self.config.soft_mask_min, torch.inf)
+            self.cell_fn_inds = [range(len(self.fns))]* self.n_cells # unused with soft mask
+
+            use_fns_per_cell = False
+            
+            if use_fns_per_cell:
+                for i in range(self.n_cells):
+                    while torch.sum(self.fn_mask[:, i]) < self.fns_per_cell:
+                        # add more fns to this cell
+                        self.fn_mask[torch.randint(0, self.n_fns, (1,)), i] = torch.randn(1, device=self.config.device)*self.config.soft_mask_sigma + self.config.soft_mask_mu
+                    while torch.sum(self.fn_mask[:, i]) > self.fns_per_cell:
+                        # remove fns from this cell
+                        self.fn_mask[torch.randint(0, self.n_fns, (1,)), i] = 0
+
+            self.cell_names = []
+            for cell in self.fn_mask.T:
+                vals = [str(round(i.item(), 2)) for i in cell]
+                name = "+".join([f"{vals[i]}_{self.fns[i]}" for i in range(len(self.fns))])
+                self.cell_names.append(name)
+        else:
+            # mask is binary
+            if hasattr(self.config, "load_cell_fns"):
+                fn_names = self.fns
+                
+                with open(self.config.load_cell_fns, "r") as f:
+                    cell_names = f.readlines()
+                for i, cell_name in enumerate(cell_names):
+                    cell_names[i] = cell_name.strip()
+                cell_names = [cell_name.split("_") for cell_name in cell_names]
+                combs = [[fn_names.index(cell_name) for cell_name in cell_names[i]] for i in range(len(cell_names))]
+                self.n_cells = len(cell_names)
+                print("Using loaded cells: ", combs)
+                
+            else:
+                # assign combinations to cells
+                combs = list(itertools.combinations(torch.arange(len(self.fns)),  self.fns_per_cell))
+                max_count = len(combs)
+                if not hasattr(self.config, "cell_fns_seed"):
+                    combs_random = random
+                else:
+                    combs_random  = random.Random(self.config.cell_fns_seed)
+                    
+                if hasattr(self.config, "num_cells"):
+                    if len(combs) > self.config.num_cells:
+                        combs = combs_random.sample(combs, self.config.num_cells)
+                    elif len(combs) < self.config.num_cells:
+                        print("WARN: less combinations than cells, filling with random repeats")
+                        while len(combs) < self.config.num_cells:
+                            if not hasattr(self.config, "cell_fns_seed"):
+                                combs.append(combs_random.choice(combs))
+                            else:
+                                combs.append(combs_random.choice(combs))
+                else:
+                    raise ValueError("Must specify num_cells")
+                
+                if hasattr(self.config, "cell_fns_seed"):
+                    print("Using fixed combs: ", combs)
+            
+            self.n_cells = len(combs)
+            print(f"Using {self.n_cells} out of {max_count} possible combinations")
+            self.cell_fn_inds = torch.tensor(combs, device=self.config.device)
+            self.cell_names = []
+            for c in combs:
+                self.cell_names.append("_".join([self.fns[i] for i in c]))
+
+            self.fn_mask = torch.zeros((self.n_fns, self.n_cells), device=self.config.device, dtype=torch.bool) # fns in each cell
+            for i, comb in enumerate(combs):
+                for j in comb:
+                    self.fn_mask[j, i] = 1
+                
+            # sum of each col should be self.fns_per_cell
+            assert torch.all(torch.sum(self.fn_mask, dim=0) == self.fns_per_cell)
         
+        print("Number of cells: ", self.n_cells)
+
+        # Set up fitness matrix
+        self.fitness = torch.ones((self.n_fns, self.n_cells), device=self.config.device)*-torch.inf # fns in each cell
+        self.normed_fitness = torch.ones((self.n_fns, self.n_cells), device=self.config.device)*-torch.inf # fns in each cell
+        self.agg_fitness = torch.zeros((self.n_cells), device="cpu") # fitness of each cell (normed)
+    
+        self.map = [None] * np.prod(self.n_cells) # fill with None
+    
         # use novelty as a tiebreaker?
         self.tiebreak_novel = bool(config.tiebreak_novel)
         if self.tiebreak_novel:
             if config.autoencoder_frequency <= 0:
                 raise ValueError("Cannot use novelty tiebreaker without an autoencoder.")
             raise NotImplementedError("Novelty tiebreaker not implemented yet")
-                
-        # Set up fn mask matrix
-        self.fn_mask = torch.zeros((self.n_fns, self.n_cells), device=self.config.device, dtype=torch.bool) # fns in each cell
-        for i, comb in enumerate(combs):
-            for j in comb:
-                self.fn_mask[j, i] = 1
-                
-        # sum of each col should be self.fns_per_cell
-        assert torch.all(torch.sum(self.fn_mask, dim=0) == self.fns_per_cell)
         
-        # Set up fitness matrix
-        self.fitness = torch.ones((self.n_fns, self.n_cells), device=self.config.device)*-torch.inf # fns in each cell
-        self.normed_fitness = torch.ones((self.n_fns, self.n_cells), device=self.config.device)*-torch.inf # fns in each cell
-        self.agg_fitness = torch.zeros((self.n_cells), device="cpu") # fitness of each cell (normed)
-        
-
     def get_population(self, include_empty=False):
         output = []
         output = np.array(self.map).flatten()

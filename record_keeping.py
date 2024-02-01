@@ -124,7 +124,11 @@ class Record():
                     img = img.permute(1,2,0) # (H,W,C)
                     img = torch.clamp(img,0,1).numpy()
                     imgs.append(img)
-                    name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"{len(list(individual.enabled_connections))}c"
+                    if map.using_soft_mask:
+                        cell_name = map.cell_names[i]
+                        name = cell_name+f"+{len(list(individual.enabled_connections))}c"
+                    else:
+                        name = "_".join([(fn.__name__ if isinstance(fn, Callable) else fn) for fn in cell_fns])+f"{len(list(individual.enabled_connections))}c"
                     name = name + ".png"
                     
                     plt.imsave(os.path.join(map_path, name), img, cmap='gray')
@@ -138,7 +142,6 @@ class Record():
                 genomes.append("null")
             pbar.update(1)
 
-            
         pbar.close()
         with open(os.path.join(map_path, "map.json"), "w") as f:
             json.dump(genomes, f)

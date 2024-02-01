@@ -10,6 +10,7 @@ import fitness.fitness_functions as ff
 from move_config import MoveConfig
 # from cppn_torch import ImageCPPN
 from cppn.cppn import CPPN as ImageCPPN
+import logging
 
 def fix_target_dimensions(config):
     if config.target is None:
@@ -29,6 +30,11 @@ def fix_target_dimensions(config):
 
 def assertions(config):
     assert config.initial_batch_size >= config.batch_size, f"Initial batch size {config.initial_batch_size} must be >= batch size {config.batch_size}"
+
+def warnings(config):
+    if config.soft_mask_sigma is not None and config.soft_mask_sigma > 0:
+        if config.move_fns_per_cell is not None and config.move_fns_per_cell > 0:
+            logging.warn("move_fns_per_cell has no effect when using soft_mask_sigma")
 
 def run_setup(config_class = MoveConfig):
     import argparse
@@ -84,7 +90,6 @@ def run_setup(config_class = MoveConfig):
         parsed['controls']["hidden_nodes_at_start"] = args.num_hidden_nodes
     
     config = config_class()
-    print("TO:", config.total_offspring)
     config.device = torch.device(args.device)
     apply_condition(config, parsed.get("controls", {}), {}, parsed.get("name", "Default"), ff.__dict__)
     
@@ -113,6 +118,7 @@ def run_setup(config_class = MoveConfig):
             print("Target shape: {}".format(list(config.target.shape)))
         
         assertions(config)
+        warnings(config)
         
         yield config, args.verbose
         

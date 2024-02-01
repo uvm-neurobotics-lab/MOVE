@@ -53,6 +53,10 @@ class MoveConfig(CPPNConfig):
                             
         #                     ] # MOVE
         
+        self.soft_mask_sigma = None # don't use a soft mask (binary mask)
+        self.soft_mask_mu = 0.0 
+        self.soft_mask_min = 0.0
+
         self.do_crossover = False
         self.population_elitism = 0
         self.tiebreak_novel = False

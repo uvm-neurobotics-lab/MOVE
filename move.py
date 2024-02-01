@@ -121,6 +121,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.mask = torch.stack([torch.index_select(self.map.fn_mask[i], 0, batch_cell_ids) 
                             for i in range(len(self.map.fn_mask)) if i not in skip_fns])
     
+
     def run_one_batch(self):
         # reproduce
         self.selection_and_reproduction()
@@ -327,23 +328,32 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             # find where this child is better than the current elite
             votes = None
             replaces = None
-            D = None
+            improvement = None
             if self.use_avg_fit:
-                votes, D, replaces = self.select_by_avg_fit(fit_child)
+                votes, improvement, replaces = self.select_by_avg_fit(fit_child)
             else:
                 """ 
                 The meat of MOVE
                 """
-                D = fit_child > self.map.fitness 
             
-                # filter by the functions that are in each cell:
-                D = D * self.map.fn_mask 
-            
-                # tabulate votes by taking sum over masked functions
-                votes = D.sum(dim=0) 
-            
-                # find out if we should replace the current elites
-                replaces = votes > self.fns_per_cell/2 
+                # find out if we should replace the current elites (must be better than the elite on average)
+                # if False:
+                if self.map.using_soft_mask:
+                    # simple weighted average
+                    self.map.fitness = torch.where(torch.isinf(self.map.fitness), torch.ones_like(self.map.fitness)*-1000, self.map.fitness) # TODO no
+                    # replaces = (fit_child * self.map.fn_mask).sum(dim=0) > (self.map.fitness * self.map.fn_mask).sum(dim=0)
+                    replaces = (fit_child * self.map.fn_mask).sum(dim=0) >= (self.map.fitness * self.map.fn_mask).sum(dim=0)
+                else:
+                    # voting
+                    # find the cell/function combinations where the child is better than the current elite
+                    improvement = fit_child > self.map.fitness 
+                
+                    # filter by the functions that are in each cell:
+                    improvement = improvement * self.map.fn_mask 
+                
+                    # tabulate votes by taking sum over masked functions
+                    votes = improvement.sum(dim=0) 
+                    replaces = votes > self.fns_per_cell/2 
                 
                 """
                 End of meat
@@ -407,6 +417,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             
             if not self.allow_multiple_placements:
                 assert torch.sum(replaces) <= 1
+
+        print(torch.sum(all_replacements), "replacements")
 
         # Record keeping
         
@@ -479,7 +491,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             f.write(",".join([fn.__name__ for fn in self.fns]))
       
             
-        torch.save(self.map.fn_mask, os.path.join(self.run_dir, "Fm_mask.pt"))
+        torch.save(self.map.fn_mask, os.path.join(self.run_dir, "fn_mask.pt"))
         
         if not self.config.dry_run:
             self.record.save_map(self.image_dir, self.map, self.config, self.inputs)
