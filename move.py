@@ -339,10 +339,23 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 # find out if we should replace the current elites (must be better than the elite on average)
                 # if False:
                 if self.map.using_soft_mask:
-                    # simple weighted average
                     self.map.fitness = torch.where(torch.isinf(self.map.fitness), torch.ones_like(self.map.fitness)*-1000, self.map.fitness) # TODO no
-                    # replaces = (fit_child * self.map.fn_mask).sum(dim=0) > (self.map.fitness * self.map.fn_mask).sum(dim=0)
-                    replaces = (fit_child * self.map.fn_mask).sum(dim=0) >= (self.map.fitness * self.map.fn_mask).sum(dim=0)
+                    
+                    if self.config.soft_replace:
+                        # random probability based on difference in fitness
+                        self.map.normed_fitness = torch.where(torch.isinf(self.map.fitness), torch.ones_like(self.map.normed_fitness)*-1000, self.map.fitness) # TODO no
+                        diff  = normed_fit_child - self.map.normed_fitness
+                        diff  = diff * self.map.fn_mask
+                        diff  = diff.mean(dim=0)
+                        diff *= config.soft_replace_mod
+
+                        # random replacement
+                        replaces = torch.rand(self.n_cells, device=self.config.device) < diff
+                            
+                    else:
+                        # simple weighted average
+                        # replaces = (fit_child * self.map.fn_mask).sum(dim=0) > (self.map.fitness * self.map.fn_mask).sum(dim=0)
+                        replaces = (fit_child * self.map.fn_mask).sum(dim=0) >= (self.map.fitness * self.map.fn_mask).sum(dim=0)
                 else:
                     # voting
                     # find the cell/function combinations where the child is better than the current elite

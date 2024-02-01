@@ -53,9 +53,11 @@
 [
     {
         "test": {
-            "soft_mask_mu": 1.0,
+            "soft_mask_mu": 0.5,
             "soft_mask_sigma": 1.0,
-            "soft_mask_min":0.0
+            "soft_mask_min":-1.0,
+            "soft_replace": true,
+            "soft_replace_mod": 10
         }
     }
 ]

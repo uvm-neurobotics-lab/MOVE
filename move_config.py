@@ -56,6 +56,9 @@ class MoveConfig(CPPNConfig):
         self.soft_mask_sigma = None # don't use a soft mask (binary mask)
         self.soft_mask_mu = 0.0 
         self.soft_mask_min = 0.0
+        
+        self.soft_replace = False # don't use soft replace
+        self.soft_replace_mod = 2.0 # 2 times as likely to replace
 
         self.do_crossover = False
         self.population_elitism = 0
