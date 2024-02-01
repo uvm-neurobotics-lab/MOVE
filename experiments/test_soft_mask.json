@@ -7,7 +7,7 @@
         "alg": "move", 
         "total_offspring": 10000000,
         "stop_condition": "fwds",
-        "stop_condition_value": 100,
+        "stop_condition_value": 1000000,
         "sgd_early_stop": 5,
         "sgd_learning_rate": 0.01,
         "batch_size": 16,
@@ -40,7 +40,7 @@
         "topology_mutation_iters": 2,
         "min_pruned": 1,
         "connection_bloat": 0,
-        "sgd_steps": 10,
+        "sgd_steps": 1000,
 
         "num_cells": 256,
         "population_size": 256,
