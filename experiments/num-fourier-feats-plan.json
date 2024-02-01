@@ -4,11 +4,10 @@
     "additional_controls":{
         "total_offspring": 1000000,
         "stop_condition": "fwds",
-        "stop_condition_value": 100000,
+        "stop_condition_value": 250000,
         "sgd_early_stop": 10,
-    "sgd_learning_rate": 0.3,
-    "batch_size": 1,
-        "initial_batch_size": 1,
+        "batch_size": 5,
+        "initial_batch_size": 5,
         "single_structural_mutation": false,
         "objective_functions": [
             "psnr",
@@ -30,12 +29,12 @@
         "prob_disable_connection": 0.15,
         "sgd_l2_reg": 0.0003,
         "hidden_nodes_at_start": [16],
-        "topology_mutation_iters": 5,
+        "topology_mutation_iters": 2,
         "node_activation_prune_threshold": 0.01,
         "prune_threshold": 0.0001,
-        "min_pruned": 2,
+        "min_pruned": 1,
+        "target_resize": [64,64],
         "sgd_steps" : 100
-
     },
 
     "targets":[

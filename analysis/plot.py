@@ -30,12 +30,15 @@ def process_tensor(result, name, fns=None, reduce=True):
         if reduce:
             result = result.nanmean(dim=0)
     if name in ["fitness_by_batch", "normed_fitness_by_batch"]:
+        # fns, cells, batches
         if fns is None:
             if reduce:
-                return result.nanmean(dim=(0,1))
+                result = result.nanmean(dim=0)
+                return torch.amax(result, dim=0)
+
         else:
             if reduce:
-                result = result.nanmean(dim=(1))
+                result = torch.amax(result, dim=1)
     if name in ['evals_by_batch']:
         # to int
         n_evals = result[:,1] # only sgd_fwds
@@ -89,10 +92,14 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
                         with open(target_path, 'r') as f:
                             target = f.read().strip()
                     
-                    with open(os.path.join(cond_path, run, "cell_names.csv"), 'r') as f:
-                        cells = list(csv.reader(f))[0]
+                    cell_names_path = os.path.join(cond_path, run, "cell_names.csv")
+                    if not os.path.exists(cell_names_path):
+                        cells = []
+                    else:
+                        with open(os.path.join(cond_path, run, "cell_names.csv"), 'r') as f:
+                            cells = list(csv.reader(f))[0]
 
-                    if t.shape[0] == len(cells) and not reduce:
+                    if t.shape[0] == len(cells) and not reduce and os.path.exists(cell_names_path):
                         # t = t[t!= float('-inf')]
                         num_batches = t.shape[1]
                         num_cells = t.shape[0]
@@ -100,24 +107,12 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
                         values = t.flatten()
                         cells = np.repeat(cells, num_batches)
 
-                        # Create a list of batch numbers
-                        batches = np.tile(np.arange(num_batches), num_cells)
-
                         # Create the DataFrame
                         df = pd.DataFrame({
                             'cell': cells,
                             # 'batch': batches,
                             name: values
                         })
-                        # return
-                        # df = pd.DataFrame(columns=[name, "cell"])
-                        # cells_data = [] 
-                        # # long format
-                        # for i, cell in enumerate(cells):
-                        #     t_i = t[i] # num batches long
-                        #     cells_data.append({'cell': cell, name: t_i, "batch": np.arange(len(t_i))})
-
-                        # df = pd.DataFrame(cells_data, columns=[name, "cell", "batch"])
 
                         
                     else:
@@ -173,17 +168,17 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
 
 
 
-def plot_xy(results, x, y, save_path=None, show=False, x_label=None, y_label=None, title=None):
-    plt.figure(figsize=(10,10))
+def plot_xy(results, x, y, save_path=None, show=False, x_label=None, y_label=None, title=None, leg_title=None):
+    plt.figure(figsize=(5,4))
     # use_save_path = os.path.join(save_path, f"{y}.png")
     use_save_path = save_path
     if 'target' not in results.columns:
         sns.lineplot(results, x=x, y=y, hue="condition")
-        use_save_path = use_save_path.replace(".png", "_avg.png")
+        use_save_path = use_save_path.replace(".pdf", "_avg.pdf")
     else:
         sns.lineplot(results, x=x, y=y, hue="condition", style="target")
 
-    plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+    plt.legend(loc="lower center", ncol=min(len(results["condition"].unique()), 4), frameon=False, title=leg_title)
     if x_label is not None:
         plt.xlabel(x_label)
     if y_label is not None:
@@ -204,7 +199,7 @@ def plot_vs_batches(results, y, save_path=None, show=False, max_ofs=None):
         results = results[(results["offspring_by_batch"] <= max_ofs) & (results["offspring_by_batch"] > 0)]
     plot_xy(results, "batch", y, save_path, show)
 
-def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,smooth=None, title=None, y_label=None, x_label=None):
+def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,smooth=None, title=None, y_label=None, x_label=None, experiment_name= None, leg_title=None):
     try:
         results = results.drop(columns=[c for c in results.columns if c not in[ "condition", "target", 'run', 'batch', 'evals_by_batch', y]])
         
@@ -217,16 +212,18 @@ def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,s
         # find closest evals 
         results['evals'] = results['evals_by_batch'].apply(lambda x: evals_by_batch[np.argmin(np.abs(evals_by_batch - x))])
         
-        save_name = f"{y}_v_evals.png"
+        save_name = f"{y}_v_evals.pdf"
         if mean_by_target:
             results = results.groupby(["condition", 'run', 'batch']).mean(numeric_only=True).reset_index()
-            save_name = f"{y}_v_evals_avg.png"
+            save_name = f"{y}_v_evals_avg.pdf"
         else:
             results = results.groupby(["condition", "target", 'run','batch']).mean(numeric_only=True).reset_index()
         
+        if experiment_name is not None:
+            save_name = f"{experiment_name}_{save_name}"
         
         save_path = os.path.join(save_path, save_name)
-        plot_xy(results, "evals", y, save_path, show, x_label="Forward passes", y_label=y_label, title=title)
+        plot_xy(results, "evals", y, save_path, show, x_label="Forward passes", y_label=y_label, title=title, leg_title=leg_title)
     except Exception as e:
         print(e)
         print(traceback.format_exc())
