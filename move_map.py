@@ -15,7 +15,9 @@ class MOVEMap(object):
         self.n_fns = len(self.fns)
         self.fns_per_cell = self.config.move_fns_per_cell
         
-        self.using_soft_mask = self.config.soft_mask_sigma is not None and self.config.soft_mask_sigma > 0
+        self.using_soft_mask = self.config.soft_mask_sigma is not None
+        self.using_soft_mask =  self.using_soft_mask and self.config.soft_mask_sigma > 0
+        self.using_soft_mask =  self.using_soft_mask and self.config.soft_mask_mu is not None
 
 
         assert self.fns_per_cell <= self.n_fns, "Cannot have more functions per cell than total functions"
