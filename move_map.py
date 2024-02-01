@@ -32,7 +32,8 @@ class MOVEMap(object):
             self.fn_mask *= self.config.soft_mask_sigma
             self.fn_mask += self.config.soft_mask_mu # mean of the mask
 
-            self.fn_mask = torch.clamp(self.fn_mask, self.config.soft_mask_min, torch.inf)
+            if self.config.soft_mask_min is not None:
+                self.fn_mask = torch.clamp(self.fn_mask, self.config.soft_mask_min, torch.inf)
             self.cell_fn_inds = [range(len(self.fns))]* self.n_cells # unused with soft mask
 
             use_fns_per_cell = False
