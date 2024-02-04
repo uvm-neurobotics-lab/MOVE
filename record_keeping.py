@@ -24,11 +24,11 @@ class Record():
         self.n_fwds_incl_sgd = 0
         self.n_evals_incl_sgd = 0
         self.evals_by_batch = torch.ones((num_data_points, 4), device='cpu')*-torch.inf
-        self.total_pruned = torch.ones((num_data_points,2), device='cpu')*-torch.inf
+        self.normed_fitness_by_batch = torch.ones((n_fns, n_cells, num_data_points), device='cpu')*-torch.inf
         
         if not self.low_mem:
+            self.total_pruned = torch.ones((num_data_points,2), device='cpu')*-torch.inf
             self.fitness_by_batch = torch.ones((n_fns, n_cells, num_data_points), device='cpu')*-torch.inf
-            self.normed_fitness_by_batch = torch.ones((n_fns, n_cells, num_data_points), device='cpu')*-torch.inf
             # self.votes_by_batch = torch.zeros((n_cells, n_fns, n_cells, num_data_points), device='cpu')
             self.replacements_by_batch = torch.zeros((n_cells, n_cells, num_data_points), device='cpu')
             self.ids_by_batch = torch.ones((n_cells, num_data_points), device='cpu', dtype=torch.int64)*-1
@@ -55,9 +55,9 @@ class Record():
     
     def update(self, index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring):
         self.agg_fitness_by_batch[:,index] = agg_fitnesses.cpu()
+        self.normed_fitness_by_batch[:,:,index] = normed_fitnesses.cpu()
         if not self.low_mem:
             self.fitness_by_batch[:,:,index] = fitnesses.cpu()
-            self.normed_fitness_by_batch[:,:,index] = normed_fitnesses.cpu()
             # self.votes_by_batch[:,:,:,index] = all_votes
             self.ids_by_batch[:,index] = torch.tensor([-1 if g is None else g.id for g in population]).cpu()
             self.parents_by_batch[:,:,index] = torch.tensor([[-1 if g is None else g.parents[0] for g in population], [-1 if g is None else g.parents[1] for g in population]]).cpu()
@@ -79,14 +79,15 @@ class Record():
         torch.save(self.agg_fitness_by_batch, os.path.join(run_dir, "agg_fitness_by_batch.pt"))
         
         torch.save(self.evals_by_batch, os.path.join(run_dir, "evals_by_batch.pt"))
-        torch.save(self.total_pruned[:,0], os.path.join(run_dir, "pruned_cxs.pt"))
-        torch.save(self.total_pruned[:,1], os.path.join(run_dir, "pruned_nodes.pt"))
+        torch.save(self.normed_fitness_by_batch, os.path.join(run_dir, "normed_fitness_by_batch.pt"))
         
         with open(os.path.join(run_dir, "evals.csv"), 'w') as f:
             f.write("total_fwds,total_fwds_incl_sgd,total_evals,total_evals_incl_sgd,total_fwds_backs\n")
             f.write(f"{self.n_fwds},{self.n_fwds_incl_sgd},{self.n_evals},{self.n_evals_incl_sgd},{(self.n_fwds_incl_sgd-self.n_fwds)*2}\n")
             
         if not self.low_mem:
+            torch.save(self.total_pruned[:,0], os.path.join(run_dir, "pruned_cxs.pt"))
+            torch.save(self.total_pruned[:,1], os.path.join(run_dir, "pruned_nodes.pt"))
             torch.save(self.fitness_by_batch, os.path.join(run_dir, "fitness_by_batch.pt"))
             torch.save(self.replacements_by_batch, os.path.join(run_dir, "replacements_by_batch.pt"))
             torch.save(self.ids_by_batch, os.path.join(run_dir, "ids_by_batch.pt"))
@@ -96,7 +97,6 @@ class Record():
             torch.save(self.offspring_by_batch, os.path.join(run_dir, "offspring_by_batch.pt"))
             torch.save(self.cx_by_batch, os.path.join(run_dir, "cx_by_batch.pt"))
             torch.save(self.nodes_by_batch, os.path.join(run_dir, "nodes_by_batch.pt"))
-            torch.save(self.normed_fitness_by_batch, os.path.join(run_dir, "normed_fitness_by_batch.pt"))
             torch.save(self.time_elapsed, os.path.join(run_dir, "time_elapsed_by_batch.pt"))
             
             

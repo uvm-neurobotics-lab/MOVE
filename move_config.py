@@ -37,6 +37,8 @@ class MoveConfig(CPPNConfig):
                             IdentityActivation,
                             TanhActivation,
                             SigmoidActivation, 
+                            GaussActivation,
+                            CosActivation
                             ] # MOVE
         
         # self.activations=  [SinActivation,

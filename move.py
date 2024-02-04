@@ -348,9 +348,12 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                         diff  = diff * self.map.fn_mask
                         diff  = diff.mean(dim=0)
                         diff *= config.soft_replace_mod
+                        # print([f"{d:.3f}" for d in diff[:10]])
 
                         # random replacement
                         replaces = torch.rand(self.n_cells, device=self.config.device) < diff
+                        
+                        # print([f"{r}" for r in replaces[:10]])
                             
                     else:
                         # simple weighted average
@@ -431,7 +434,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             if not self.allow_multiple_placements:
                 assert torch.sum(replaces) <= 1
 
-        print(torch.sum(all_replacements), "replacements")
+        print("\n", torch.sum(all_replacements).item(), "replacements")
 
         # Record keeping
         

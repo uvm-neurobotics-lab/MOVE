@@ -104,7 +104,7 @@ class CPPN(nn.Module):
         return new_id
     
     
-    # TODO: remove deprecated
+    # TODO: remove deprecated (kept for compatibility with old code)
     @property
     def n_outputs(self):
         return self.n_output
@@ -118,7 +118,7 @@ class CPPN(nn.Module):
     def connection_genome(self):
         return {conn_key: self.connections[conn_key].weight for conn_key in self.connections}
 
-    ###   
+    ### end deprecated
     
     @property
     def input_nodes(self):
@@ -166,6 +166,8 @@ class CPPN(nn.Module):
                                               force_init_path_inputs_outputs= config.force_init_path_inputs_outputs)
             
             self.update_layers()
+            
+            self.mutate_lr(config.mutate_sgd_lr_sigma) # initialize learning rate
         
         self.to(self.device)
  
@@ -174,10 +176,6 @@ class CPPN(nn.Module):
             n_hidden = config.hidden_nodes_at_start
             if isinstance(n_hidden, int):
                 n_hidden = (n_hidden,)
-            
-            
-            # n_inputs = 2 + config.n_fourier_features + int(config.use_input_bias) + int(config.use_radial_distance)   
-            # assert config.num_inputs == n_inputs == len(self.input_node_ids), f"Number of inputs ({len(self.input_node_ids)}) does not match number of inputs in config ({config.num_inputs}) or predicted ({n_inputs})"
             
             for node_id in self.input_node_ids:
                 node = Node(af.IdentityActivation, node_id)
@@ -227,9 +225,6 @@ class CPPN(nn.Module):
                 if torch.rand(1, dtype=torch.float32) < prob:
                     self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
                     
-            
-        
-     
         if force_init_path_inputs_outputs:
             for output_node in self.output_nodes:
                 path = []
@@ -297,17 +292,7 @@ class CPPN(nn.Module):
         return self.forward(*args, **kwargs)
 
     def forward(self, x, channel_first=True, force_recalculate=True, use_graph=False, act_mode='n/a'):
-        #print(self.nodes.keys())
-        
-        #TODO
-        # all_nodes = list(self.nodes.values()) + list(self.output_nodes) + list(self.input_nodes)
 
-        # Initialize node states
-        # if len(self.node_states) == 0  or force_recalculate:
-        #     self.node_states = {node.id: torch.zeros(x.shape[0:2],
-        #                                              device=x.device,
-        #                                              requires_grad=False) for node in all_nodes}
-            
         # Set input node states
         for i, input_node in enumerate(self.input_nodes):
             self.node_states[input_node.id] = x[:, :, i]
@@ -315,12 +300,8 @@ class CPPN(nn.Module):
             self.node_states[output_node.id] = torch.zeros(x.shape[0:2], device=x.device, requires_grad=False)
 
         # Feed forward through layers
-        # inputs = [node.id for node in self.input_nodes]
         outputs = self.output_node_ids
         
-        #print(outputs)
-
-
         for layer in self.layers:
             for node_id in layer:
                 # Gather inputs from incoming connections
@@ -331,6 +312,7 @@ class CPPN(nn.Module):
                 elif node_id not in self.node_states:
                     # TODO: shouldn't need to do this
                     self.node_states[node_id] = torch.zeros(x.shape[0:2], device=x.device, requires_grad=False)
+        
         # Gather outputs
         outputs = [self.node_states[node_id] for node_id in outputs]
         outputs = torch.stack(outputs, dim=(0 if channel_first else -1))
@@ -604,13 +586,13 @@ class CPPN(nn.Module):
             return # don't mutate
         delta =  random_normal(None, 0, sigma).item()
         self.sgd_lr = self.sgd_lr + delta
-        self.sgd_lr = max(1e-8, self.sgd_lr)
+        self.sgd_lr = max(1e-8, self.sgd_lr) # prevent 0 or negative learning rates
 
 
-    def prune_connections(self, config):
+    def prune_connections(self, config, already_pruned=0):
         if config.prune_threshold == 0 and config.min_pruned == 0:
             return 0
-        removed = 0
+        removed = already_pruned
         for key, cx in list(self.connections.items())[::-1]:
             if abs(cx.weight.item()) < config.prune_threshold:
                 del self.connections[key]
@@ -636,6 +618,14 @@ class CPPN(nn.Module):
         used_node_ids.extend(self.input_node_ids)
         used_node_ids.extend(self.output_node_ids)
         removed_nodes = 0
+        removed_connections = 0
+        def del_connections(node_key):
+            count = 0
+            for k, cx in list(self.connections.items())[::-1]:
+                if node_key in k.split(','):
+                    del self.connections[k]
+                    count += 1
+            return count
         for key in list(self.nodes.keys())[::-1]:
             incoming = list(self.gather_inputs(key, just_w=True))
             if len(incoming) == 0:
@@ -643,8 +633,13 @@ class CPPN(nn.Module):
                     self.remove_node(config, specific_node=self.nodes[key])
                     removed_nodes += 1
                 continue
+            
+            
             l2_norm = torch.norm(torch.stack(incoming), p=2)
+            
+            
             if l2_norm < config.prune_threshold_nodes:
+                removed_connections += del_connections(key)
                 self.remove_node(config, specific_node=self.nodes[key])
                 removed_nodes += 1
                 continue
@@ -653,16 +648,17 @@ class CPPN(nn.Module):
             if config.node_activation_prune_threshold > 0 and len(self.node_states)>0:
                 activation = torch.abs(self.node_states.get(key, torch.tensor([0.0], device=self.device))).detach().mean()
                 if activation < config.node_activation_prune_threshold:
+                    removed_connections += del_connections(key)
                     self.remove_node(config, specific_node=self.nodes[key])
                     removed_nodes += 1
                     continue
         # print(f"Pruned {removed_nodes} nodes")
-        return removed_nodes
+        return removed_nodes, removed_connections
             
 
     def prune(self, config):
-        removed_cxs   = self.prune_connections(config)
-        removed_nodes = self.prune_nodes(config)
+        removed_nodes, removed_cxs = self.prune_nodes(config)
+        removed_cxs += self.prune_connections(config, already_pruned=removed_cxs)
         self.update_layers()
         self.disable_invalid_connections(config)
         return removed_cxs, removed_nodes
