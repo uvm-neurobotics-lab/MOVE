@@ -46,8 +46,9 @@ class Record():
         self.n_fwds_incl_sgd += n_step_fwds_incl_sgd
         self.n_evals += n_step_evals
         self.n_evals_incl_sgd += n_step_evals_incl_sgd
-        self.total_pruned[index,0] = n_pruned
-        self.total_pruned[index,1] = n_pruned_nodes
+        if not self.low_mem:
+            self.total_pruned[index,0] = n_pruned
+            self.total_pruned[index,1] = n_pruned_nodes
         self.evals_by_batch[index,0] = n_step_fwds
         self.evals_by_batch[index,1] = n_step_fwds_incl_sgd
         self.evals_by_batch[index,2] = n_step_evals
