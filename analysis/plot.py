@@ -29,16 +29,20 @@ def process_tensor(result, name, fns=None, reduce=True):
     if name in ['lr_by_batch']:
         if reduce:
             result = result.nanmean(dim=0)
+    if name in ["agg_fitness_by_batch"]:
+        result = result.nanmean(dim=0)
+        # result = result.max(dim=0)[0]
+
     if name in ["fitness_by_batch", "normed_fitness_by_batch"]:
         # fns, cells, batches
         if fns is None:
             if reduce:
-                result = result.nanmean(dim=0)
-                return torch.amax(result, dim=0)
+                result = result.nanmean(dim=0) # average over fns
+                return torch.amax(result, dim=0) # max over cells
 
         else:
             if reduce:
-                result = torch.amax(result, dim=1)
+                result = torch.amax(result, dim=1) # max over cells, keep fns
     if name in ['evals_by_batch']:
         # to int
         n_evals = result[:,1] # only sgd_fwds
