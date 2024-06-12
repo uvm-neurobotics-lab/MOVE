@@ -5,13 +5,16 @@ import random
 import copy
 import torch
 import logging
-import time
+import math
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import gc
+
 from tqdm import tqdm
+
 
 # from cppn_torch import ImageCPPN
 
@@ -26,9 +29,8 @@ from util import *
 
 from move_map import MOVEMap
 from run_setup import run_setup
-from sgd_weights import sgd_weights 
+from sgd_weights import sgd_weights, sgd_weights_imaml
 from record_keeping import Record
-# from move_multiprocessing import MOVEWorker, activate_population_async, sgd_population_async
 
 from norm import norm_tensor, read_norm_data
 import fitness.fitness_functions as ff
@@ -41,33 +43,19 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         if self.config.objective_functions is None:
             # default: use all from paper
-            # self.fns = ff.all_available_fns
-            # self.fns = [
-            #     # "clipiqa",
-            #     # "clipiqa",
-            #     # "clipiqa",
-            #     "topiq_fr",
-            #     "topiq_fr",
-            #     "mse",
-            # ]
-            # self.fns = ff.initialize_fns(self.fns)
-            # print([f.__name__ for f in self.fns])
             self.fns = [
-                        ff.psnr,
-                        ff.mse,
-                        ff.lpips,
-                        ff.dists,
-                        ff.ssim,
-                        #ff.style,
-                        ff.haarpsi,
-                        ff.vif,
-                        ff.msssim,
-                        ff.dss,
-                        ff.gmsd,
-                        ff.fsim,
-                        ff.mdsi,
-                        ff.vsi,
-                        ]
+                ff.mse,
+                ff.psnr,
+                ff.lpips,
+                ff.dists,
+                ff.style,
+                ff.vif,
+                ff.dss,
+                ff.ssim,
+                ff.msssim,
+                ff.haarpsi,
+            ]
+
             self.config.objective_functions = self.fns
         else:
             self.fns = self.config.objective_functions
@@ -97,16 +85,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         if self.config.with_grad:
             self.init_sgd()
         
-        if self.config.thread_count > 1:
-            self.in_queue = mp.Queue()
-            self.out_queue = mp.Queue()
-            self.workers = [MOVEWorker(self.config, self.in_queue, self.out_queue, i, self.inputs, self.mask, self.sgd_fns, self.target, self.norm) for i in range(self.config.thread_count)]
-        
-        
-        
         print("Initialized MOVE on device:", self.config.device)
-    
-
         
                             
     def init_sgd(self, batch_cell_ids=None):
@@ -155,8 +134,6 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             return child
         else:
             # asexual reproduction, child is mutated clone of parent
-            # if self.config.with_grad:
-                # parent.discard_grads()
             child = parent.clone(self.config, new_id=True)
             child.mutate(self.config)
             child.parents = (parent.id, parent.id)
@@ -164,68 +141,83 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             child.n_cells = parent.n_cells
             return child
   
+    def correct_target_count(self, count):
+        """If the number of children has changed between iterations, 
+        adjust the target to match
+        """
+        if self.target.shape[0]>count :
+            print(f"WARNING: target batch size is larger than population size, truncating target from {self.target.shape[0]} to {count}")
+            print("Population size:", self.config.num_cells)
+            print("Total offspring:", self.total_offspring)
+            self.target = self.target[:count]
+        elif self.target.shape[0]<count:
+            print(f"WARNING: target batch size is smaller than population size, repeating target from {self.target.shape[0]} to {count}")
+            print("Population size:", self.config.num_cells)
+            print("Total offspring:", self.total_offspring)
+            self.target = self.target.repeat(count//self.target.shape[0], *([1]*len(self.target.shape[1:])))
     
-    
-    
+
+    @torch.no_grad()
     def measure_fitness(self, genomes, imgs, skip_genotype=False):
-        fit_children = torch.zeros((len(imgs), len(self.fns)), device=self.config.device)
-        fc_normed = []
+        # Calculate the number of batches required
+        num_batches = math.ceil(len(genomes) / self.config.batch_size)
+        print("Measuring fitness in", num_batches, "batches")
+        genomes_batched = [genomes[i:i+self.config.batch_size] for i in range(0, len(genomes), self.config.batch_size)]
+
+        fit_children = torch.zeros((len(genomes), len(self.fns)), device=self.config.device, requires_grad=False)
+        fc_normed = torch.zeros((len(genomes), len(self.fns)), device=self.config.device, requires_grad=False)
 
         if self.config.dry_run:
-            # random fitness
-            fit_children = torch.rand((len(imgs), len(self.fns)), device=self.config.device)
-        else:
+            # Random fitness for dry run
+            fit_children = torch.rand((len(genomes), len(self.fns)), device=self.config.device, requires_grad=False)
+            return fit_children, fit_children.clone()
+
+        pbar = tqdm(total=num_batches, desc="Measuring fitness")
+        for batch_index, batch_genomes in enumerate(genomes_batched):
+            self.correct_target_count(len(batch_genomes))
+            batch_start_idx = batch_index * self.config.batch_size
+            if imgs is None:
+                batch_imgs = self.activate_population([g for _,_,g in batch_genomes])
+            else:
+                batch_imgs = imgs[batch_start_idx:batch_start_idx+len(batch_genomes)]
             for i, fn in enumerate(self.fns):
                 if fn in ff.GENOTYPE_FUNCTIONS:
                     if skip_genotype:
                         continue
-                    # evaluating genotype directly
-                    fitness = fn([g for _,_,g in genomes]) # (children)
-                    normed_fitness = torch.tensor([-torch.inf for _ in range(len(imgs))], device=self.config.device)
+                    # Evaluating genotype directly
+                    fitness = fn([g[2] for g in genomes[batch_start_idx:batch_start_idx+len(batch_imgs)]])
+                    normed_fitness = torch.tensor([-torch.inf]*len(batch_imgs), device=self.config.device, requires_grad=False)
                 else:
-                    fitness = fn(imgs, self.target) # (children)
-                    if len(fitness.shape) == 0:
+                    # Evaluating based on images
+                    fitness = fn(batch_imgs, self.target)
+                    if fitness.dim() == 0:
                         fitness = fitness.unsqueeze(0)
-                        
-                    # print(fn.__name__)
-                    # print(fitness.min(), fitness.max())
-                    # normalize
-                    # normed_fitness = fitness # TODO no
-                    # if len(normed_fitness.shape) == 0:
-                        # normed_fitness = normed_fitness.unsqueeze(0)
-                    
-                    if not fn in ff.NO_NORM:
+                    if fn not in ff.NO_NORM:
                         normed_fitness = norm_tensor(fitness, self.norm, fn.__name__, warn=False)
-                        
-                    if normed_fitness.min() < -1 or normed_fitness.max() > 1:
-                        print("WARNING: normed fitness out of bounds")
-                        print(fitness.min().item(), fitness.max().item())
-                        print(normed_fitness.min().item(), normed_fitness.max().item())
-                        print(fn.__name__)
-                        print()
-                # print(fn.__name__, fitness.shape)                    
+
                 if not fn in ff.NO_MEAN:
-                    fc_normed.append(normed_fitness)
-               
-                if self.use_avg_fit:
-                    # use normed as fitness
-                    fit_children[:,i] = normed_fitness.detach().clone()
-                else:
-                    # use raw as fitness
-                    fit_children[:,i] = fitness.detach()
+                    fc_normed[batch_start_idx:batch_start_idx+len(batch_imgs), i] = normed_fitness
+
+                fit_children[batch_start_idx:batch_start_idx+len(batch_imgs), i] = normed_fitness if self.use_avg_fit else fitness
+            pbar.update(1)
+            
+        # Normalizing collected fitness components
         if len(fc_normed) > 0:
-            fc_normed = torch.stack(fc_normed, dim=1)
+            fc_normed = fc_normed
         else:
-            fc_normed = fit_children.clone() # not normalizing anything
-                
-        # take the mean of fitness values as overall fitness (not used in selection)
-        for g, f in zip(genomes, fc_normed):
-            f = f[f != -torch.inf] # no need to include -inf (un-normed fitness)
+            fc_normed = fit_children.clone()  # Not normalizing anything
+
+        # Assigning final fitness to genomes
+        for idx, (g, f) in enumerate(zip(genomes, fc_normed)):
+            f = f[f != -torch.inf]
             g[2].fitness = f.mean().detach()
-        return fit_children, fc_normed
+            
+        agg_fc_normed   = fc_normed.detach().mean(dim=1)
+
+        return fit_children, fc_normed, agg_fc_normed
 
 
-    def selection_and_reproduction(self):
+    def selection(self):
         parents = self.map.get_population(include_empty=True) # current elite map
 
         new_children = []
@@ -245,11 +237,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             batch_cell_ids = torch.arange(start=self.total_offspring, end=min(self.map.n_cells, self.total_offspring+batch_size), device=self.config.device)
 
         if hasattr(self, "target"):
-            if self.target.shape[0]>len(batch_cell_ids) :
-                print(f"WARNING: target batch size is larger than population size, truncating target from {self.target.shape[0]} to {batch_size}")
-                print("Population size:", self.config.num_cells)
-                print("Total offspring:", self.total_offspring)
-                self.target = self.target[:len(batch_cell_ids)]
+           self.correct_target_count(len(batch_cell_ids))
         
         # reproduction
         for child_i, cell_i in enumerate(batch_cell_ids):
@@ -266,21 +254,40 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             
             if len(new_children) >= batch_size:
                 break
+        
+                
+        return new_children, batch_cell_ids, initial_pop_done
+
+    def bloat_population(self, new_children):
+        n_bloat = torch.zeros(len(new_children), device=self.config.device, dtype=torch.int32)
+        if config.bloat_prune_ratio>0:
+            for child_i,_,c in new_children:
+                before = len(c.connections)
+                this_bloat = int(len(c.connections) * config.bloat_prune_ratio)
+                for _ in range(this_bloat):
+                    c.add_connection(config)
+                after = len(c.connections)
+                n_bloat[child_i] = after - before
+                # print(f"{c_i} Bloat {this_bloat} connections")
+        return n_bloat
+    
+
+    def sgd_population(self, new_children, batch_cell_ids):
         steps=0
         if self.config.sgd_steps > 0 and self.config.with_grad and (self.current_batch+1) % self.config.grad_every == 0:
             # do SGD update
             self.init_sgd(batch_cell_ids)
             if self.config.thread_count > 1:
-                new_children = sgd_population_async(new_children,
-                                                    self.in_queue,
-                                                    self.out_queue,
-                                                    self.target,
-                                                    self.config,
-                                                    batch_cell_ids)    
+                raise NotImplementedError("Multiprocessing no longer implemented for MOVE")
             else:
-                steps = sgd_weights(new_children, 
+                before, _, _ = self.measure_fitness(new_children, None)
+
+                sgd_fn = sgd_weights 
+                if self.config.sgd_strat == 'imaml':
+                    sgd_fn = sgd_weights_imaml
+                steps = sgd_fn(new_children, 
                             mask        = self.mask,
-                            # mask        = None,
+                            # mask        = None, # SGD on all functions
                             inputs      = self.inputs,
                             target      = self.target,
                             fns         = self.sgd_fns,
@@ -289,9 +296,17 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                             config      = self.config,
                             early_stop  = self.config.sgd_early_stop,
                             )
+                after, _, _ = self.measure_fitness(new_children, None)
+                print("SGD improvement:", (after.mean()-before.mean()).item())
+        return steps
         
+    def prune_population(self, new_children, n_bloat):
+        
+        if config.bloat_prune_ratio>0:
+            for child_i, _, c in new_children:
+                num = c.prune_fixed_connections(n_bloat[child_i])
         else:
-            # we need to populate the node activations or else they will be pruned for inactivity
+            # populate the node activations or else they will be pruned for inactivity
             imgs = self.activate_population([g for _,_,g in new_children])
                
         n_pruned, n_pruned_nodes = 0,0
@@ -299,83 +314,59 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             cx_pruned,nodes_pruned = child.prune(self.config)
             n_pruned += cx_pruned
             n_pruned_nodes += nodes_pruned
-                    
-        # measure children
-        imgs = self.activate_population([g for _,_,g in new_children])
-        fit_children, fc_normed = self.measure_fitness(new_children, imgs)
-        agg_fc_normed = fc_normed.detach().mean(dim=1)
-        # agg_fc_normed = agg_fc_normed.detach().mean(dim=1).to("cpu")
-        
-        # for record keeping
-        n_step_fwds = len(new_children)
-        n_step_fwds_incl_sgd = n_step_fwds+(n_step_fwds * steps) if self.config.with_grad else n_step_evals
-        n_step_evals = len(new_children) * len(self.fns)
-        n_step_evals_incl_sgd = n_step_evals+(n_step_evals * steps) if self.config.with_grad else n_step_evals
-        self.record.update_counts(self.current_batch, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes)
-        all_replacements = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
-        # all_votes = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
+        return n_pruned, n_pruned_nodes
 
-        random.shuffle(new_children) # random order of children
+
+    def replace_by_voting(self, fit_child, normed_fit_child):
+        """ 
+        The meat of MOVE
+        """
+        # find out if we should replace the current elites (must be better than the elite on average)
+        if self.map.using_soft_mask:
+            self.map.fitness = torch.where(torch.isinf(self.map.fitness), torch.ones_like(self.map.fitness)*-1000, self.map.fitness) # TODO no
             
+            if self.config.soft_replace:
+                # use soft replacement
+                replaces = self.soft_replacement(normed_fit_child)
+            else:
+                # simple weighted average, replace if better or same
+                replaces = (fit_child * self.map.fn_mask).sum(dim=0) >= (self.map.fitness * self.map.fn_mask).sum(dim=0)
+            votes = None
+            improvement = None
+        else:
+            # voting
+            # find the cell/function combinations where the child is better than the current elite
+            improvement = fit_child > self.map.fitness 
+        
+            # filter by the functions that are in each cell:
+            improvement = improvement * self.map.fn_mask 
+        
+            # tabulate votes by taking sum over masked functions
+            votes = improvement.sum(dim=0) 
+            replaces = votes > self.fns_per_cell/2 
+        
+        return votes, improvement, replaces
+    
+
+    def replacement(self, new_children, fit_children, fc_normed, batch_cell_ids, agg_fc_normed, initial_pop_done):
+        all_replacements = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
+        
+        random.shuffle(new_children) # random order of children
         for _, c_tuple in enumerate(new_children):
+            # repeat for comparison against current map
             child_i, cell_i, child = c_tuple
             fit_child = fit_children[child_i] # (fns)
+            fc_child_normed = fc_normed[child_i] # (fns)
             
-            # repeat for comparison against current map
             fit_child = fit_child.repeat(self.n_cells, 1).T # (fns, cells)
-            normed_fit_child = fc_normed[child_i].repeat(self.n_cells, 1).T # (fns, cells)
+            normed_fit_child = fc_child_normed.repeat(self.n_cells, 1).T # (fns, cells)
             
             # find where this child is better than the current elite
-            votes = None
             replaces = None
-            improvement = None
             if self.use_avg_fit:
-                votes, improvement, replaces = self.select_by_avg_fit(fit_child)
+                _, _, replaces = self.replace_by_avg_fit(fit_child)
             else:
-                """ 
-                The meat of MOVE
-                """
-            
-                # find out if we should replace the current elites (must be better than the elite on average)
-                # if False:
-                if self.map.using_soft_mask:
-                    self.map.fitness = torch.where(torch.isinf(self.map.fitness), torch.ones_like(self.map.fitness)*-1000, self.map.fitness) # TODO no
-                    
-                    if self.config.soft_replace:
-                        # random probability based on difference in fitness
-                        self.map.normed_fitness = torch.where(torch.isinf(self.map.fitness), torch.ones_like(self.map.normed_fitness)*-1000, self.map.fitness) # TODO no
-                        diff  = normed_fit_child - self.map.normed_fitness
-                        diff  = diff * self.map.fn_mask
-                        diff  = diff.mean(dim=0)
-                        diff *= config.soft_replace_mod
-                        # print([f"{d:.3f}" for d in diff[:10]])
-
-                        # random replacement
-                        replaces = torch.rand(self.n_cells, device=self.config.device) < diff
-                        
-                        # print([f"{r}" for r in replaces[:10]])
-                            
-                    else:
-                        # simple weighted average
-                        # replaces = (fit_child * self.map.fn_mask).sum(dim=0) > (self.map.fitness * self.map.fn_mask).sum(dim=0)
-                        replaces = (fit_child * self.map.fn_mask).sum(dim=0) >= (self.map.fitness * self.map.fn_mask).sum(dim=0)
-                else:
-                    # voting
-                    # find the cell/function combinations where the child is better than the current elite
-                    improvement = fit_child > self.map.fitness 
-                
-                    # filter by the functions that are in each cell:
-                    improvement = improvement * self.map.fn_mask 
-                
-                    # tabulate votes by taking sum over masked functions
-                    votes = improvement.sum(dim=0) 
-                    replaces = votes > self.fns_per_cell/2 
-                
-                """
-                End of meat
-                """
-            
-            # all_votes[cell_i] = votes
+               _, _, replaces = self.replace_by_voting(fit_child, normed_fit_child)
             
             # update the elites
           
@@ -407,7 +398,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             
             child.n_cells = torch.sum(replaces).item()
             
-            all_replacements[cell_i] = replaces
+            all_replacements[cell_i] = replaces # all_replacements is (cells, cells) where each row is the replacement for that cell
             
             self.map.fitness[:,replaces] = fit_child[:,replaces].detach() # update fitness values
             self.map.normed_fitness[:,replaces] = normed_fit_child[:,replaces].detach() # update fitness values
@@ -419,11 +410,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             if self.debug_output:
                 logging.debug(f"Replacing cells: {idxs_to_replace} with {child.id}")
                 
-            # child.to('cpu')
-            # child.clear_data() # save memory
             for r in idxs_to_replace:
-                # placed = child.clone(new_id=False, cpu=True, deepcopy=False)
-                # placed = child.clone(self.config, new_id=False, cpu=True)
                 placed = child.clone(self.config, new_id=False, cpu=False)
                 placed.cell_lineage = child.cell_lineage + [r]
                 placed.n_cells = child.n_cells
@@ -433,28 +420,38 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             
             if not self.allow_multiple_placements:
                 assert torch.sum(replaces) <= 1
-
+                
         print("\n", torch.sum(all_replacements).item(), "replacements")
+        
+        return all_replacements
+    
+    
+    def selection_and_reproduction(self):
+        
+        # Choose parents
+        new_children, batch_cell_ids, initial_pop_done = self.selection()
+        
+        # Bloat, SGD, prune        
+        n_bloat                  = self.bloat_population(new_children)
+        steps                    = self.sgd_population(new_children, batch_cell_ids)
+        n_pruned, n_pruned_nodes = self.prune_population(new_children, n_bloat)
+                    
+        # Measure children
+        fit_children, fc_normed, agg_fc_normed = self.measure_fitness(new_children, None)
+        
+        # Replace elites        
+        all_replacements = self.replacement(new_children,
+                                            fit_children,
+                                            fc_normed,
+                                            batch_cell_ids,
+                                            agg_fc_normed,
+                                            initial_pop_done)
 
         # Record keeping
-        
-        # gens_per_population = self.config.num_cells // self.config.batch_size
-        
-        if self.current_batch % self.config.record_frequency_batch != 0:
-            pass # don't record
-        else:
-            index = self.current_batch // self.config.record_frequency_batch
-            self.record.update(index,
-                                all_replacements,
-                                self.map.fitness,
-                                self.map.normed_fitness,
-                                self.map.agg_fitness,
-                                self.map.map,
-                                self.total_offspring
-                                )
+        self.record_keep(new_children, steps, n_pruned, n_pruned_nodes, all_replacements)
             
        
-    def select_by_avg_fit(self, fit_child):
+    def replace_by_avg_fit(self, fit_child):
         """For testing without voting, use the average fitness of the child"""
         divisors = self.map.fn_mask.sum(dim=0) # will all be equal to self.fns_per_cell
         # mask out the functions that are not in each cell:
@@ -517,6 +514,24 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         json.dump(lineages, open(os.path.join(self.run_dir, "lineages.json"), "w"), indent=4)
         
     
+    def record_keep(self, new_children, steps, n_pruned, n_pruned_nodes, all_replacements):
+        n_step_fwds = len(new_children)
+        n_step_fwds_incl_sgd = n_step_fwds+(n_step_fwds * steps) if self.config.with_grad else n_step_evals
+        n_step_evals = len(new_children) * len(self.fns)
+        n_step_evals_incl_sgd = n_step_evals+(n_step_evals * steps) if self.config.with_grad else n_step_evals
+        self.record.update_counts(self.current_batch, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes)
+        if self.current_batch % self.config.record_frequency_batch != 0:
+            pass # don't record
+        else:
+            index = self.current_batch // self.config.record_frequency_batch
+            self.record.update(index,
+                                all_replacements,
+                                self.map.fitness,
+                                self.map.normed_fitness,
+                                self.map.agg_fitness,
+                                self.map.map,
+                                self.total_offspring
+                                )
     
     def get_lineages(self):
         for g in self.map.map:
@@ -525,12 +540,35 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             else:
                 yield g.cell_lineage       
         
-       
+
+
+    def soft_replacement(self, normed_fit_child):
+        # random probability based on difference in fitness
+        self.map.normed_fitness = torch.where(torch.isinf(self.map.fitness), torch.ones_like(self.map.normed_fitness)*-1000, self.map.fitness) # TODO FIXME
+        diff  = normed_fit_child - self.map.normed_fitness
+        diff  = diff * self.map.fn_mask
+        diff  = diff.mean(dim=0)
+        diff *= config.soft_replace_mod
+
+        # random replacement
+        return torch.rand(self.n_cells, device=self.config.device) < diff
+
+
+import threading
+import sys
 
 if __name__ == '__main__':
     # python -m torch.utils.bottleneck /path/to/source/script.py [args]
-    for config, verbose in run_setup():
-        alg = MOVE(config, debug_output=verbose)
+    threads = []
+    ci = -1
+    for config, args in run_setup():
+        ci+=1
+        if args.condition is not None and ci != int(args.condition):
+            print("Skipping condition", ci, "looking for", args.condition)
+            
+            continue
+        
+        alg = MOVE(config, debug_output=args.verbose)
         if config.do_profile:
             import cProfile
             prof_path = os.path.join(alg.config.output_dir, f"{config.run_id:04d}.prof")
@@ -543,4 +581,28 @@ if __name__ == '__main__':
             profile.print_stats(1000) # Prints the first 1000 lines of the sorted report
             file.close() 
         else:
-            alg.evolve()
+            if args.parallel:
+                logging.warning("Parallel processing not implemented for MOVE")
+                print("Starting thread")
+                # parallel processing
+                evolve_thread = threading.Thread(target=alg.evolve, name="Evolve", daemon=False)
+                threads.append(evolve_thread)
+            else:
+                alg.evolve()    
+        
+    
+    if threads:
+        try:
+            print(len(threads), "threads")
+            for t in threads:
+                t.start()
+                print("Started thread")
+            # wait for all threads to finish
+            for t in threads:
+                t.join()
+        except (KeyboardInterrupt, SystemExit):
+            print("Interrupted")
+            for t in threads:
+                t.join()
+            sys.exit()
+            

@@ -103,6 +103,7 @@ def dists(candidates, target):
    if "DISTS_INSTANCE" in globals().keys() and candidates.device in globals()["DISTS_INSTANCE"].keys():
       dists_instance = globals()["DISTS_INSTANCE"][candidates.device]
    else:
+      print("Creating DISTS instance")
       # dists_instance = piq_dists(reduction='none').eval().to(candidates.device)
       dists_instance = DISTS(FEATURE_EXTRACTOR).eval().to(candidates.device)
       if "DISTS_INSTANCE" not in globals().keys():
@@ -123,6 +124,7 @@ def lpips(candidates, target):
    if "LPIPS_INSTANCE" in globals().keys() and candidates.device in globals()["LPIPS_INSTANCE"].keys():
       lpips_instance = globals()["LPIPS_INSTANCE"][candidates.device]
    else:
+      print("Creating LPIPS instance")
       # lpips_instance = piq_lpips(reduction='none').eval()
       lpips_instance = LPIPS(FEATURE_EXTRACTOR, reduction='none').eval().to(candidates.device)
       if "LPIPS_INSTANCE" not in globals().keys():

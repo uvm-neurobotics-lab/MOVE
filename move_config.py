@@ -22,7 +22,7 @@ class MoveConfig(CPPNConfig):
         self.target = None # set later
         self.do_profile = False
 
-        self.total_offspring = 300_000
+        self.total_offspring = 30_000_000
         
         self.target_name = "default"
         
@@ -73,7 +73,7 @@ class MoveConfig(CPPNConfig):
         self.use_input_bias = False
         self.use_radial_distance = True
         self.num_inputs = 3 # x,y,d
-        self.target_resize = (128,128)
+        self.target_resize = (64,64)
         self.color_mode = "HSL"
 
         self.activation_mode = "node"
@@ -86,13 +86,14 @@ class MoveConfig(CPPNConfig):
         self.diversity_mode = None # don't record diversity (it's slow)
         self.autoencoder_frequency = 0 # used for novelty, disabled for MOVE
         
-        self.coord_range = (-1.0, 1.0)
+        self.coord_range = (-0.5, 0.5)
         
         self.grad_every = 1
         
         self.batch_size = 1 # generational
         self.initial_batch_size = 1 # just for the initial population
         
+        self.comparison_batch_size = None # same as batch_size
 
         self.hidden_nodes_at_start = (16, )
         self.init_connection_probability = 0.50
@@ -117,7 +118,7 @@ class MoveConfig(CPPNConfig):
         # MOVE specific:
         self.move_fns_per_cell = 3
         self.allow_jumps = torch.inf
-        self.num_cells = 50
+        self.num_cells = 100
         self.objective_functions =  None
         # self.objective_functions =  [
         #     "psnr",
@@ -187,14 +188,31 @@ class MoveConfig(CPPNConfig):
 
 
 def resize_image(image, size, device):
-    res_fact = image.shape[0] / size[0], image.shape[1] / size[1]
-    if res_fact[0] == 0.0 or res_fact[1] == 0.0:
-        raise Exception("Target is too small to resize to target_resize")
-    image = resize(image, (image.shape[0] // int(res_fact[0]), image.shape[1] // int(res_fact[1])))
+    # resize such that the smallest dimension is size
+    h, w = image.shape[:2]
+    if h < w:
+        new_h = size[0]
+        new_w = int(w * size[1] / h)
+    else:
+        new_w = size[1]
+        new_h = int(h * size[0] / w)
+        
+    image = resize(image, (new_h, new_w))
     image = center_crop(image, size[0], size[1])
-    
     resized_img = torch.tensor(image, dtype=torch.float32, device=device)
     return resized_img
+
+    
+
+
+    # res_fact = image.shape[0] / size[0], image.shape[1] / size[1]
+    # if res_fact[0] == 0.0 or res_fact[1] == 0.0:
+    #     raise Exception("Target is too small to resize to target_resize")
+    # image = resize(image, (image.shape[0] // int(res_fact[0]), image.shape[1] // int(res_fact[1])))
+    # # image = center_crop(image, size[0], size[1])
+    
+    # resized_img = torch.tensor(image, dtype=torch.float32, device=device)
+    # return resized_img
 
 
 def resize_target(config):

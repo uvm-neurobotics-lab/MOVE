@@ -52,6 +52,8 @@ def run_setup(config_class = MoveConfig):
     parser.add_argument('-ff','--num_fourier_features',type=int, action='store', default=-1, help=f'Number of fourier features (default: 8).')
     parser.add_argument('-hn','--num_hidden_nodes',type=int, action='store', default=-1, help=f'Number of hidden nodes at initialization (default: 0).')
     parser.add_argument('-pr','--profile', action='store_true', help=f'Profile the code (default: False).')
+    parser.add_argument('-pl', '--parallel', action='store_true', help=f'Run in parallel (default: False).')
+    parser.add_argument('-ci', '--condition', action='store', help=f'Condition index to run (default: None, run all).')
     
     args = parser.parse_args()
     
@@ -120,6 +122,6 @@ def run_setup(config_class = MoveConfig):
         assertions(config)
         warnings(config)
         
-        yield config, args.verbose
+        yield config, args
         
         

@@ -85,6 +85,18 @@ class Record():
         with open(os.path.join(run_dir, "evals.csv"), 'w') as f:
             f.write("total_fwds,total_fwds_incl_sgd,total_evals,total_evals_incl_sgd,total_fwds_backs\n")
             f.write(f"{self.n_fwds},{self.n_fwds_incl_sgd},{self.n_evals},{self.n_evals_incl_sgd},{(self.n_fwds_incl_sgd-self.n_fwds)*2}\n")
+        
+        # plot normed fitness
+
+        plt.close()
+        # cut after first nan
+        plt.figure(figsize=(10,6))
+        plt.rcParams.update({'font.size': 14})
+        normed_no_nan = self.normed_fitness_by_batch.clone()
+        plt.plot( torch.amax(normed_no_nan.nanmean(dim=0), dim=0), label='Best')
+        plt.plot( torch.nanmean(normed_no_nan.nanmean(dim=0), dim=0), label='Mean')
+        plt.legend()
+        plt.savefig(os.path.join(run_dir, "normed_fitness.png"))
             
         if not self.low_mem:
             torch.save(self.total_pruned[:,0], os.path.join(run_dir, "pruned_cxs.pt"))

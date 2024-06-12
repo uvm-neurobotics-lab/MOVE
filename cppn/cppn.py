@@ -11,22 +11,39 @@ import cppn.activation_functions as af
 from cppn.config import CPPNConfig
 from tqdm import trange
 
+
 class Node(nn.Module):
-    def __init__(self, activation, id, bias=0.0):
+    def __init__(self, activation, id, bias=0.0, device='cpu'):
         super().__init__()
         # self.bias = nn.Parameter(torch.randn(1))
-        self.bias = nn.Parameter(torch.tensor(bias))
+        self.bias = nn.Parameter(torch.tensor(bias, device=device))
         self.set_activation(activation)
         self.id:str = id
         self.layer = 999
     
     def set_activation(self, activation):
-        
         if isinstance(activation, type):
             self.activation = activation()
         else:
             self.activation = activation
         self.activation.to(self.bias.device)
+    
+    def remove_parameters(self):
+        detached_bias = self.bias.detach()
+        del self.bias  # Remove the nn.Parameter
+        self.bias = detached_bias  # Assign the detached tensor as a regular attribute
+    
+    def add_to_bias(self, delta):
+        if isinstance(self.bias, nn.Parameter):
+            self.bias = nn.Parameter(self.bias + delta)
+        else:
+            self.bias = self.bias + delta
+    
+    def reset(self):
+        if isinstance(self.bias, nn.Parameter):
+            self.bias = nn.Parameter(torch.zeros(1, device=self.bias.device))
+        else:
+            self.bias = torch.zeros(1, device=self.bias.device)
         
     def forward(self, x):
         # return self.activation(x + self.bias)
@@ -58,10 +75,10 @@ class Node(nn.Module):
     
     
 class Connection(nn.Module):
-    def __init__(self, weight, enabled=True):
+    def __init__(self, weight, enabled=True, device='cpu'):
         super().__init__()
         if isinstance(weight, float):
-            weight = torch.tensor([weight])
+            weight = torch.tensor([weight], device=device)
         self.weight = nn.Parameter(weight)
         self.enabled:bool = enabled
         
@@ -69,8 +86,23 @@ class Connection(nn.Module):
         return x * self.weight
 
     def add_to_weight(self, delta):
-        self.weight = nn.Parameter(self.weight + delta)
+        if isinstance(self.weight, nn.Parameter):
+            self.weight = nn.Parameter(self.weight + delta)
+        else:
+            self.weight = self.weight + delta
     
+    def reset(self, new_weight_fn):
+        if isinstance(self.weight, nn.Parameter):
+            self.weight = nn.Parameter(new_weight_fn())
+        else:
+            self.weight = new_weight_fn()
+        
+        
+    def remove_parameters(self):
+        detached_weight = self.weight.detach()
+        del self.weight  # Remove the nn.Parameter
+        self.weight = detached_weight  # Assign the detached tensor as a regular attribute
+        
     def to_json(self):
         return {
             "weight": self.weight.item(),
@@ -170,7 +202,16 @@ class CPPN(nn.Module):
             self.mutate_lr(config.mutate_sgd_lr_sigma) # initialize learning rate
         
         self.to(self.device)
- 
+        
+        if config.sgd_steps <= 0:
+            # no SGD so we can disable parameter tracking
+            self.remove_parameters()
+                
+    def remove_parameters(self):
+        for node in self.nodes.values():
+            node.remove_parameters()
+        for cx in self.connections.values():
+            cx.remove_parameters()
     
     def initialize_node_genome(self, config):
             n_hidden = config.hidden_nodes_at_start
@@ -210,14 +251,15 @@ class CPPN(nn.Module):
             return int(node_id) < fourier_cutoff
         
         prev_layer = self.input_nodes
-        for layer in sorted(list(hidden_layers.values()), key=lambda x: x[0].layer):
-            for node in layer:
-                for prev_node in prev_layer:
-                    prob = init_connection_prob_fourier if is_fourier(prev_node.id) else initial_connection_prob
-                    if torch.rand(1, dtype=torch.float32) < prob:
-                        self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
-            if len(layer) > 0:
-                prev_layer = layer
+        if len(list(hidden_layers.values())[0]) > 0:
+            for layer in sorted(list(hidden_layers.values()), key=lambda x: [] if len(x)==0 else x[0].layer):
+                for node in layer:
+                    for prev_node in prev_layer:
+                        prob = init_connection_prob_fourier if is_fourier(prev_node.id) else initial_connection_prob
+                        if torch.rand(1, dtype=torch.float32) < prob:
+                            self.connections[f"{prev_node.id},{node.id}"] = Connection(self.rand_weight(weight_std))
+                if len(layer) > 0:
+                    prev_layer = layer
         
         for node in self.output_nodes:
             for prev_node in prev_layer:
@@ -229,7 +271,9 @@ class CPPN(nn.Module):
             for output_node in self.output_nodes:
                 path = []
                 path_end = output_node
-                for layer in sorted(list(hidden_layers.values()), key=lambda x: x[0].layer, reverse=True):
+                for layer in sorted(list(hidden_layers.values()), key=lambda x: [] if len(x)==0 else x[0].layer, reverse=True):
+                    if len(layer) == 0:
+                        continue
                     # check to see if there is already a connection from this layer to the output node
                     if any([f"{node.id},{path_end.id}" in self.connections.keys() for node in layer]):
                         existing = [node for node in layer if f"{node.id},{path_end.id}" in self.connections.keys()][0]
@@ -320,15 +364,15 @@ class CPPN(nn.Module):
         # outputs = torch.sigmoid(outputs)
         
         # normalize?
-        out_range = (outputs.max() - outputs.min())
-        if out_range > 0:
-            outputs = (outputs - outputs.min()) / out_range
+        # out_range = (outputs.max() - outputs.min())
+        # if out_range > 0:
+        #     outputs = (outputs - outputs.min()) / out_range
         
         # outputs = torch.nn.functional.relu(outputs)
         
-        # outputs = torch.abs(outputs)
-        
+        outputs = 1.0-torch.abs(outputs)
         outputs = torch.clamp(outputs, 0, 1)
+        
         return outputs
 
     def mutate(self, config:CPPNConfig, skip_update=False, pbar=False):
@@ -421,8 +465,8 @@ class CPPN(nn.Module):
             else:
                 [from_node, to_node] = random_choice(list(self.nodes.values()),
                                                     2, replace=False)
-            if from_node.layer >= to_node.layer:
-                continue  # don't allow recurrent connections
+            if from_node.layer >= to_node.layer or from_node in self.output_nodes:
+                continue  # don't allow recurrent connections or connections from output nodes
             # look to see if this connection already exists
             key = f"{from_node.id},{to_node.id}"
             if key in self.connections.keys():
@@ -564,7 +608,7 @@ class CPPN(nn.Module):
                 connection.add_to_weight(delta)
                 
             elif R_reset[i] < config.prob_weight_reinit:
-                connection.weight = self.random_weight()
+                connection.reset(self.rand_weight)
 
         # self.clamp_weights()
 
@@ -576,9 +620,9 @@ class CPPN(nn.Module):
         for i, node in enumerate(self.nodes.values()):
             if R_delta[i] < prob:
                 delta = random_normal(None, 0, config.bias_mutation_std)
-                node.bias = node.bias + delta
+                node.add_to_bias(delta)
             elif R_reset[i] < config.prob_weight_reinit:
-                node.bias = torch.zeros_like(node.bias)
+                node.reset()
 
         
     def mutate_lr(self, sigma):
@@ -588,6 +632,14 @@ class CPPN(nn.Module):
         self.sgd_lr = self.sgd_lr + delta
         self.sgd_lr = max(1e-8, self.sgd_lr) # prevent 0 or negative learning rates
 
+
+    def prune_fixed_connections(self, num):
+        sorted_cxs = sorted(self.connections.items(), key=lambda x: abs(x[1].weight.item()))
+        num = min(num, len(sorted_cxs))
+        for i in range(num):
+            del self.connections[sorted_cxs[i][0]]
+        self.update_layers()
+        return num
 
     def prune_connections(self, config, already_pruned=0):
         if config.prune_threshold == 0 and config.min_pruned == 0:
@@ -613,7 +665,7 @@ class CPPN(nn.Module):
 
     def prune_nodes(self, config):
         if config.prune_threshold_nodes == 0 and config.min_pruned_nodes == 0 and config.node_activation_prune_threshold == 0:
-            return 0
+            return 0,0
         used_node_ids = []
         used_node_ids.extend(self.input_node_ids)
         used_node_ids.extend(self.output_node_ids)
@@ -675,7 +727,7 @@ class CPPN(nn.Module):
     
     
     def rand_weight(self, std=1.0):
-        return torch.randn(1) * std
+        return torch.randn(1, device=self.device) * std
         
     def clone(self, config, cpu=False, new_id=False):
         """Clones the CPPN, optionally on the CPU. If new_id is True, the new CPPN will have a new id."""
@@ -685,12 +737,16 @@ class CPPN(nn.Module):
           
         # Copy the parent's genome
         for _, node in self.nodes.items():
-            child.nodes[node.id] = Node(type(node.activation), node.id, node.bias.item())
+            child.nodes[node.id] = Node(type(node.activation), node.id, node.bias.item(), device=self.device)
         
         for conn_key, conn in self.connections.items():
             child.connections[conn_key] = Connection(conn.weight.detach().clone())
         
         child.update_layers()
+        
+        if config.sgd_steps <= 0:
+            # no SGD so we can disable parameter tracking
+            child.remove_parameters()
         
         # Configure record keeping information
         if new_id:
@@ -849,6 +905,12 @@ class CPPN(nn.Module):
             else:
                 json.dump(genome_data, f)
                 
+    def free_memory(self):
+        self.node_states = {}
+        for node in self.nodes.values():
+            node.activation = None
+        
+            
     
 if __name__== "__main__":
     from cppn.fourier_features import add_fourier_features

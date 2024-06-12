@@ -18,7 +18,7 @@ def process_tensor(result, name, fns=None, reduce=True):
     result[result == float('inf')] = float('nan')
     result[result == float('-inf')] = float('nan')
     result[result == float('nan')] = float('nan')
-
+    
     if name in ['offspring_by_batch']:
         ...
     if name in ['pruned_cxs']:
@@ -52,11 +52,34 @@ def process_tensor(result, name, fns=None, reduce=True):
     if name in ['nodes_by_batch', 'cx_by_batch']:
         result = result[:,1] # average over pop
     
+    if name in ['ids_by_batch']:
+        # count unique
+        result = result.unique(dim=1, return_counts=True)[1]
+        
+    if name in ['replacements_by_batch']:
+        # count unique
+        result = result
+    
     return result
 
 def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=True, only_final=False, condition_filter=None):
     cond_dir = os.path.join(results_path, "conditions")
     results = []
+    
+    total_expected_results = 0
+    for name in names:
+        for cond in os.listdir(cond_dir):
+            if condition_filter is not None and cond not in condition_filter:
+                    continue
+            cond_path = os.path.join(cond_dir, cond)
+            if not os.path.isdir(cond_path):
+                continue
+            runs = os.listdir(cond_path)[:max_runs] if max_runs is not None else os.listdir(cond_path)
+            for run in runs:
+                pt_path = os.path.join(cond_path, run, f"{name}.pt")
+                if not os.path.exists(pt_path):
+                    continue
+                total_expected_results += 1
 
     # if not reduce and fns is None:
     #     print("Must specify fns to use for non-reduced results")
@@ -122,7 +145,14 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
                     else:
                         names = [name]
                         if len(t.shape) > 1 and fns is not None:
-                            names += [f for f in fns]     
+                            names += [f for f in fns]
+                        if name == 'replacements_by_batch':
+                            results.append((cond, run, t))
+                            # check if results is complete
+                            print(len(results), total_expected_results)
+                            if len(results) == total_expected_results:
+                                return results
+                            continue # skip to next run
                         if fns is not None and (name=='normed_fitness_by_batch' or name=='fitness_by_batch'):
                             use_fns = fns
                             if "normed" in name:
@@ -214,8 +244,8 @@ def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,s
                                     results['evals_by_batch'].max(),
                                     num_points)
         # find closest evals 
-        results['evals'] = results['evals_by_batch'].apply(lambda x: evals_by_batch[np.argmin(np.abs(evals_by_batch - x))])
-        
+        results['evals'] = results['evals_by_batch'].apply(lambda x: evals_by_batch[np.abs(evals_by_batch - x + 1).argmin()])
+        print(results['evals_by_batch'])
         save_name = f"{y}_v_evals.pdf"
         if mean_by_target:
             results = results.groupby(["condition", 'run', 'batch']).mean(numeric_only=True).reset_index()

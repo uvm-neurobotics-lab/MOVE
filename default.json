@@ -2,17 +2,27 @@
     "name": "MOVE",
     "controls":
     {
-        "target": "data/skull.png",
-        "color_mode": "L",
-        "alg": "move"
+        "target": "data/apple.png",
+        "color_mode": "HSL",
+        "alg": "move",
+        "hidden_nodes_at_start": 0,
+        "sgd_learning_rate": 0.01,
+        "sgd_early_stop": 20,
+        "connection_prune_threshold": 0.000,
+        "connection_bloat": 0,
+        "bloat_prune_ratio": 0.00,
+        "sgd_steps":10,
+        "batch_size": 20,
+        "initial_batch_size": 20,
+        "num_cells":  20,
+        "soft_mask_sigma": 0.5,
+        "n_fourier_features": 0,
+        "max_weight":10.0
     },
     "conditions": [
         {
             "default": {
-                "sgd_steps":1000,
-                "batch_size":1,
-                "initial_batch_size":1
-
+                    "sgd_strat":"sgd"
             }
         }
     ]

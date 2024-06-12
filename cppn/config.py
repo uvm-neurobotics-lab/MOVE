@@ -38,14 +38,15 @@ class CPPNConfig:
         # self.color_mode = "L"
         
         self.allow_recurrent = False
-        self.init_connection_probability = 0.85
+        self.init_connection_probability = 0.50
         self.init_connection_probability_fourier = 0.1
         self.fourier_seed = 'random'
         self.force_init_path_inputs_outputs = True
         self.dense_init_connections = False
         # self.activations = [sin, cos, gauss, linear, tanh]
-        self.activations = [SinActivation, CosActivation, GaussActivation, IdentityActivation, TanhActivation]
-        self.normalize_outputs = False # None, "picbreeder", "sigmoid", 'min_max', 'abs_tanh'
+        self.activations = [SinActivation, SigmoidActivation, GaussActivation, IdentityActivation, TanhActivation]
+        self.normalize_outputs = "neat" # None, "picbreeder", "sigmoid", 'min_max', 'abs_tanh'
+        # self.normalize_outputs = False # None, "picbreeder", "sigmoid", 'min_max', 'abs_tanh'
         self.node_agg = 'sum'
         
         self.output_blur = 0.0 # don't blur
@@ -79,8 +80,8 @@ class CPPNConfig:
         self.prob_weight_reinit = 0.0 # .1 in the original NEAT (.1 of .8)
         self.prob_mutate_bias = 0.0
         
-        self.bias_mutation_std = 0.0
-        self.weight_mutation_std = 0.0
+        self.bias_mutation_std = 1.0
+        self.weight_mutation_std = 1.0
         
         self.initial_mutations = 0 
 
@@ -116,20 +117,22 @@ class CPPNConfig:
         self.sgd_early_stop_delta = -0.0005
         self.sgd_l2_reg = 0.0 # don't use L2 regularization
         self.sgd_steps = 20
+        self.sgd_strat = 'sgd' # 'imaml'
         self.sgd_clamp_grad = False
         self.sgd_every = 1
         self.sgd_early_stop = 5
         self.sgd_clamp_weights = 10
-        self.mutate_sgd_lr_sigma = self.sgd_learning_rate * 0.01
+        self.mutate_sgd_lr_sigma = 0
+        # self.mutate_sgd_lr_sigma = self.sgd_learning_rate * 0.01
         
         
         
         # Fourier features:
         self.use_fourier_features = True
-        self.n_fourier_features = 8
+        self.n_fourier_features = 16
         self.fourier_feature_scale = 2.0
         self.fourier_mult_percent = 0.05
-        self.fourier_sin_and_cos = False
+        self.fourier_sin_and_cos = True
 
         # https://link.springer.com/content/pdf/10.1007/s10710-007-9028-8.pdf page 148
         self.use_input_bias = False # SNGA,

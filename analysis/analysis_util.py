@@ -83,6 +83,9 @@ def get_cppns_by_batch(path, modulo=1, always_include_last=False, override_batch
     for i, genome_path in enumerate(sorted_list):
         if override_batch == 'mid':
             need_this_genome = i == len(sorted_list)//2
+        elif type(override_batch) == list:
+            need_this_genome = int(genome_path.split("_")[-1].split(".")[0]) in override_batch
+            print(i, need_this_genome)
         else:
             need_this_genome = i % modulo == 0
             if always_include_last:

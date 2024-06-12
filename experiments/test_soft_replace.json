@@ -35,7 +35,7 @@
         "prob_disable_connection": 0.15,
         "sgd_l2_reg": 0.0003,
         "hidden_nodes_at_start": [
-            16
+            4
         ],
         "topology_mutation_iters": 2,
         "min_pruned": 1,
@@ -56,8 +56,8 @@
             "soft_mask_mu": 0.5,
             "soft_mask_sigma": 1.0,
             "soft_mask_min":-1.0,
-            "soft_replace": true,
-            "soft_replace_mod": 10
+            "soft_replace": false,
+            "soft_replace_mod": 10000
         }
     }
 ]
