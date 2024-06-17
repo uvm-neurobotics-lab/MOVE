@@ -6,6 +6,7 @@ if [ $# -eq 0 ]
 fi
 
 folder=$1
+hillclimber=0
 shift # past argument or value
 
 # named arguments from commandline
@@ -34,6 +35,10 @@ do
       hillclimber=1
       # shift # past argument
       ;;
+      -j|--jobs)
+      jobs="$2"
+      shift # past argument
+      ;;
       *)
       echo "Unknown option $key"
       exit 1
@@ -43,6 +48,7 @@ do
 done
 
 repeats=${repeats:-1}
+jobs=${jobs:-1}
 dry_run=${dry_run:-0}
 target=${target:-"."}
 condition=${condition:-"."}
@@ -77,9 +83,9 @@ for i in $(seq 1 $repeats); do
     fi
 
     if [ $dry_run -eq 0 ]; then
-      sbatch scripts/$script_name $filename $out_dir
+      sbatch scripts/$script_name $filename $out_dir move $jobs
     else
-      echo "would do: sbatch scripts/$script_name $filename $out_dir"
+      echo "would do: sbatch scripts/$script_name $filename $out_dir move $jobs"
     fi
 
 

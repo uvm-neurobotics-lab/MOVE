@@ -32,6 +32,8 @@ EXPERIMENT_FILE="../default.json"
 OUTDIR="../results/default"
 CONDA_ENV="move"
 
+JOBS=1
+
 if [ ! -z "$1" ]
   then
     echo "Using $1 as experiment file"
@@ -51,12 +53,29 @@ if [ ! -z "$3" ]
 fi
 
 
+if [ ! -z "$4" ]
+  then
+    echo "Using $4 jobs"
+    JOBS=$4
+fi
+
 conda activate "$CONDA_ENV"
 
 nvidia-smi
 
 
+
 CMDS=()
+if [ $JOBS -gt 1 ]
+then
+  echo "Running $JOBS jobs"
+  for i in $(seq 2 $JOBS)
+  do
+    CMDS+=("time python -O move.py -c ${EXPERIMENT_FILE} -o ${OUTDIR} &")
+  done
+
+fi
+
 CMDS+=("time python -O move.py -c ${EXPERIMENT_FILE} -o ${OUTDIR}")
 
 mkdir -p ${OUTDIR}
