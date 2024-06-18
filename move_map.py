@@ -1,8 +1,10 @@
 import itertools
 import random
 import numpy as np
-
+import gzip
+import os
 import torch
+import json
 
 class MOVEMap(object):
     def __init__(self, config, fns) -> None:
@@ -157,3 +159,6 @@ class MOVEMap(object):
         pop = self.get_population()
         return len(pop) 
     
+    # def load_population(self, population):
+    #     for i, cell in enumerate(population):
+    #         self.map[i] = cell

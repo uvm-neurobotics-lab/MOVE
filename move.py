@@ -108,9 +108,12 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.agg_fitnesses = self.map.get_agg_fitnesses()
         self.fitnesses = self.map.get_fitnesses()
     
-    def evolve(self, run_number = 1, show_output=False, initial_population=False):
+    def evolve(self, run_number = 1, show_output=False, initial_population=False, resume=None):
         # start evolving, defaults to no initial population because the initial pop is generated during gen 0
         try:
+            if resume is not None:
+                self.current_batch = self.record.load_checkpoint(resume, self.checkpoints_dir, self.map, self.config)
+                print(self.map.get_population())
             super().evolve(run_number, show_output, initial_population)
         except KeyboardInterrupt:
             pass # allow user to stop early
@@ -426,6 +429,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         return all_replacements
     
     
+    def save_checkpoint(self):
+        print("Saving checkpoint")
+        self.record.save_checkpoint(self.run_dir, self.checkpoints_dir, self.map, self.config, self.current_batch)
+        self.save_move_info()
+        
     def selection_and_reproduction(self):
         
         # Choose parents
@@ -486,18 +494,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             b = self.get_best()
             if b is not None:
                 b.save(os.path.join(self.genomes_dir, f"batch_{self.current_batch:04d}.json"), self.config)
-        
-        
-    def on_end(self):
-        super().on_end()
-        
-        if self.config.thread_count > 1:
-            for w in self.workers:
-                w.close()
-        # save fitness over time
-        self.record.save(self.run_dir) # save statistics
-           
-        # save other data
+        if self.current_batch % self.config.checkpoint_frequency == 0:
+            self.save_checkpoint()
+    
+    def save_move_info(self):
         with open(os.path.join(self.run_dir, "cell_names.csv"), "w") as f:
             f.write(",".join(self.map.cell_names))
         with open(os.path.join(self.run_dir, "function_names.csv"), "w") as f:
@@ -506,12 +506,30 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             
         torch.save(self.map.fn_mask, os.path.join(self.run_dir, "fn_mask.pt"))
         
+        
+    
+    def on_end(self):
+        super().on_end()
+        
+        if self.config.thread_count > 1:
+            for w in self.workers:
+                w.close()
+                
+        # save data
+        self.record.save(self.run_dir, plot=True) # save statistics
+           
+        # save other data
+        self.save_move_info()
+        
         if not self.config.dry_run:
             self.record.save_map(self.image_dir, self.map, self.config, self.inputs)
         
+        # save lineages
         logging.info("Saving lineages")
         lineages = {i:v for i,v in enumerate(self.get_lineages())}
         json.dump(lineages, open(os.path.join(self.run_dir, "lineages.json"), "w"), indent=4)
+        
+        self.save_checkpoint()
         
     
     def record_keep(self, new_children, steps, n_pruned, n_pruned_nodes, all_replacements):
@@ -572,7 +590,7 @@ if __name__ == '__main__':
         if config.do_profile:
             import cProfile
             prof_path = os.path.join(alg.config.output_dir, f"{config.run_id:04d}.prof")
-            cProfile.run("alg.evolve()", prof_path, sort="cumtime")
+            cProfile.run("alg.evolve(resume=args.resume)", prof_path, sort="cumtime")
             import pstats
 
             file = open(os.path.join(alg.config.output_dir, f"{config.run_id:04d}.prof.txt"), 'w')
@@ -585,10 +603,10 @@ if __name__ == '__main__':
                 logging.warning("Parallel processing not implemented for MOVE")
                 print("Starting thread")
                 # parallel processing
-                evolve_thread = threading.Thread(target=alg.evolve, name="Evolve", daemon=False)
+                evolve_thread = threading.Thread(target=alg.evolve, name="Evolve", daemon=False, args=(1, False, False, args.resume,))
                 threads.append(evolve_thread)
             else:
-                alg.evolve()    
+                alg.evolve(resume=args.resume)    
         
     
     if threads:

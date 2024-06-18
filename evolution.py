@@ -103,6 +103,7 @@ class CPPNEvolutionaryAlgorithm(object):
         
         
     def init_dirs(self):
+        print(self.config.run_id)
         self.cond_dir = os.path.join(self.config.output_dir, "conditions", self.config.experiment_condition)
         os.makedirs(self.cond_dir, exist_ok=True)
         self.run_dir = os.path.join(self.cond_dir, f"run_{self.config.run_id:04d}")
@@ -111,6 +112,8 @@ class CPPNEvolutionaryAlgorithm(object):
         os.makedirs(self.image_dir, exist_ok=True)
         self.genomes_dir = os.path.join(self.run_dir, "genomes")
         os.makedirs(self.genomes_dir, exist_ok=True)
+        self.checkpoints_dir = os.path.join(self.run_dir, "checkpoints")
+        os.makedirs(self.checkpoints_dir, exist_ok=True)
 
     def init_inputs(self):
         res_h, res_w = self.config.res_h, self.config.res_w
@@ -217,10 +220,15 @@ class CPPNEvolutionaryAlgorithm(object):
         self.start_time = time.time()
         self.run_number = run_number
         self.show_output = show_output or self.debug_output
-        if initial_population:
+        if isinstance(initial_population,list):
+            # use the provided population
+            self.population = initial_population
+        elif initial_population:
+            # make a new population
             for i in range(self.config.initial_batch_size): 
                 self.population.append(self.genome_type(self.config)) # generate new random individuals as parents
-            
+        
+        if initial_population:
             # update novelty encoder 
             if self.config.get("novelty_mode", None) == "encoder":  
                 initialize_encoders(self.config, self.target)  

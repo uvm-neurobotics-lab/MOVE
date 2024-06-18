@@ -21,6 +21,8 @@ class MoveConfig(CPPNConfig):
         self.run_id = None # set later
         self.target = None # set later
         self.do_profile = False
+        
+        self.checkpoint_frequency = 1
 
         self.total_offspring = 30_000_000
         

@@ -884,6 +884,10 @@ class CPPN(nn.Module):
         
         for key, item in json_dict["nodes"].items():
             self.nodes[key] = Node.create_from_json(item)
+            if int(self.nodes[key].id) > self.__class__.current_node_id:
+                self.__class__.current_node_id = int(self.nodes[key].id)+1
+        if self.id > self.__class__.current_id:
+            self.__class__.current_id = self.id+1
         for key, item in json_dict["connections"].items():
             self.connections[key] = Connection.create_from_json(item)
 

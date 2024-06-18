@@ -54,10 +54,16 @@ def run_setup(config_class = MoveConfig):
     parser.add_argument('-pr','--profile', action='store_true', help=f'Profile the code (default: False).')
     parser.add_argument('-pl', '--parallel', action='store_true', help=f'Run in parallel (default: False).')
     parser.add_argument('-ci', '--condition', action='store', help=f'Condition index to run (default: None, run all).')
+    parser.add_argument('-r', '--resume', action='store', type=str, help=f'Resume from a checkpoint.')
     
     args = parser.parse_args()
     
-    if args.config is None:
+    
+    
+    if args.resume is not None:
+        args.config = os.path.join(args.resume, 'config.json')
+        print("Resuming from: ", args.resume)
+    elif args.config is None:
         if config_class == MoveConfig:
             args.config = "default.json"
         else:
@@ -65,9 +71,12 @@ def run_setup(config_class = MoveConfig):
     
     with open(args.config) as f:
         json_str = f.read()
-    
+            
     parsed = json.loads(json_str)
-
+    if isinstance(parsed, str):
+        parsed = json.loads(parsed)
+    if args.resume is not None:
+        parsed['controls'] = json.loads(json.loads(json_str))
     
     # change controls based on command line args:
     if args.target is not None:
@@ -93,11 +102,25 @@ def run_setup(config_class = MoveConfig):
     
     config = config_class()
     config.device = torch.device(args.device)
+    
+    config.do_profile=args.profile
+    
+    if args.resume is not None:
+        # parsed['controls'] = json.loads(json_str)
+        config.resume = args.resume
+        config.run_output_dir = config.resume
+        
+    else:
+        conditions = parsed.get("conditions", [])
+    
     apply_condition(config, parsed.get("controls", {}), {}, parsed.get("name", "Default"), ff.__dict__)
     
     config.do_profile=args.profile
     
-    conditions = parsed.get("conditions", [])
+    if args.resume:
+        config.resume = args.resume
+        yield config, args
+        return
 
     for experiment in conditions:
         name = list(experiment.keys())[0]

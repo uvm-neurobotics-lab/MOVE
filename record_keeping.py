@@ -1,3 +1,4 @@
+import gzip
 import logging
 import os
 import pandas as pd
@@ -9,6 +10,7 @@ import json
 import numpy as np
 import time
 from cppn.util import *
+from cppn import CPPN
 
 class Record():
     def __init__(self, config, n_fns, n_cells, total_batches, low_mem=False) -> None:
@@ -75,7 +77,7 @@ class Record():
                 self.replacements_by_batch[:,:,index] = all_replacements.cpu()
             
 
-    def save(self, run_dir):
+    def save(self, run_dir, plot=True):
         logging.info("Saving record")
         torch.save(self.agg_fitness_by_batch, os.path.join(run_dir, "agg_fitness_by_batch.pt"))
         
@@ -87,16 +89,16 @@ class Record():
             f.write(f"{self.n_fwds},{self.n_fwds_incl_sgd},{self.n_evals},{self.n_evals_incl_sgd},{(self.n_fwds_incl_sgd-self.n_fwds)*2}\n")
         
         # plot normed fitness
-
-        plt.close()
-        # cut after first nan
-        plt.figure(figsize=(10,6))
-        plt.rcParams.update({'font.size': 14})
-        normed_no_nan = self.normed_fitness_by_batch.clone()
-        plt.plot( torch.amax(normed_no_nan.nanmean(dim=0), dim=0), label='Best')
-        plt.plot( torch.nanmean(normed_no_nan.nanmean(dim=0), dim=0), label='Mean')
-        plt.legend()
-        plt.savefig(os.path.join(run_dir, "normed_fitness.png"))
+        if plot:
+            plt.close()
+            # cut after first nan
+            plt.figure(figsize=(10,6))
+            plt.rcParams.update({'font.size': 14})
+            normed_no_nan = self.normed_fitness_by_batch.clone()
+            plt.plot( torch.amax(normed_no_nan.nanmean(dim=0), dim=0), label='Best')
+            plt.plot( torch.nanmean(normed_no_nan.nanmean(dim=0), dim=0), label='Mean')
+            plt.legend()
+            plt.savefig(os.path.join(run_dir, "normed_fitness.png"))
             
         if not self.low_mem:
             torch.save(self.total_pruned[:,0], os.path.join(run_dir, "pruned_cxs.pt"))
@@ -112,15 +114,43 @@ class Record():
             torch.save(self.nodes_by_batch, os.path.join(run_dir, "nodes_by_batch.pt"))
             torch.save(self.time_elapsed, os.path.join(run_dir, "time_elapsed_by_batch.pt"))
             
-            
-     
-    def save_map(self, images_path, map, config, inputs):
-        # save all images
+    def load(self, run_dir):
+        logging.info("Loading record")
+        self.agg_fitness_by_batch = torch.load(os.path.join(run_dir, "agg_fitness_by_batch.pt"))
+        
+        self.evals_by_batch = torch.load(os.path.join(run_dir, "evals_by_batch.pt"))
+        self.normed_fitness_by_batch = torch.load(os.path.join(run_dir, "normed_fitness_by_batch.pt"))
+        
+        with open(os.path.join(run_dir, "evals.csv"), 'r') as f:
+            f.readline()
+            line = f.readline()
+            parts = line.split(',')
+            self.n_fwds = int(parts[0])
+            self.n_fwds_incl_sgd = int(parts[1])
+            self.n_evals = int(parts[2])
+            self.n_evals_incl_sgd = int(parts[3])
+        
+        if not self.low_mem:
+            self.total_pruned[:,0] = torch.load(os.path.join(run_dir, "pruned_cxs.pt"))
+            self.total_pruned[:,1] = torch.load(os.path.join(run_dir, "pruned_nodes.pt"))
+            self.fitness_by_batch = torch.load(os.path.join(run_dir, "fitness_by_batch.pt"))
+            self.replacements_by_batch = torch.load(os.path.join(run_dir, "replacements_by_batch.pt"))
+            self.ids_by_batch = torch.load(os.path.join(run_dir, "ids_by_batch.pt"))
+            self.parents_by_batch = torch.load(os.path.join(run_dir, "parents_by_batch.pt"))
+            # self.votes_by_batch = torch.load(os.path.join(run_dir, "votes_by_batch.pt"))
+            self.lr_by_batch = torch.load(os.path.join(run_dir, "lr_by_batch.pt"))
+            self.offspring_by_batch = torch.load(os.path.join(run_dir, "offspring_by_batch.pt"))
+            self.cx_by_batch = torch.load(os.path.join(run_dir, "cx_by_batch.pt"))
+            self.nodes_by_batch = torch.load(os.path.join(run_dir, "nodes_by_batch.pt"))
+            self.time_elapsed = torch.load(os.path.join(run_dir, "time_elapsed_by_batch.pt"))         
+    
+    
+    def save_images(self, images_path, map, config, inputs):
+        flat_map = map.get_population()
         map_path = os.path.join(images_path, "final_map")
         os.makedirs(map_path, exist_ok=True)        
-        flat_map = map.get_population()
-        print(f"Saving map with {len(flat_map)} genomes")
         pbar = tqdm(total=len(flat_map), desc="Saving final map...")
+        
         imgs = []
         genomes = []
         for i in range(len(flat_map)):
@@ -146,24 +176,62 @@ class Record():
                     
                     plt.imsave(os.path.join(map_path, name), img, cmap='gray')
                     plt.close()
-                except:
-                    ...
-                # if config.with_grad:
-                    # flat_map[i].discard_grads()
+                except Exception as e:
+                    print(e)
+                    pass
                 genomes.append(flat_map[i].clone(config, new_id=False).to_json())
             else:
                 genomes.append("null")
             pbar.update(1)
-
         pbar.close()
-        with open(os.path.join(map_path, "map.json"), "w") as f:
-            json.dump(genomes, f)
-      
-        
         if len(imgs)> 0:
             average_image = np.mean(imgs, axis=0) 
             plt.imsave(os.path.join(images_path, f"avg_{config.run_id:04d}.png"), average_image, cmap='gray')
+    
+    def save_map(self, images_path, map, config, inputs, compress=False, save_path=None):
+        # save all images
+        flat_map = map.get_population()
+        print(f"Saving map with {len(flat_map)} genomes")
+        if images_path is not None:
+            self.save_images(images_path, map, config, inputs)
         
+        genomes = []
+        for i in range(len(flat_map)):
+            cell_fns_inds = map.cell_fn_inds[i] # flat
+            cell_fns = [map.fns[i] for i in cell_fns_inds]
+            if(flat_map[i] is not None):
+                genomes.append(flat_map[i].clone(config, new_id=False).to_json())
+            else:
+                genomes.append("null")
+
+        if save_path is None:
+            save_path = os.path.join(images_path, "final_map", "map.json")
+        if compress:
+            with gzip.open(save_path, "wt") as f:
+                json.dump(genomes, f)
+        else:
+            with open(save_path, "w") as f:
+                json.dump(genomes, f)
+    
+    def save_checkpoint(self, run_dir, checkpoint_dir, map, config, current_batch, save_data=False):
+        if save_data:
+            self.save(run_dir)
+        checkpoint_name = os.path.join(checkpoint_dir, f"{current_batch:04d}.json.gz")
+        self.save_map(None, map, config,None, compress=True, save_path=checkpoint_name)
+    
+    def load_checkpoint(self, run_dir, checkpoint_dir, map, config, current_batch=None):
+        self.load(run_dir)
+        current_batch = current_batch if current_batch is not None else max([int(f.split(".")[0]) for f in os.listdir(checkpoint_dir) if f.endswith(".json.gz")])
+        checkpoint_name = os.path.join(checkpoint_dir, f"{current_batch:04d}.json.gz")
+        with gzip.open(checkpoint_name, "rt") as f:
+            genomes = json.load(f)
+            for i, g in enumerate(genomes):
+                if g == "null":
+                    map.map[i] = None
+                else:
+                    map.map[i] = CPPN.create_from_json(g, config)
+                    map.map[i].to(config.device)
+        return current_batch
     
     def batch_end(self, alg, skip_fitness=False):
         if hasattr(alg, 'agg_fitnesses') and len(alg.agg_fitnesses) > 0:
