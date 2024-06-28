@@ -11,7 +11,7 @@
         "connection_prune_threshold": 0.000,
         "connection_bloat": 0,
         "bloat_prune_ratio": 0.00,
-        "sgd_steps":10,
+        "sgd_steps":2000,
         "batch_size": 20,
         "initial_batch_size": 20,
         "num_cells":  20,
