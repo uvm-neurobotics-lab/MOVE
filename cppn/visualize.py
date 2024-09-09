@@ -3,7 +3,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-
+from cppn.graph_util import required_for_output, get_ids_from_individual
 
 def draw_nodes(graph, pos, node_labels, node_size):
     """Draw nodes on the graph"""
@@ -44,6 +44,8 @@ def add_edges_to_graph(individual, visualize_disabled, graph, pos, config):
             style = ('-', 'r', .5+abs(cx.weight.item())/max_weight)
 
         from_node,to_node = cx_key.split(',')
+        if from_node not in graph or to_node not in graph:
+            continue
         graph.add_edge(from_node, to_node,
                        weight=f"{cx.weight.item():.4f}", pos=pos, style=style)
         edge_labels[(from_node, to_node)] = f"{cx.weight.item():.3f}"
@@ -115,6 +117,9 @@ def add_hidden_nodes(individual, node_labels, graph):
         graph (Graph): graph to add nodes to
     """
     for node in individual.hidden_nodes:
+        inputs, outputs, connections = get_ids_from_individual(individual)
+        if node.id not in required_for_output(inputs, outputs, connections):
+            continue
         graph.add_node(node.id, color='lightsteelblue',
                        shape='o', layer=int(node.layer))
         label = f"{node.layer}.{node.id}"
@@ -163,7 +168,7 @@ def visualize_network(individual, config, visualize_disabled=False, show_weights
     plt.rcParams.update({'font.size': 4})
 
     # configure plot
-    plt.figure(figsize=(20, 20))
+    plt.figure(figsize=(16, 16))
     plt.subplots_adjust(left=0, bottom=0, right=1.25,
                         top=1.25, wspace=0, hspace=0)
 
@@ -179,6 +184,12 @@ def visualize_network(individual, config, visualize_disabled=False, show_weights
     draw_edges(individual, graph, pos, show_weights, node_size, edge_labels)
 
     nx.draw_networkx_labels(graph, pos, labels=node_labels)
+
+    plt.text(0.05, 0.05, f'{len(graph.edges)} connections\n{len(graph.nodes)} nodes',
+     horizontalalignment='left',
+     verticalalignment='top',
+     transform = plt.gca().transAxes, fontsize=18)
+    plt.axis('off')
     plt.tight_layout()
     
     if save_name is not None:
@@ -186,3 +197,5 @@ def visualize_network(individual, config, visualize_disabled=False, show_weights
     
     if show:
         plt.show()
+    else:
+        return

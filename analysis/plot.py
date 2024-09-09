@@ -13,7 +13,7 @@ import csv
 def repeat_for_num_fns(tensor, num_fns):
     return tensor.unsqueeze(0).repeat(num_fns, 1)
 
-def process_tensor(result, name, fns=None, reduce=True):
+def process_tensor(result, name, fns=None, reduce=True, max_batch=None):
     result = result.clone()
     result[result == float('inf')] = float('nan')
     result[result == float('-inf')] = float('nan')
@@ -57,12 +57,13 @@ def process_tensor(result, name, fns=None, reduce=True):
         result = result.unique(dim=1, return_counts=True)[1]
         
     if name in ['replacements_by_batch']:
-        # count unique
         result = result
+        if max_batch is not None:
+            result = result[:,:,:max_batch]
     
     return result
 
-def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=True, only_final=False, condition_filter=None):
+def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=True, only_final=False, condition_filter=None, max_batch=None):
     cond_dir = os.path.join(results_path, "conditions")
     results = []
     
@@ -100,7 +101,7 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
                     if not os.path.exists(pt_path):
                         continue
                     t = torch.load(pt_path)
-                    t = process_tensor(t, name, fns, reduce)
+                    t = process_tensor(t, name, fns, reduce, max_batch)
 
                     if only_final:
                         last_row_not_nan = torch.isnan(t).sum(dim=0) == 0
