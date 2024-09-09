@@ -161,7 +161,7 @@ class CPPNEvolutionaryAlgorithm(object):
         self.target = torch.clamp(self.target, 0, 1)
         
         # save target to output directory
-        target_path = os.path.join(self.cond_dir, "target.png")
+        target_path = os.path.join(self.run_dir, "target.png")
         plt.imsave(target_path, self.target[0].permute(1,2,0).cpu().numpy())
     
     def get_mutation_rates(self):

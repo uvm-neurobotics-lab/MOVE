@@ -304,6 +304,12 @@ class CPPNConfig:
         """Creates a configuration from a json string."""
         if config_type is None:
             config_type = CPPNConfig
+        
+        if isinstance(json_str, str):
+            if not json_str.startswith("{"):
+                with open(json_str, 'r') as infile:
+                    json_str = infile.read()
+                    infile.close()
         config = config_type()
         if isinstance(json_str, str):
             json_str = json.loads(json_str)

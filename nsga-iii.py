@@ -1,144 +1,123 @@
-# Program Name: NSGA-II.py
-# Description: This is a python implementation of Prof. Kalyanmoy Deb's popular NSGA-II algorithm
-# Author: Haris Ali Khan 
-# Supervisor: Prof. Manoj Kumar Tiwari
-
-
+import os
+import time
+from matplotlib import pyplot as plt
 from pymoo.algorithms.moo.nsga3 import NSGA3
-
-
 from pymoo.optimize import minimize
 from pymoo.util.ref_dirs import get_reference_directions
 from pymoo.visualization.scatter import Scatter
+import dill
 
-#Importing required modules
-import math
-import random
-import matplotlib.pyplot as plt
+import sys
 
-from mnk_landscapes import *
+sys.path.append("../")
 
-import numpy as np
-from pymoo.core.problem import Problem
-from mnk_landscapes import Rmnk 
+from move_config import MoveConfig
+from fitness.fitness_functions import *
 
-class CustomRmnkProblem(Problem):
-    def __init__(self, rmnk):
-        super().__init__(n_var=rmnk.n,  # Number of decision variables
-                         n_obj=rmnk.m,  # Number of objectives
-                         n_constr=0,    # Number of constraints
-                         xl=0,          # Lower bound of decision variables
-                         xu=1)          # Upper bound of decision variables
-        self.rmnk = rmnk
-
-    def _evaluate(self, X, out, *args, **kwargs):
-        F = np.zeros((X.shape[0], self.rmnk.m))
-
-        for i in range(X.shape[0]):
-            decision_vector = np.where(X[i] < 0.5, 0, 1)  # Convert to binary representation
-            for j in range(self.rmnk.m):
-                F[i, j] = self.rmnk.f(j, decision_vector)
-        out["F"] = F
-
-
-
-
+from problem import CPPNProblem, NoCrossover, CPPNSampling, CPPNMutation, CPPNRepair, CPPNCrossover
 
 if __name__ == "__main__":
-    import os
-    from move import MOVE
-    from run_setup import run_setup
-    from tqdm import tqdm
-
-    for config, verbose in run_setup(config_class=MNKConfig):
+    if len(sys.argv) < 2:
+        print("Usage: python nsga-iii.py <config_file>")
+        sys.exit(1)
         
-        # Initialize RMNK problem
-        # rho = Objective correlation coefficient
-        # m = Number of objective functions
-        # n = Length of solutions
-        # k = Number of epistatic links (non-linearity)
+    json_path = sys.argv[1]
+    
+    with open(json_path, 'r') as infile:
+        json_str = infile.read()
+        infile.close()
+    
+    import json
+    c_json = json.loads(json_str)['controls']
+    
+    config = MoveConfig.create_from_json(c_json, config_type=MoveConfig)
+    
 
 
-        print("Loading RMNK instance from", config.rmnk_instance_file)
-        rmnk = Rmnk(instance_file=config.rmnk_instance_file)
-        config.rmnk_r = rmnk.rho
-        config.rmnk_m = rmnk.m
-        config.rmnk_n = rmnk.n
-        config.rmnk_k = rmnk.k
+    config.sgd_steps = 1
+
+
+    
+    config.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # config.norm_df_path = '../data/target_fitness_fn_ranges.csv'
+
+    problem = CPPNProblem(config)
+
+    # create the reference directions to be used for the optimization
+    ref_dirs = get_reference_directions("das-dennis", len(problem.fns), n_partitions=12)
+
+    
+    # create the algorithm object
+
+    algorithm = NSGA3(
+                pop_size=config.num_cells, # for move comparison
+                n_offsprings=1,
+                ref_dirs=ref_dirs,
+                sampling=CPPNSampling(),
+                # crossover=CPPNCrossover(2, 1),
+                crossover=NoCrossover(1, 1),
+                mutation=CPPNMutation(),
+                repair=CPPNRepair(),
+                eliminate_duplicates=False
+    
+                )
+    algorithm.setup(problem)
+    algorithm.start_time = time.time()
+    res = algorithm.result()
+    
+    
+    
+    if len (sys.argv) > 2:
+        # trying loading as a checkpoint instead:
         
-        print("RMNK:", config.rmnk_r, config.rmnk_m, config.rmnk_n, config.rmnk_k)
-
-
-        config.mutation_sigma = 0.4
-        config.mutation_percent = 0.05
-
-
-        fitness_functions = []
-
-        for i in range(config.rmnk_m):
-            fn = lambda genomes, i=i, config=config, rmnk=rmnk: -1.0 * evaluate_genomes(genomes, rmnk, i, config) # invert sign to maximize
-            fn.__name__ = f"Objective {i}"
-            fitness_functions.append(fn)
-            ff.register_fitness_function(fn.__name__, fn, True)
-            ff.NO_NORM.append(fn)
-            ff.NO_MEAN.append(fn)
-            
-        
-        if not hasattr(config, 'output_dir'):
-            config.output_dir = "../results/nsga-mnk"
-        config.mutate_sgd_lr_sigma = False
-        config.objective_functions = fitness_functions
-        config.sgd_steps = 0
-        config.genome_type = MNKGenome
-        config.target=None
-
-        config.experiment_condition = config.experiment_condition + " (NSGA-III)"
-       
-        cond_dir = os.path.join(config.output_dir, "conditions", config.experiment_condition)
-        os.makedirs(cond_dir, exist_ok=True)
-        run_dir = os.path.join(cond_dir, f"run_{config.run_id:04d}")
-        os.makedirs(run_dir, exist_ok=True)
+        ckpt = sys.argv[2]
+        with open(ckpt, 'rb') as f:
+            checkpoint = dill.load(f)
+            print("Loaded Checkpoint:", checkpoint)
         
         
-        # 50,000 total evaluations
+        # res = minimize(problem,
+        #     checkpoint,
+        #     seed=config.seed,
+        #     termination=('n_gen', 1),
+        #     verbose=True
+        #     )
+
+    else:
+        
+        
 
 
-        # create the reference directions to be used for the optimization
-        ref_dirs = get_reference_directions("das-dennis", rmnk.m, n_partitions=12)
-
-        # create the algorithm object
-        algorithm = NSGA3(pop_size=100,
-                        ref_dirs=ref_dirs)
 
         # execute the optimization
-        res = minimize(CustomRmnkProblem(rmnk),
+        res = minimize(problem,
                     algorithm,
-                    seed=0,
-                    termination=('n_eval', 50_000), 
-                    save_history=True,
+                    seed=config.seed,
+                    termination=('n_gen', 10),
                     verbose=True
                     )
 
-        f = Scatter().add(res.F)
-        plt.savefig(os.path.join(config.output_dir, "nsga3.png"))
-
-        evals_by_batch = torch.tensor([s.evaluator.n_eval for s in res.history], dtype=torch.float32)
-        normed_fitness_by_batch = torch.ones(len(fitness_functions), 1000, 10_000)*-torch.inf
-        F = [s.opt.get("F") for s in res.history]
-
-        for gen in range(len(F)):
-            front = F[gen].T
-            for obj_no, obj in enumerate(front):
-                for i, val in enumerate(obj):
-                    normed_fitness_by_batch[obj_no, i, gen] = -1.0*val
-                    
-        # reshape to:  torch.ones((max_gens, 4), device='cpu')*-torch.inf
-        evals_by_batch = evals_by_batch.unsqueeze(1).repeat(1, 4) # line up with MOVE data (gross TODO)
-        # save as evals_by_batch.pt and normed_fitness_by_batch.pt
-        import torch
-        print(evals_by_batch)
-        print(normed_fitness_by_batch)
-        torch.save(evals_by_batch, os.path.join(run_dir, "evals_by_batch.pt"))
-        torch.save(normed_fitness_by_batch, os.path.join(run_dir, "normed_fitness_by_batch.pt"))
+        with open("checkpoint", "wb") as f:
+            dill.dump(algorithm, f)
+            
+        with open("result", "wb") as f:
+            dill.dump(res, f)
 
     
+    # Scatter().add(res.F).show()
+
+    # get the images
+    # for i, x in enumerate(res.X):
+
+    os.makedirs("tmp_results", exist_ok=True)
+    out = {}
+    problem._evaluate(res.X, out, return_image=True)
+    print(out)
+    out = out["imgs"]
+    out = np.clip(out, 0, 1)
+    for i in range(len(out)):
+        plt.figure()
+        plt.imshow(out[i])
+        plt.axis("off")
+        plt.savefig(f"tmp_results/{i}.png")
+        plt.show()

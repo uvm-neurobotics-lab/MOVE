@@ -35,13 +35,19 @@ class MoveConfig(CPPNConfig):
         # self.stop_condition_value = 60*60*8 # 8 hours
         
 
+        # self.activations=  [SinActivation,
+        #                     IdentityActivation,
+        #                     TanhActivation,
+        #                     SigmoidActivation, 
+        #                     GaussActivation,
+        #                     CosActivation
+        #                     ] # MOVE
+    
         self.activations=  [SinActivation,
                             IdentityActivation,
                             TanhActivation,
                             SigmoidActivation, 
-                            GaussActivation,
-                            CosActivation
-                            ] # MOVE
+                            ] # GECCO24
         
         # self.activations=  [SinActivation,
         #                     IdentityActivation,
@@ -55,7 +61,7 @@ class MoveConfig(CPPNConfig):
         #                     KernelEmbossActivation,
         #                     torch.nn.Hardshrink,
                             
-        #                     ] # MOVE
+        #                     ] 
         
         self.soft_mask_sigma = None # don't use a soft mask (binary mask)
         self.soft_mask_mu = 0.0 
@@ -77,6 +83,7 @@ class MoveConfig(CPPNConfig):
         self.num_inputs = 3 # x,y,d
         self.target_resize = (64,64)
         self.color_mode = "HSL"
+        self.bloat_prune_ratio = 0.0
 
         self.activation_mode = "node"
         # self.output_activation = identity
