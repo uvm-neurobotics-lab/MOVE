@@ -58,8 +58,13 @@ def process_tensor(result, name, fns=None, reduce=True, max_batch=None):
         
     if name in ['replacements_by_batch']:
         result = result
+        if max_batch == -1:
+            # get the last batch where sum of replacements is not 0
+            r = result.sum(dim=(0,1))
+            max_batch = (r != 0).nonzero().max().item()
         if max_batch is not None:
             result = result[:,:,:max_batch]
+        
     
     return result
 
