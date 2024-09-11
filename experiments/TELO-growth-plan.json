@@ -1,0 +1,112 @@
+{
+    "experiment_name": "telo-24-growth",
+
+    "additional_controls":{
+        "num_generations": 2000,
+        "num_cells": 50,
+        "target_resize": [128, 128],
+        "sgd_learning_rate": 0.01,
+        "sgd_early_stop": 10,
+        
+        
+        "init_connection_probability": 0.01,
+        "max_weight": 10.0,
+        "stop_condition": "fwds",
+        "stop_condition_value": 800000,
+        "total_offspring": 8000000,
+        "batch_size": 50,
+        "initial_batch_size": 50,
+        "n_fourier_features": 0,   
+        "soft_mask_sigma": 0.5,
+        "soft_mask_mu": 0.0,
+        "soft_mask_min": 0.0
+
+    },
+
+    "targets":[
+        "data/skull.png",
+        "data/apple.png",
+        "data/dolphin.png",
+        "data/sunrise.png",
+        "data/butterfly.png",
+        "data/spiral.png",
+        "data/checkers.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL",
+        "HSL",
+        "L",
+        "L"
+    ],
+
+"mode": "enum",
+"conditions": [
+    {
+        "MOVE-Slow-Growth": {
+            "hidden_nodes_at_start": 0,
+            "sgd_steps":2000,
+            "no_param_mutations": true,
+            "connection_prune_threshold": 0.001,
+            "extra_bloat": 0,
+            "bloat_prune_rate": 0.00,
+            "min_pruned": 0
+        }
+    },
+    {
+        "MOVE-SGD-Fast-Grow": {
+            "hidden_nodes_at_start": 0,
+            "n_fourier_features": 0,   
+            "soft_mask_sigma": 0.5,
+            "soft_mask_mu": 0.0,
+            "soft_mask_min": 0.0,
+            "sgd_steps":2000,
+            "no_param_mutations": true,
+            "extra_bloat":10,
+            "topology_mutation_iters":10,
+            "bloat_prune_rate": 0.0,
+            "connection_prune_threshold": 0.0,
+            "min_pruned": 0
+        }
+    },
+    {
+        "MOVE-SGD-Grow-And-Prune": {
+            "hidden_nodes_at_start": 0,
+            "n_fourier_features": 0,   
+            "soft_mask_sigma": 0.5,
+            "soft_mask_mu": 0.0,
+            "soft_mask_min": 0.0,
+            "sgd_steps":2000,
+            "no_param_mutations": true,
+            "extra_bloat":10,
+            "topology_mutation_iters":10,
+            "bloat_prune_rate": 0.01,
+            "connection_prune_threshold": 0.01,
+            "min_pruned": 5
+        }
+    },
+    {
+        "MOVE-SGD-Start-Big-No-Grow": {
+            "hidden_nodes_at_start": [64,64],
+            "n_fourier_features": 0,   
+            "soft_mask_sigma": 0.5,
+            "soft_mask_mu": 0.0,
+            "soft_mask_min": 0.0,
+            "sgd_steps":2000,
+            "no_param_mutations": true,
+            "topology_mutation_iters":0,
+            "bloat_prune_rate": 0.00,
+            "connection_prune_threshold": 0.00,
+            "extra_bloat":0,
+            "min_pruned": 0,
+            "prob_add_node": 1.0,
+            "prob_remove_node_node": 1.0
+        }
+    }
+]
+
+}
