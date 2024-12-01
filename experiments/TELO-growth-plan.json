@@ -47,7 +47,7 @@
 "mode": "enum",
 "conditions": [
     {
-        "MOVE-Slow-Growth": {
+        "MOVE-SGD-Slow-Growth": {
             "hidden_nodes_at_start": 0,
             "sgd_steps":2000,
             "no_param_mutations": true,
@@ -89,8 +89,62 @@
             "min_pruned": 5
         }
     },
+   {
+        "MOVE-SGD-Grow-And-Prune-Less": {
+            "hidden_nodes_at_start": 0,
+            "n_fourier_features": 0,
+            "soft_mask_sigma": 0.5,
+            "soft_mask_mu": 0.0,
+            "soft_mask_min": 0.0,
+            "sgd_steps":2000,
+            "no_param_mutations": true,
+            "extra_bloat":10,
+            "topology_mutation_iters":10,
+            "bloat_prune_rate": 0.01,
+            "connection_prune_threshold": 0.01,
+            "min_pruned": 2
+        }
+    },
+  {
+        "MOVE-SGD-Grow-And-Prune-No-Min": {
+            "hidden_nodes_at_start": 0,
+            "n_fourier_features": 0,
+            "soft_mask_sigma": 0.5,
+            "soft_mask_mu": 0.0,
+            "soft_mask_min": 0.0,
+            "sgd_steps":2000,
+            "no_param_mutations": true,
+            "extra_bloat":10,
+            "topology_mutation_iters":10,
+            "bloat_prune_rate": 0.01,
+            "connection_prune_threshold": 0.01,
+            "min_pruned": 0
+        }
+    },
+
+
+
     {
         "MOVE-SGD-Start-Big-No-Grow": {
+            "hidden_nodes_at_start": [64,64],
+            "init_connection_probability": 0.04,
+            "n_fourier_features": 0,   
+            "soft_mask_sigma": 0.5,
+            "soft_mask_mu": 0.0,
+            "soft_mask_min": 0.0,
+            "sgd_steps":2000,
+            "no_param_mutations": true,
+            "topology_mutation_iters":0,
+            "bloat_prune_rate": 0.00,
+            "connection_prune_threshold": 0.00,
+            "extra_bloat":0,
+            "min_pruned": 0,
+            "prob_add_node": 1.0,
+            "prob_remove_node_node": 1.0
+        }
+    },
+    {
+        "MOVE-SGD-Start-Small-No-Grow": {
             "hidden_nodes_at_start": [64,64],
             "n_fourier_features": 0,   
             "soft_mask_sigma": 0.5,

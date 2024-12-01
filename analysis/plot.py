@@ -68,7 +68,7 @@ def process_tensor(result, name, fns=None, reduce=True, max_batch=None):
     
     return result
 
-def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=True, only_final=False, condition_filter=None, max_batch=None):
+def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=True, only_final=False, condition_filter=None, max_batch=None, exclude_targets=[None, "None"]):
     cond_dir = os.path.join(results_path, "conditions")
     results = []
     
@@ -84,6 +84,14 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
             for run in runs:
                 pt_path = os.path.join(cond_path, run, f"{name}.pt")
                 if not os.path.exists(pt_path):
+                    continue
+                target_path = os.path.join(cond_path, run, "target.txt")
+                if not os.path.exists(target_path):
+                    target = None
+                else:
+                    with open(target_path, 'r') as f:
+                        target = f.read().strip()
+                if target in exclude_targets:
                     continue
                 total_expected_results += 1
 
@@ -209,7 +217,7 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
 
 
 def plot_xy(results, x, y, save_path=None, show=False, x_label=None, y_label=None, title=None, leg_title=None):
-    plt.figure(figsize=(5,4))
+    plt.figure(figsize=(10,8))
     # use_save_path = os.path.join(save_path, f"{y}.png")
     use_save_path = save_path
     if 'target' not in results.columns:
@@ -218,7 +226,7 @@ def plot_xy(results, x, y, save_path=None, show=False, x_label=None, y_label=Non
     else:
         sns.lineplot(results, x=x, y=y, hue="condition", style="target")
 
-    plt.legend(loc="lower center", ncol=min(len(results["condition"].unique()), 4), frameon=False, title=leg_title)
+    plt.legend(loc="lower center", ncol=min(len(results["condition"].unique()), 2), frameon=False, title=leg_title)
     if x_label is not None:
         plt.xlabel(x_label)
     if y_label is not None:
@@ -239,19 +247,24 @@ def plot_vs_batches(results, y, save_path=None, show=False, max_ofs=None):
         results = results[(results["offspring_by_batch"] <= max_ofs) & (results["offspring_by_batch"] > 0)]
     plot_xy(results, "batch", y, save_path, show)
 
-def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,smooth=None, title=None, y_label=None, x_label=None, experiment_name= None, leg_title=None):
+def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,smooth=None, title=None, y_label=None, x_label=None, experiment_name= None, leg_title=None, x_axis_as_prop=False):
     try:
         results = results.drop(columns=[c for c in results.columns if c not in[ "condition", "target", 'run', 'batch', 'evals_by_batch', y]])
         
-        num_points = len(results['batch'].unique())
-        if smooth is not None and smooth > 0:
-            num_points = int(num_points * (1.0-smooth))
-        evals_by_batch = np.linspace(results['evals_by_batch'].min(),
-                                    results['evals_by_batch'].max(),
-                                    num_points)
-        # find closest evals 
-        results['evals'] = results['evals_by_batch'].apply(lambda x: evals_by_batch[np.abs(evals_by_batch - x + 1).argmin()])
-        print(results['evals_by_batch'])
+
+        if x_axis_as_prop:
+            results['evals'] = results['evals_by_batch'] / results['evals_by_batch'].max()
+            
+        else:
+            num_points = len(results['batch'].unique())
+            if smooth is not None and smooth > 0:
+                num_points = int(num_points * (1.0-smooth))
+            evals_by_batch = np.linspace(results['evals_by_batch'].min(),
+                                        results['evals_by_batch'].max(),
+                                        num_points)
+            # find closest evals 
+            results['evals'] = results['evals_by_batch'].apply(lambda x: evals_by_batch[np.abs(evals_by_batch - x + 1).argmin()])
+        
         save_name = f"{y}_v_evals.pdf"
         if mean_by_target:
             results = results.groupby(["condition", 'run', 'batch']).mean(numeric_only=True).reset_index()

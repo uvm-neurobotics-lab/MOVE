@@ -134,12 +134,14 @@ def prep_images(imgs, config):
     return imgs
 
 
-def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0):
+def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0, unequal_shape=False):
     lr = config.sgd_learning_rate
     sgd_steps = config.sgd_steps
 
     if isinstance(sgd_steps, str) and 'annealing' in sgd_steps:
        anneal(config, sgd_steps, genomes, current_gen)
+    if sgd_steps == 0:
+        return 0 # took no steps
                         
     
     # if isinstance(genomes[0], tuple):
@@ -171,6 +173,18 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, 
     
     # Compile function
     def f(X, *gs):
+        if unequal_shape:
+            outs= []
+            if len(X.shape)>3:
+                outs = [g(X[i], force_recalculate=True, use_graph=True, channel_first=True) for i,g in enumerate(gs[0])]
+            else:
+                outs = [g(X, force_recalculate=True, use_graph=True, channel_first=True) for g in gs[0]]
+            for i,o in enumerate(outs):
+                if o.shape[0]!=3:
+                    outs[i] = outs[i].repeat(3,1,1)
+            return torch.stack([o for o in outs])
+        if len(X.shape)>3:
+            return torch.stack([g(X[i], force_recalculate=True, use_graph=True, channel_first=True) for i,g in enumerate(gs[0])])
         return torch.stack([g(X, force_recalculate=True, use_graph=True, channel_first=True) for g in gs[0]])
     
     if not skip_pbar:

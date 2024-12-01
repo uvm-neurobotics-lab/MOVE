@@ -300,7 +300,7 @@ class CPPNConfig:
             infile.close()
             
     @staticmethod
-    def create_from_json(json_str, config_type=None):
+    def create_from_json(json_str, config_type=None,device=None):
         """Creates a configuration from a json string."""
         if config_type is None:
             config_type = CPPNConfig
@@ -318,6 +318,8 @@ class CPPNConfig:
             if not key in config.__dict__:
                 logging.warning(f"Unexpected key {key} in config {config_type}")
             setattr(config, key, value)
+        if device is not None:
+            config.device = device
         config.strings_to_fns()
         return config
 

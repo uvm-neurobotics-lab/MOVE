@@ -114,6 +114,9 @@ class CPPNEvolutionaryAlgorithm(object):
         os.makedirs(self.genomes_dir, exist_ok=True)
         self.checkpoints_dir = os.path.join(self.run_dir, "checkpoints")
         os.makedirs(self.checkpoints_dir, exist_ok=True)
+        # save config to run dir
+        with open(os.path.join(self.run_dir, "config.json"), "w") as f:
+            json.dump(copy.deepcopy(self.config).to_json(), f, indent=4)
 
     def init_inputs(self):
         res_h, res_w = self.config.res_h, self.config.res_w

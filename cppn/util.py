@@ -246,9 +246,9 @@ def initialize_inputs(res_h, res_w, use_radial_dist, use_bias, n_inputs, device,
 def initialize_inputs_from_config(config):
     return initialize_inputs(config.res_h,
                             config.res_w,
-                            config.use_radial_dist,
-                            config.use_bias,
-                            config.n_inputs - config.n_fourier_features,
+                            config.use_radial_distance,
+                            config.use_input_bias,
+                            config.num_inputs - config.n_fourier_features,
                             config.device,
                             config.coord_range
                             )

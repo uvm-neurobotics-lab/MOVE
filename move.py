@@ -431,7 +431,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
     
     def save_checkpoint(self):
         print("Saving checkpoint")
-        self.record.save_checkpoint(self.run_dir, self.checkpoints_dir, self.map, self.config, self.current_batch)
+        self.record.save_checkpoint(self.run_dir, self.checkpoints_dir, self.map, self.config, self.current_batch,
+                                    save_data=False)
         self.save_move_info()
         
     def selection_and_reproduction(self):
@@ -494,7 +495,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             b = self.get_best()
             if b is not None:
                 b.save(os.path.join(self.genomes_dir, f"batch_{self.current_batch:04d}.json"), self.config)
-        if self.current_batch % self.config.checkpoint_frequency == 0:
+        if self.config.checkpoint_frequency > 0 and self.current_batch % self.config.checkpoint_frequency == 0:
             self.save_checkpoint()
     
     def save_move_info(self):

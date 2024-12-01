@@ -36,7 +36,7 @@ def warnings(config):
         if config.move_fns_per_cell is not None and config.move_fns_per_cell > 0:
             logging.warn("move_fns_per_cell has no effect when using soft_mask_sigma")
 
-def run_setup(config_class = MoveConfig):
+def run_setup(config_class = MoveConfig, config_override=None):
     import argparse
     import uuid
     default_device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -58,7 +58,9 @@ def run_setup(config_class = MoveConfig):
     
     args = parser.parse_args()
     
-    
+    if args.config is None and config_override is not None:
+        args.config = config_override
+
     
     if args.resume is not None:
         args.config = os.path.join(args.resume, 'config.json')

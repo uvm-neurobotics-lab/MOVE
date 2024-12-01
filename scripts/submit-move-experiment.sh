@@ -18,6 +18,8 @@
 # stop 60 seconds early to save output
 #SBATCH --signal=B:SIGINT@60
 
+# USAGE: sbatch submit-move-experiment.sh [EXPERIMENT_FILE] [OUTDIR] [CONDA_ENV] [JOBS]
+
 # Allow for the use of conda activate
 source ~/.bashrc
 

@@ -7,6 +7,7 @@ fi
 
 folder=$1
 hillclimber=0
+env="move"
 shift # past argument or value
 
 # named arguments from commandline
@@ -37,6 +38,10 @@ do
       ;;
       -j|--jobs)
       jobs="$2"
+      shift # past argument
+       ;;
+      -e|--env)
+      env="$2"
       shift # past argument
       ;;
       *)
@@ -83,9 +88,9 @@ for i in $(seq 1 $repeats); do
     fi
 
     if [ $dry_run -eq 0 ]; then
-      sbatch scripts/$script_name $filename $out_dir move $jobs
+      sbatch scripts/$script_name $filename $out_dir $env $jobs
     else
-      echo "would do: sbatch scripts/$script_name $filename $out_dir move $jobs"
+      echo "would do: sbatch scripts/$script_name $filename $out_dir $env $jobs"
     fi
 
 
