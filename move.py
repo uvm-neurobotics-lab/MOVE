@@ -133,6 +133,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             child = parent.crossover(other_parent, self.config) # crossover
             child.mutate(self.config) # mutate
             child.n_cells = parent.n_cells
+            child.reset(self.config)
+            # child.update_layers()
+            # child.disable_invalid_connections(self.config)
             # TODO lineage
             return child
         else:
@@ -142,6 +145,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             child.parents = (parent.id, parent.id)
             child.cell_lineage = parent.cell_lineage
             child.n_cells = parent.n_cells
+            child.reset(self.config)
+            # child.update_layers()
+            # child.disable_invalid_connections(self.config)
             return child
   
     def correct_target_count(self, count):

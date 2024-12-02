@@ -329,5 +329,5 @@ def feed_forward_layers(inputs, outputs, connections):
 
         layers.append(t)
         s = s.union(t)
-    return layers
+    return layers # as a list of sets
 

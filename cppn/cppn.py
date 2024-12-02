@@ -1,5 +1,6 @@
 """Contains the CPPN, Node, and Connection classes."""
 from calendar import c
+import copy
 from itertools import count
 import json
 import torch
@@ -304,7 +305,7 @@ class CPPN(nn.Module):
         
 
     def update_layers(self):
-        self.enabled_connections = [conn_key for conn_key in self.connections if self.connections[conn_key].enabled]
+        self.update_enabled_connections()
         
         # inputs
         self.layers = [set([n.id for n in self.input_nodes])]
@@ -419,11 +420,11 @@ class CPPN(nn.Module):
         
         self.mutate_weights(mutate_weights, config)
         self.mutate_bias(mutate_bias, config)
-        if not skip_update:
+        if not skip_update: # TODO: TEST REMOVE
             self.update_layers()
             self.disable_invalid_connections(config)
         
-        self.to(self.device) # TODO shouldn't need this
+        # self.to(self.device) # TODO shouldn't need this
         
         self.node_states = {} # reset the node states
         
@@ -457,6 +458,8 @@ class CPPN(nn.Module):
 
     def add_connection(self, config, specific_cx=None):
         """Adds a connection to the CPPN."""
+        if len(self.connections) >= config.max_connections:
+            return
         self.update_layers()
         
         for _ in range(200):  # try 200 times max
@@ -492,7 +495,9 @@ class CPPN(nn.Module):
                 
                 new_cx_key = f"{from_node.id},{to_node.id}"
                 self.connections[new_cx_key] = new_cx
-                self.update_layers()
+                self.update_layers() # TEST REMOVE
+                # self.update_enabled_connections()
+                
                 break # found a valid connection
             
             # else failed to find a valid connection, don't add and try again
@@ -503,6 +508,9 @@ class CPPN(nn.Module):
             Looks for an eligible connection to split, add the node in the middle
             of the connection.
         """
+        if len(self.nodes) >= config.max_nodes:
+            return
+        
         # only add nodes in the middle of non-recurrent connections (TODO)
         eligible_cxs = list(self.connections.keys())
 
@@ -542,8 +550,8 @@ class CPPN(nn.Module):
         assert new_cx_2_key not in self.connections.keys()
         self.connections[new_cx_2_key] = new_cx_2
 
-        self.update_layers() # update the layers of the nodes
-
+        self.update_layers() # update the layers of the nodes # TEST REMOVE
+        self.update_enabled_connections()
         
     def remove_node(self, config, specific_node=None):
         """Removes a node from the CPPN.
@@ -573,8 +581,9 @@ class CPPN(nn.Module):
                 break
 
         
-        self.update_layers()
+        self.update_layers() # TEST REMOVE
         self.disable_invalid_connections(config)
+        self.update_enabled_connections()
 
 
     
@@ -638,7 +647,7 @@ class CPPN(nn.Module):
         num = min(num, len(sorted_cxs))
         for i in range(num):
             del self.connections[sorted_cxs[i][0]]
-        self.update_layers()
+        self.update_layers() # TEST REMOVE
         return num
 
     def prune_connections(self, config, already_pruned=0):
@@ -711,7 +720,7 @@ class CPPN(nn.Module):
     def prune(self, config):
         removed_nodes, removed_cxs = self.prune_nodes(config)
         removed_cxs += self.prune_connections(config, already_pruned=removed_cxs)
-        self.update_layers()
+        self.update_layers() # TEST REMOVE
         self.disable_invalid_connections(config)
         return removed_cxs, removed_nodes
 
@@ -723,7 +732,11 @@ class CPPN(nn.Module):
             return
         cx:str = random_choice(eligible_cxs, 1, False)
         self.connections[cx].enabled = False
+        self.update_enabled_connections()
     
+    
+    def update_enabled_connections(self):
+        self.enabled_connections = [conn_key for conn_key in self.connections if self.connections[conn_key].enabled]
     
     
     def rand_weight(self, std=1.0):
@@ -742,7 +755,7 @@ class CPPN(nn.Module):
         for conn_key, conn in self.connections.items():
             child.connections[conn_key] = Connection(conn.weight.detach().clone())
         
-        child.update_layers()
+        child.update_layers() # TODO: TESTING WITHOUT THIS
         
         if config.sgd_steps <= 0:
             # no SGD so we can disable parameter tracking
@@ -760,12 +773,23 @@ class CPPN(nn.Module):
             
         child.sgd_lr = self.sgd_lr
         
+        child.enabled_connections = self.enabled_connections
+        child.layers = copy.deepcopy(self.layers)
+        
         if cpu:
             child.to(torch.device('cpu'))
         else:
             child.to(self.device)
             
         return child
+    
+    
+    def reset(self, config):
+        # slow, try to call infrequently
+        self.update_layers()
+        self.disable_invalid_connections(config)
+        self.node_states = {}
+    
     
     def crossover(self, other, config):
         child = self.clone(config, new_id=True)
@@ -827,7 +851,7 @@ class CPPN(nn.Module):
                 child.nodes[node] = Node(n.activation, n.id, n.bias.item())
                             
         
-        child.update_layers()
+        child.update_layers() # TEST REMOVE
         child.disable_invalid_connections(config)
         
         return child

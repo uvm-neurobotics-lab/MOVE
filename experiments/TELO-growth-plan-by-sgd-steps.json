@@ -4,7 +4,7 @@
     "additional_controls":{
         "num_generations": 2000,
         "num_cells": 50,
-        "target_resize": [128, 128],
+        "target_resize": [33, 33],
         "sgd_learning_rate": 0.01,
         "sgd_early_stop": 10,
 

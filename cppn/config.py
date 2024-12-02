@@ -27,7 +27,7 @@ class CPPNConfig:
         self.activation_mode = "node" # "node", "layer", or "population" 
         
         self.num_upsamples = 0
-        self.num_conv=0
+        self.num_conv = 0
         self.num_post_conv=0
         self.dry_run = False
         self.res_w = 28
@@ -48,6 +48,10 @@ class CPPNConfig:
         self.normalize_outputs = "neat" # None, "picbreeder", "sigmoid", 'min_max', 'abs_tanh'
         # self.normalize_outputs = False # None, "picbreeder", "sigmoid", 'min_max', 'abs_tanh'
         self.node_agg = 'sum'
+        
+        self.max_connections = 400
+        
+        self.max_nodes = 10
         
         self.output_blur = 0.0 # don't blur
         
