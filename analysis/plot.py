@@ -57,7 +57,9 @@ def process_tensor(result, name, fns=None, reduce=True, max_batch=None):
         result = result.unique(dim=1, return_counts=True)[1]
         
     if name in ['replacements_by_batch']:
+        # result = result.to_sparse()
         result = result
+        # result
         if max_batch == -1:
             # get the last batch where sum of replacements is not 0
             r = result.sum(dim=(0,1))
@@ -161,10 +163,21 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
                         if len(t.shape) > 1 and fns is not None:
                             names += [f for f in fns]
                         if name == 'replacements_by_batch':
-                            results.append((cond, run, t))
+                            # t is shape num_cells, num_cels, num_batches
+                            # take t where either dim 0 or 1 is not 0
+                            # Check for non-zero values in each batch
+                            mask = (t.sum(dim=0) != 0) | (t.sum(dim=1) != 0)  # shape: (num_cells, num_batches)
+
+                            # Collapse across num_cells to see if there's *any* non-zero value in either dim 0 or 1
+                            batch_mask = mask.any(dim=0)  # shape: (num_batches,)
+
+                            # Now index the tensor with the mask to select those batches
+                            t = t[:, :, batch_mask]
+                            results.append((cond, run, t.to_dense()))
                             # check if results is complete
                             print(len(results), total_expected_results)
                             if len(results) == total_expected_results:
+                                del t
                                 return results
                             continue # skip to next run
                         if fns is not None and (name=='normed_fitness_by_batch' or name=='fitness_by_batch'):
@@ -200,6 +213,7 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
                     df.index = df.index + df_index_offset
                     df_index_offset += len(df)
                     results.append(df)
+                    del t
         except Exception as e:
             print("Error processing", name)
             print(e)
