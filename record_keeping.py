@@ -20,7 +20,7 @@ class Record():
         
         num_data_points = total_batches // config.record_frequency_batch
         self.agg_fitness_by_batch = torch.ones((n_cells, num_data_points), device='cpu')*-torch.inf
-        
+        print("Initializing record with size", self.agg_fitness_by_batch.shape)
         self.n_evals = 0
         self.n_fwds = 0
         self.n_fwds_incl_sgd = 0

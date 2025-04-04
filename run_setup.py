@@ -7,7 +7,7 @@ from move_config import apply_condition
 import torch
 import matplotlib.pyplot as plt
 import fitness.fitness_functions as ff
-from move_config import MoveConfig
+from move_config import MOVEConfig
 # from cppn_torch import ImageCPPN
 from cppn.cppn import CPPN as ImageCPPN
 import logging
@@ -36,7 +36,7 @@ def warnings(config):
         if config.move_fns_per_cell is not None and config.move_fns_per_cell > 0:
             logging.warn("move_fns_per_cell has no effect when using soft_mask_sigma")
 
-def run_setup(config_class = MoveConfig, config_override=None):
+def run_setup(config_class = MOVEConfig, config_override=None):
     import argparse
     import uuid
     default_device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -66,7 +66,7 @@ def run_setup(config_class = MoveConfig, config_override=None):
         args.config = os.path.join(args.resume, 'config.json')
         print("Resuming from: ", args.resume)
     elif args.config is None:
-        if config_class == MoveConfig:
+        if config_class == MOVEConfig:
             args.config = "default.json"
         else:
             raise Exception("Must specify config file")

@@ -213,9 +213,9 @@ class Rmnk():
                     
 import numpy as np
 import torch
-from move_config import MoveConfig
+from move_config import MOVEConfig
 
-class MNKConfig(MoveConfig):
+class MNKConfig(MOVEConfig):
     def __init__(self, *args, **kwargs):
         self.rmnk_instance_file = 'data/rmnk_0_2_100_1_0.dat'
         return super().__init__(*args, **kwargs)

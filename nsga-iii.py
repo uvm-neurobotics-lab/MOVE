@@ -11,7 +11,7 @@ import sys
 
 sys.path.append("../")
 
-from move_config import MoveConfig
+from move_config import MOVEConfig
 from fitness.fitness_functions import *
 
 from problem import CPPNProblem, NoCrossover, CPPNSampling, CPPNMutation, CPPNRepair, CPPNCrossover
@@ -30,7 +30,7 @@ if __name__ == "__main__":
     import json
     c_json = json.loads(json_str)['controls']
     
-    config = MoveConfig.create_from_json(c_json, config_type=MoveConfig)
+    config = MOVEConfig.create_from_json(c_json, config_type=MOVEConfig)
     
 
 

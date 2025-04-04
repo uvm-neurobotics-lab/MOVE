@@ -7,7 +7,7 @@ from torchvision.transforms import Resize
 from cppn import CPPN as ImageCPPN
 from cppn.cppn import random_choice
 from evolution import CPPNEvolutionaryAlgorithm
-from move_config import MoveConfig
+from move_config import MOVEConfig
 import logging
 
 import fitness.fitness_functions as ff
@@ -19,7 +19,7 @@ from util import *
 from cppn.util import *
 from record_keeping import Record
 
-class BaselineConfig(MoveConfig):
+class BaselineConfig(MOVEConfig):
     def __init__(self):
         super().__init__()
         self.fitness_function = "aggregate"
@@ -117,7 +117,7 @@ class Baseline(CPPNEvolutionaryAlgorithm):
         
         if self.config.with_grad or self.config.fitness_function == "aggregate":
             # needs normalization data
-            self.norm_df = read_norm_data(self.config.norm_df_path, self.config.target_name)
+            self.norm_df = read_norm_data(self.config.norm_df_path, self.config.target_path)
         
         self.name_function_map = ff.__dict__ # override default (cppn_torch.fitness_functions)
         if not self.config.fitness_function == "aggregate":
@@ -316,7 +316,7 @@ class Baseline(CPPNEvolutionaryAlgorithm):
         
         if self.is_aggregate:
             global fit_df
-            fit_df["target"] = self.config.target_name
+            fit_df["target"] = self.config.target_path
             fit_df.to_pickle(os.path.join(self.run_dir, f"fits.pkl"))
         
         # record ranges

@@ -11,35 +11,70 @@ class StopCondition():
         self.curr = -1
         return False
     
+    def n_batches(self, alg) -> int:
+        return 10_000 # impossible to guess
+    
+    
 class StopAfterGenerations(StopCondition):
     def __call__(self, alg) -> bool:
         self.curr = alg.gen
         return self.curr >= self.value
     
+    def n_batches(self, alg) -> int:
+        batches_per_gen = alg.config.pop_size / alg.config.batch_size
+        return math.ceil(self.value * batches_per_gen)
+    
+    
 class StopAfterBatches(StopCondition):
     def __call__(self, alg) -> bool:
         self.curr = alg.current_batch
         return self.curr >= self.value
+    def n_batches(self, alg) -> int:
+        return self.value
+    
     
 class StopAfterEvals(StopCondition):
     def __call__(self, alg) -> bool:
         self.curr = alg.record.n_evals_incl_sgd
         return self.curr >= self.value
     
+    def n_batches(self, alg) -> int:
+        print("value", self.value)
+        print("batch size", alg.config.batch_size)
+        # maximum number of batches is if there is (2 + 2*early_stopping) eval per cppn per batch
+        # 2 for fwd+backward
+        num_evals_per_cppn = 2 + (2*alg.config.sgd_early_stop)
+        return math.ceil(self.value / (num_evals_per_cppn * alg.config.batch_size))
+    
+    
 class StopAfterEvalsNoSGD(StopAfterEvals):
     def __call__(self, alg) -> bool:
         self.curr = alg.record.n_evals
         return self.curr >= self.value
     
+    def n_batches(self, alg) -> int:
+        # maximum number of batches is if there is one eval per cppn per batch
+        return math.ceil(self.value / (alg.config.batch_size))
+    
+    
 class StopAfterFwdCalls(StopCondition):
     def __call__(self, alg) -> bool:
         self.curr = alg.record.n_fwds_incl_sgd
         return  self.curr >= self.value
+    def n_batches(self, alg) -> int:
+        # maximum number of batches 
+        num_fwds_per_cppn = 2 + (1*alg.config.sgd_early_stop)
+        return math.ceil(self.value / (num_fwds_per_cppn * alg.config.batch_size))
+    
     
 class StopAfterFwdCallsNoSGD(StopCondition):
     def __call__(self, alg) -> bool:
         self.curr = alg.record.n_fwds
         return self.curr >= self.value
+    def n_batches(self, alg) -> int:
+        # maximum number of batches is if there is one eval per cppn per batch
+        return math.ceil(self.value / (alg.batch_size))
+    
     
 class StopAfterSeconds(StopCondition):
     def __init__(self, value: float):
@@ -50,6 +85,8 @@ class StopAfterSeconds(StopCondition):
     def __call__(self, alg) -> bool:
         self.curr = time.time() - self.start_time
         return self.curr >= self.seconds
+    def n_batches(self, alg) -> int:
+        return 10_000 # impossible to guess
     
     
 class StopAfterMeanFitness(StopCondition):
@@ -60,6 +97,8 @@ class StopAfterMeanFitness(StopCondition):
     def __call__(self, alg) -> bool:
         self.curr = alg.solution_fitness
         return self.curr >= self.value
+    def n_batches(self, alg) -> int:
+        return 10_000 # impossible to guess
     
 
 class StopAfterMaxStagnation(StopCondition):
@@ -88,12 +127,15 @@ class StopAfterMaxStagnation(StopCondition):
             self.last_fits = new_fits
             self.curr = self.agg(self.stagnation)
             return self.curr >= self.patience
-
+    def n_batches(self, alg) -> int:
+        return 10_000 # impossible to guess
+    
 
 class StopAfterMinStagnation(StopCondition):
     def agg(self, stag):
         return min(stag)
-        
+    def n_batches(self, alg) -> int:
+        return 10_000 # impossible to guess
     
     
 
@@ -106,6 +148,7 @@ name_to_stop_condition_map = {
     "max_stagnation": StopAfterMaxStagnation,
     "min_stagnation": StopAfterMinStagnation,
     "batches": StopAfterBatches,
+    "evaluations": StopAfterEvals,
     "evals": StopAfterEvals,
     "evals_no_sgd": StopAfterEvalsNoSGD,
     "fwds": StopAfterFwdCalls,

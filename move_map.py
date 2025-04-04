@@ -8,12 +8,12 @@ import json
 
 class MOVEMap(object):
     def __init__(self, config, fns) -> None:
-        self.fns = [fn.__name__ for fn in fns if not isinstance(fn, str)] 
+        self.fns = [fn.__name__ if not isinstance(fn, str) else fn for fn in fns] 
         self.config = config
         
         if self.fns is None:
             return
-
+        print(self.fns)
         self.n_fns = len(self.fns)
         self.fns_per_cell = self.config.move_fns_per_cell
         

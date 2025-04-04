@@ -159,7 +159,7 @@ class CPPNEvolutionaryAlgorithm(object):
             self.target = self.target.unsqueeze(1).repeat(1,3,1,1) # add color channel
             
         if self.target.shape[-2] < 32 or self.target.shape[-1] < 32:
-                self.target = Resize((32,32), antialias=True)(self.target)
+            self.target = Resize((32,32), antialias=True)(self.target)
         
         self.target = torch.clamp(self.target, 0, 1)
         
@@ -300,7 +300,7 @@ class CPPNEvolutionaryAlgorithm(object):
         
      
         with open(os.path.join(self.run_dir, f"target.txt"), 'w') as f:
-            f.write(str(self.config.target_name))
+            f.write(str(self.config.target_path))
         
         self.save_best_img(os.path.join(self.image_dir, f"best_{self.config.run_id:04d}.png"), do_graph=True)
         print("Saved run to: ", self.run_dir)

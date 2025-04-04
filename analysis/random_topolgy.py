@@ -74,7 +74,7 @@ from sgd_weights import sgd_weights
 
 from cppn import CPPN
 from tqdm import trange
-from move_config import MoveConfig
+from move_config import MOVEConfig
 from cppn.visualize import visualize_network
 import copy 
 

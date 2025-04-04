@@ -4,6 +4,7 @@ import json
 import random
 import sys
 from typing import Callable
+import uuid
 import imageio.v2 as iio
 import torch
 import typing
@@ -120,7 +121,7 @@ class CPPNConfig:
         self.prob_sgd_weight = 1.0 # update all weights
         self.sgd_early_stop_delta = -0.0005
         self.sgd_l2_reg = 0.0 # don't use L2 regularization
-        self.sgd_steps = 20
+        self.sgd_steps = 100
         self.sgd_strat = 'sgd' # 'imaml'
         self.sgd_clamp_grad = False
         self.sgd_every = 1
@@ -132,7 +133,7 @@ class CPPNConfig:
         
         
         # Fourier features:
-        self.use_fourier_features = True
+        self.use_fourier_features = False
         self.n_fourier_features = 16
         self.fourier_feature_scale = 2.0
         self.fourier_mult_percent = 0.05
@@ -191,6 +192,10 @@ class CPPNConfig:
         else:
             self.res_w = res[0]
             self.res_h = res[1]
+    
+    def setup(self):
+        if self.output_dir is None:
+            self.output_dir = f"results/{self.experiment_condition}"
     
     def clone(self):
         return self.__class__.create_from_json(self.to_json(), self.__class__)

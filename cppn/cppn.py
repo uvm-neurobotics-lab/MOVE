@@ -11,6 +11,7 @@ from cppn.graph_util import *
 import cppn.activation_functions as af
 from cppn.config import CPPNConfig
 from tqdm import trange
+from cppn.fourier_features import add_fourier_features
 
 
 class Node(nn.Module):
@@ -136,6 +137,36 @@ class CPPN(nn.Module):
         new_id = str(__class__.current_node_id-1)
         return new_id
     
+    @staticmethod
+    def init_inputs(config):
+        res_h, res_w = config.res_h, config.res_w
+        print("Initializing inputs with resolution", res_h, res_w)
+        inputs = initialize_inputs(
+            res_h//2**config.num_upsamples,
+            res_w//2**config.num_upsamples,
+            config.use_radial_distance,
+            config.use_input_bias,
+            2+config.use_radial_distance+config.use_input_bias,
+            config.device,
+            coord_range=config.coord_range
+                )
+        if config.use_fourier_features:
+            if config.fourier_seed == 'random':
+                config.fourier_seed = random.randint(0, 1000000)
+            
+            inputs = add_fourier_features(
+                inputs,
+                config.n_fourier_features,
+                config.fourier_feature_scale,
+                dims=2,
+                include_original=True,
+                mult_percent=config.get("fourier_mult_percent", 0.0),
+                sin_and_cos=config.fourier_sin_and_cos,
+                seed = config.fourier_seed
+                )
+        config.num_inputs = inputs.shape[-1]
+        inputs = inputs.to(config.device)
+        return inputs
     
     # TODO: remove deprecated (kept for compatibility with old code)
     @property
@@ -170,8 +201,10 @@ class CPPN(nn.Module):
         self.nodes = nn.ModuleDict()  # key: node_id (string)
         self.connections = nn.ModuleDict()  # key: (from, to) (string)
         
-        self.n_input = 2 + config.n_fourier_features + int(config.use_input_bias) + int(config.use_radial_distance)   
-
+        self.n_input = config.num_inputs   
+        assert self.n_input == 2 + (config.n_fourier_features if config.use_fourier_features else 0)\
+                + int(config.use_input_bias) + int(config.use_radial_distance) ,\
+                f"Input size mismatch: {self.n_input} != {config.num_inputs}"
         self.n_output = config.num_outputs
         
         self.sgd_lr = config.sgd_learning_rate
@@ -337,7 +370,6 @@ class CPPN(nn.Module):
         return self.forward(*args, **kwargs)
 
     def forward(self, x, channel_first=True, force_recalculate=True, use_graph=False, act_mode='n/a'):
-
         # Set input node states
         for i, input_node in enumerate(self.input_nodes):
             self.node_states[input_node.id] = x[:, :, i]

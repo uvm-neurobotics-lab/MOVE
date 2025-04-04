@@ -1,5 +1,6 @@
 """Stores configuration parameters for the MOVE algorithm."""
 from typing import Callable
+import uuid
 from cppn.activation_functions import *
 # from evolution_torch import AlgorithmConfig
 from cppn.config import CPPNConfig
@@ -8,9 +9,11 @@ import imageio.v2 as iio
 from cppn.util import center_crop, resize
 import logging
 from fitness.name_to_fn import name_to_fn
+from torchvision.transforms import Resize
+import fitness.fitness_functions as ff
 
 
-class MoveConfig(CPPNConfig):
+class MOVEConfig(CPPNConfig):
     """Stores configuration parameters for the MOVE algorithm."""
     def __init__(self) -> None:
         # Initialize to default values:
@@ -18,22 +21,23 @@ class MoveConfig(CPPNConfig):
 
         self.alg = "MOVE"
         self.name = "default" # name for this configuration
-        self.run_id = None # set later
+        self.run_id = uuid.uuid1().int>>64
+
         self.target = None # set later
         self.do_profile = False
         
-        self.checkpoint_frequency = 1
+        self.checkpoint_frequency = 0
 
-        self.total_offspring = 30_000_000
+        # self.total_offspring = 30_000_000
+        # self.total_offspring = 3000
         
-        self.target_name = "default"
+        self.target_path = "default"
         
         
-        self.stop_condition = None
-        self.stop_condition_value = None
-        # self.stop_condition = "seconds"
-        # self.stop_condition_value = 60*60*8 # 8 hours
-        
+        # self.stop_condition = "batches"
+        self.stop_condition = "evals"
+        self.stop_condition_value = 100*100*3*10 # about 10 batches x 100 cells x 100 sgd steps (fwd + bwd + eval)
+
 
         # self.activations=  [SinActivation,
         #                     IdentityActivation,
@@ -81,7 +85,7 @@ class MoveConfig(CPPNConfig):
         self.use_input_bias = False
         self.use_radial_distance = True
         self.num_inputs = 3 # x,y,d
-        self.target_resize = (64,64)
+        self.target_resize = (33,33)
         self.color_mode = "HSL"
         self.bloat_prune_ratio = 0.0
 
@@ -99,8 +103,7 @@ class MoveConfig(CPPNConfig):
         
         self.grad_every = 1
         
-        self.batch_size = 1 # generational
-        self.initial_batch_size = 1 # just for the initial population
+
         
         self.comparison_batch_size = None # same as batch_size
 
@@ -117,8 +120,8 @@ class MoveConfig(CPPNConfig):
         self.enforce_initial_fill = False
         self.fourier_sin_and_cos = False
         
-        self.use_fourier_features = True
-        self.n_fourier_features = 32
+        self.use_fourier_features = False
+        self.n_fourier_features = 16
         self.fourier_feature_scale = 2.0
         self.fourier_mult_percent = 0.05
         
@@ -128,23 +131,23 @@ class MoveConfig(CPPNConfig):
         self.move_fns_per_cell = 3
         self.allow_jumps = torch.inf
         self.num_cells = 100
-        self.objective_functions =  None
-        # self.objective_functions =  [
-        #     "psnr",
-        #     "mse",
-        #     "ssim",
-        #     "haarpsi",
-        #     "vif",
-        #     "msssim",
-        #     "gmsd",
-        #     "fsim", # nan in gradients
-        #     "dss",
-        #     "lpips",
-        #     "dists",
-        #     "style",
-        #     "mdsi", # nan in gradients
-        #     "vsi"   # nan in gradients
-        #     ]
+        # self.batch_size = 1
+        self.batch_size = self.num_cells
+        self.initial_batch_size = self.num_cells # just for the initial population
+        
+        # self.objective_functions =  None
+        self.objective_functions =  [
+                "mse",
+                "psnr",
+                "lpips",
+                "dists",
+                "style",
+                "vif",
+                "dss",
+                "ssim",
+                "msssim",
+                "haarpsi",
+            ]
     
         self.prob_mutate_activation = .35
         self.prob_add_connection = .85 # 0.05 in the original NEAT
@@ -176,10 +179,14 @@ class MoveConfig(CPPNConfig):
                 if isinstance(fn, Callable):
                     self.fitness_schedule[i] = fn.__name__
         
-        if hasattr(self, "target_name") and self.target_name is not None:
-            self.target = self.target_name
+        if hasattr(self, "target_path") and self.target_path is not None:
+            self.target = self.target_path
         
         self.dtype = str(self.dtype) # TODO deserialize 
+        
+        for fn in self.NO_GRADIENT:
+            if isinstance(fn, Callable):
+                self.NO_GRADIENT[self.NO_GRADIENT.index(fn)] = fn.__name__
 
 
     def strings_to_fns(self):
@@ -195,6 +202,28 @@ class MoveConfig(CPPNConfig):
                 if isinstance(fn, str):
                     self.fitness_schedule[i] = name_to_fn[fn]
 
+        for fn in self.NO_GRADIENT:
+            if isinstance(fn, str):
+                self.NO_GRADIENT[self.NO_GRADIENT.index(fn)] = name_to_fn[fn]
+                
+                
+    def setup(self):
+        super().setup()
+        target_path_to_tensor(self)
+        self.device = torch.device(self.device)
+        for i in range(len(self.activations)):
+            if isinstance(self.activations[i], str):
+                self.activations[i] = name_to_fn[self.activations[i]]
+            if hasattr(self, "fitness_function") and isinstance(self.fitness_function, str):
+                if self.fitness_function in name_to_fn:
+                    self.fitness_function = name_to_fn[self.fitness_function]
+        
+        for i in range(len(self.objective_functions)):
+            if isinstance(self.objective_functions[i], str):
+                self.objective_functions[i] = name_to_fn[self.objective_functions[i]]
+        
+        self.NO_GRADIENT = ff.NO_GRADIENT
+        
 
 def resize_image(image, size, device):
     # resize such that the smallest dimension is size
@@ -210,18 +239,6 @@ def resize_image(image, size, device):
     image = center_crop(image, size[0], size[1])
     resized_img = torch.tensor(image, dtype=torch.float32, device=device)
     return resized_img
-
-    
-
-
-    # res_fact = image.shape[0] / size[0], image.shape[1] / size[1]
-    # if res_fact[0] == 0.0 or res_fact[1] == 0.0:
-    #     raise Exception("Target is too small to resize to target_resize")
-    # image = resize(image, (image.shape[0] // int(res_fact[0]), image.shape[1] // int(res_fact[1])))
-    # # image = center_crop(image, size[0], size[1])
-    
-    # resized_img = torch.tensor(image, dtype=torch.float32, device=device)
-    # return resized_img
 
 
 def resize_target(config):
@@ -248,62 +265,57 @@ def apply_condition(config, controls, condition, name, name_to_function_map):
             config.apply(k, v)
             if k == "num_runs":
                 config.num_runs = v
-            if k == "target":
-                config.target = v
-                config.target_name = config.target
-                if v is None:
-                    continue
-                if 'color_mode' in controls:
-                    config.color_mode = controls['color_mode']
-                pilmode = "RGB" if len(config.color_mode) == 3 else "L"
-                config.target = torch.tensor(iio.imread(config.target, pilmode=pilmode), dtype=torch.float32, device=config.device)
-                
-                config.res_h, config.res_w = config.target.shape[:2]
+
         
     if len(condition) > 0:
         for k, v in condition.items():
             if k is not None:
                 print(f"\t\tapply {k}->{v}")
                 config.apply(k, v)
-            if k == "target":
-                if 'color_mode' in condition:
-                    config.color_mode = condition['color_mode']
-                config.target = target_name
-                if v is None:
-                    continue
-                if isinstance(config.target, str):
-                    config.target_name = config.target
-                    pilmode = "RGB" if len(config.color_mode) == 3 else "L"
-                    config.target = torch.tensor(iio.imread(config.target, pilmode=pilmode), dtype=torch.float32, device=config.device)
+    
+    config.setup()
 
-                config.res_h, config.res_w = config.target.shape[:2]
-   
-    # if config.color_mode=="L":
-        # config.target = config.target.mean(dim=2)
-    config.device = torch.device(config.device)
-    if config.target is not None:
+
+def target_path_to_tensor(config):
+    if config.target_path is None and config.target is str:
+        # return config.target
+        config.target_path = config.target
+        pilmode = "RGB" if len(config.color_mode) == 3 else "L"
+        config.target = torch.tensor(iio.imread(config.target, pilmode=pilmode), dtype=torch.float32, device=config.device)
+        # config.res_h, config.res_w = config.target.shape[:2]
+        
+    else:
+        pilmode = "RGB" if len(config.color_mode) == 3 else "L"
+        config.target = torch.tensor(iio.imread(config.target_path, pilmode=pilmode), dtype=torch.float32, device=config.device)
         if config.target.max() > 1.0:
-            config.target = config.target.to(torch.float32) / 255.0
+            config.target = config.target / 255.0
+
+    resize_target(config)
+    config.target = torch.stack([config.target.squeeze() for _ in range(config.initial_batch_size)])
+
+    if len(config.target.shape) > 3:
+        config.target = config.target.permute(0, 3, 1, 2) # move color channel to front
+    else:
+        config.target = config.target.unsqueeze(1).repeat(1,3,1,1) # add color channel
         
-        resize_target(config)
+    if config.target.shape[-2] < 32 or config.target.shape[-1] < 32:
+        config.target = Resize((32,32), antialias=True)(config.target)
+    
+    config.target = torch.clamp(config.target, 0, 1)
+
+    config.target = config.target.to(config.device)
         
-        if len(config.target.shape) < len(config.color_mode):
-            logging.warning("Color mode is RGB or HSV but target is grayscale. Setting color mode to L.")
+    if len(config.target.shape) < 3:
+        # grayscale image
+        if config.color_mode != "L":
+            logging.warning("Target image is grayscale, but color_mode is not set to 'L'. Setting color_mode to 'L'")
             config.color_mode = "L"
             
-        if config.color_mode == "L":
-            if len(config.target.shape) == 2:
-                config.target = config.target.unsqueeze(-1).repeat(1,1,3) # loss functions expect 3 channels
-                
-        
-        if len(config.color_mode) != config.num_outputs:
-            logging.warning("WARNING: color_mode does not match num_outputs. Setting num_outputs to len(color_mode)")
-            config.num_outputs = len(config.color_mode)
-        config.target = config.target.to(config.device)     
+    if config.res_w != config.target.shape[2]:
+        config.res_w = config.target.shape[2]
+        logging.warning("Target image width does not match config.res_w. Setting config.res_w to config.target image width")
+    if config.res_h != config.target.shape[3]:
+        config.res_h = config.target.shape[3]
+        logging.warning("Target image height does not match config.res_h. Setting config.res_h to config.target image height")
 
-    for i in range(len(config.activations)):
-        if isinstance(config.activations[i], str):
-            config.activations[i] = name_to_fn[config.activations[i]]
-        if hasattr(config, "fitness_function") and isinstance(config.fitness_function, str):
-            if config.fitness_function in name_to_fn:
-                config.fitness_function = name_to_fn[config.fitness_function]
+    return config.target

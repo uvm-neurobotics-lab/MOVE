@@ -1,11 +1,11 @@
 from cppn.cppn import CPPN
-from move_config import MoveConfig, resize_target
+from move_config import MOVEConfig, resize_target
 import json
 import os 
 import torch
 import tqdm
 from cppn.cppn import Node
-from move_config import MoveConfig, resize_target
+from move_config import MOVEConfig, resize_target
 import imageio.v2 as iio
 
 import matplotlib.pyplot as plt
@@ -49,7 +49,7 @@ def set_max_node_id(genomes_by_batch):
     CPPN.current_node_id = max_id + 1
     
 
-def load_genome(path, device=None)->tuple[CPPN, MoveConfig]:
+def load_genome(path, device=None)->tuple[CPPN, MOVEConfig]:
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     with open(path, "r") as f:
@@ -60,14 +60,14 @@ def load_genome(path, device=None)->tuple[CPPN, MoveConfig]:
         if not "version" in genome["config"]:
             genome["config"]["version"] = "0.0.0"
         # END REMOVE
-        config = MoveConfig.create_from_json(genome["config"], MoveConfig)
+        config = MOVEConfig.create_from_json(genome["config"], MOVEConfig)
             
         if config.device != device:
             config.device = device # make sure we're using the right device regardless of what's in the file
         genome = genome["genome"]
     else:
         config_path = os.path.join(os.path.dirname(path), "../config.json")
-        config = MoveConfig.create_from_json(config_path, MoveConfig)
+        config = MOVEConfig.create_from_json(config_path, MOVEConfig)
         
     cppn = CPPN.create_from_json(genome, config=config)
     cppn.to(config.device)

@@ -316,21 +316,20 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, 
             pbar.set_postfix_str(f"loss={loss.detach().clone().mean().item():.3f}")
             pbar.set_description_str(f"Optimizing {n_params}/{n_params_total} params on {len(this_genomes)}/{len(genomes)} genomes and {len(fns)} fns lr: {avg_lr:.2e}")
     
+        
     return step+1
 
 
 """
 Require: Distribution over tasks P (T ), outer step size η, regularization strength λ,
-2: while not converged do
-3: Sample mini-batch of tasks {Ti}B
-i=1 ∼ P (T )
-4: for Each task Ti do
-5: Compute task meta-gradient gi = Implicit-Meta-Gradient(Ti, θ, λ)
-6: end for
-7: Average above gradients to get ˆ∇F (θ) = (1/B) ∑B
-i=1 gi
-8: Update meta-parameters with gradient descent: θ ← θ − η ˆ∇F (θ) // (or Adam)
-9: end while
+    while not converged do
+        Sample mini-batch of tasks {Ti}B i=1 ∼ P (T )
+        for Each task Ti do
+            Compute task meta-gradient gi = Implicit-Meta-Gradient(Ti, θ, λ)
+        end for
+        Average above gradients to get ˆ∇F (θ) = (1/B) ∑B i=1 gi
+        Update meta-parameters with gradient descent: θ ← θ − η ˆ∇F (θ) // (or Adam)
+    end while
 """
 def sgd_weights_imaml(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0):
     assert mask is not None, "IMAML requires a cell-function mask"
