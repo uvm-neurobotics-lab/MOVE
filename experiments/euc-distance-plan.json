@@ -1,0 +1,107 @@
+{
+    "experiment_name": "sgd-steps-euc",
+
+    "additional_controls":{
+        "total_offspring": 1000000,
+        "stop_condition": "fwds",
+        "stop_condition_value": 1200000,
+        "sgd_early_stop": 1000,
+        "batch_size": 100,
+        "initial_batch_size": 100,
+        "num_cells": 100,
+        "single_structural_mutation": false,
+        "n_fourier_features": 0,
+        "num_inputs": 3,
+        "objective_functions": [
+            "mse",
+            "psnr",
+            "lpips",
+            "dists",
+            "style",
+            "vif",
+            "dss",
+            "ssim",
+            "msssim",
+            "haarpsi"
+        ],
+
+        "init_connection_probability": 0.5,
+        "prob_add_node": 0.85,
+        "prob_add_connection": 0.85,
+        "prob_remove_node": 0.15,
+        "prob_disable_connection": 0.15,
+        "sgd_l2_reg": 0.0003,
+        "hidden_nodes_at_start": [16],
+        "topology_mutation_iters": 1,
+        "node_activation_prune_threshold": 0.01,
+        "prune_threshold": 0.0001,
+        "min_pruned": 0,
+        "target_resize": [33,33]
+    },
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png",
+        "data/apple.png",
+        "data/spiral.png",
+        "data/grid.png",
+        "data/fly.png",
+        "data/butterfly.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL",
+        "L",
+        "L",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "sgd_steps"
+    ],
+
+
+    "levels":[
+        [0, 16, 100, 1000]
+    ],
+
+    "additional_parameters": {
+        "sgd_steps": {
+            "prob_mutate_weight":{
+                "0" : 0.35,
+                "16" : 0,
+                "100" : 0,
+                "1000" : 0
+            },
+            "weight_mutation_std":{
+                "0" : 1.0,
+                "16" : 0,
+                "100" : 0,
+                "1000" : 0
+            },
+            "batch_size": {
+                "0" : 100,
+                "16" : 100,
+                "100" : 100,
+                "1000" : 100
+                },
+            "initial_batch_size":{
+                "0" : 100,
+                "16" : 100,
+                "100" : 100,
+                "1000" : 100
+            }
+        }
+    },
+
+    "name_template": "{sgd_steps:03d}_steps"
+
+}

@@ -43,7 +43,7 @@ class StopAfterEvals(StopCondition):
         print("batch size", alg.config.batch_size)
         # maximum number of batches is if there is (2 + 2*early_stopping) eval per cppn per batch
         # 2 for fwd+backward
-        num_evals_per_cppn = 2 + (2*alg.config.sgd_early_stop)
+        num_evals_per_cppn = 2 + (2*(alg.config.sgd_early_stop if alg.config.with_grad and alg.config.sgd_steps>0 else 0))
         return math.ceil(self.value / (num_evals_per_cppn * alg.config.batch_size))
     
     
@@ -63,7 +63,11 @@ class StopAfterFwdCalls(StopCondition):
         return  self.curr >= self.value
     def n_batches(self, alg) -> int:
         # maximum number of batches 
-        num_fwds_per_cppn = 2 + (1*alg.config.sgd_early_stop)
+        num_fwds_per_cppn = 0
+        if alg.config.with_grad and alg.config.sgd_steps>0:
+            num_fwds_per_cppn = 2 + (1*alg.config.sgd_early_stop)
+        else:
+            num_fwds_per_cppn = 1
         return math.ceil(self.value / (num_fwds_per_cppn * alg.config.batch_size))
     
     

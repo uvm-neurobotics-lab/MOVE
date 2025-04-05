@@ -1,4 +1,5 @@
 """Stores configuration parameters for the MOVE algorithm."""
+import os
 from typing import Callable
 import uuid
 from cppn.activation_functions import *
@@ -277,13 +278,10 @@ def apply_condition(config, controls, condition, name, name_to_function_map):
 
 
 def target_path_to_tensor(config):
-    if config.target_path is None and config.target is str:
-        # return config.target
+    if (config.target_path is None or config.target_path.strip()=="default") and (type(config.target)== str or type(config.target) == os.PathLike):
         config.target_path = config.target
         pilmode = "RGB" if len(config.color_mode) == 3 else "L"
         config.target = torch.tensor(iio.imread(config.target, pilmode=pilmode), dtype=torch.float32, device=config.device)
-        # config.res_h, config.res_w = config.target.shape[:2]
-        
     else:
         pilmode = "RGB" if len(config.color_mode) == 3 else "L"
         config.target = torch.tensor(iio.imread(config.target_path, pilmode=pilmode), dtype=torch.float32, device=config.device)

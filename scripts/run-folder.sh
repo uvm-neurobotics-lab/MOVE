@@ -13,8 +13,11 @@ shift # past argument or value
 while [[ $# -gt 1 ]]
 do
 key="$1"
-
 case $key in
+    -d|--dry)
+    echo "Running in dry run mode"
+      dry_run=1
+      ;;
     -g|--gens)
     gens="$2"
     shift # past argument
@@ -47,8 +50,11 @@ gens=${gens:--1}
 repeats=${repeats:-1}
 workers=${workers:-1}
 output=${output:-"output"}
-target=${target:-"."}
+target=${target:-"."} 
+dry_run=${dry_run:-0}
 
+echo "Using folder $folder"
+echo "Using $target as target"
 echo "Using $gens gens"
 echo "Running $repeats times"
 echo "Outputting to $output"
@@ -88,7 +94,11 @@ for i in $(seq 1 $repeats); do
         exit 1
       }
 
-      python3 -O move.py -c $filename -g $gens -pr -o $output & #  >$logdir/$(basename $filename)_$run_id.log &
+    if [ $dry_run -eq 0 ]; then
+      python3 -O move_simplified.py -c $filename -g $gens -pr -o $output & #  >$logdir/$(basename $filename)_$run_id.log &
+    else
+      echo "would do: python3 -O move_simplified.py -c $filename -g $gens -o $output"
+    fi
       
       running=$((running+1))
       if [ $running -eq $workers ]; then

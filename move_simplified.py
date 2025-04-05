@@ -290,7 +290,7 @@ class MOVE():
     def measure_fitness(self, genomes, imgs, skip_genotype=False):
         # Calculate the number of batches required
         num_batches = math.ceil(len(genomes) / self.config.batch_size)
-        print("Measuring fitness in", num_batches, "batches")
+        print("\nMeasuring fitness in", num_batches, "batches")
         genomes_batched = [genomes[i:i+self.config.batch_size] for i in range(0, len(genomes), self.config.batch_size)]
 
         fit_children = torch.zeros((len(genomes), len(self.fns)), device=self.config.device, requires_grad=False)
@@ -767,12 +767,72 @@ class MOVE():
         # random replacement
         return torch.rand(self.n_cells, device=self.config.device) < diff
 
-if __name__ == "__main__":
+
+
+
+
+import threading
+import sys
+
+TEST = False
+if __name__ == '__main__' and not TEST:
+    # python -m torch.utils.bottleneck /path/to/source/script.py [args]
+    threads = []
+    ci = -1
+    for config, args in run_setup():
+        ci+=1
+        if args.condition is not None and ci != int(args.condition):
+            print("Skipping condition", ci, "looking for", args.condition)
+            
+            continue
+        
+        alg = MOVE(config, debug_output=args.verbose)
+        if config.do_profile:
+            import cProfile
+            prof_path = os.path.join(alg.config.output_dir, f"{config.run_id:04d}.prof")
+            cProfile.run("alg.evolve(resume=args.resume)", prof_path, sort="cumtime")
+            import pstats
+
+            file = open(os.path.join(alg.config.output_dir, f"{config.run_id:04d}.prof.txt"), 'w')
+            profile = pstats.Stats(prof_path, stream=file)
+            profile.sort_stats('cumulative') # Sorts the result according to the supplied criteria
+            profile.print_stats(1000) # Prints the first 1000 lines of the sorted report
+            file.close() 
+        else:
+            if args.parallel:
+                logging.warning("Parallel processing not implemented for MOVE")
+                print("Starting thread")
+                # parallel processing
+                evolve_thread = threading.Thread(target=alg.evolve, name="Evolve", daemon=False, args=(1, False, False, args.resume,))
+                threads.append(evolve_thread)
+            else:
+                alg.evolve(resume=args.resume)    
+        
+    
+    if threads:
+        try:
+            print(len(threads), "threads")
+            for t in threads:
+                t.start()
+                print("Started thread")
+            # wait for all threads to finish
+            for t in threads:
+                t.join()
+        except (KeyboardInterrupt, SystemExit):
+            print("Interrupted")
+            for t in threads:
+                t.join()
+            sys.exit()
+            
+
+
+if __name__ == "__main__" and TEST:
     # Example usage
     config = MOVEConfig()
     config.target_path = "data/skull.png"
-    config.sgd_steps = 20
-    config.stop_condition_value = 100*config.sgd_steps*3*100
+    # config.sgd_steps = 0
+    # config.experiment_condition='no-sgd'
+    config.stop_condition_value = 100*(20)*3*100
     alg = MOVE(config)
     if config.do_profile:
         import cProfile

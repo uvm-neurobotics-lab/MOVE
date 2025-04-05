@@ -49,6 +49,9 @@ def process_tensor(result, name, fns=None, reduce=True, max_batch=None):
         # cumlative sum:
         n_evals = n_evals.cumsum(dim=0)
         result = n_evals
+        # filter up to the last non-nan
+        # last_non_nan = torch.isnan(n_evals).nonzero(as_tuple=True)[0].max().item()
+        # result = result[:last_non_nan+1]
     if name in ['nodes_by_batch', 'cx_by_batch']:
         result = result[:,1] # average over pop
     
@@ -219,7 +222,7 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
             print(e)
             print(traceback.format_exc())
             continue
-    
+        
     if len(results) == 0:
         print("No results found")
         return pd.DataFrame() 
