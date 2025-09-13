@@ -12,11 +12,17 @@ import time
 from cppn.util import *
 from cppn import CPPN
 
+import threading
+import queue
+
 class Record():
     def __init__(self, config, n_fns, n_cells, total_batches, low_mem=False) -> None:
         self.low_mem = low_mem
         self.fit_df = pd.DataFrame(columns=['condition', 'target', 'cell', 'run', 'function', 'gen', 'fitness'])
         self.replace_df = pd.DataFrame(columns=['condition','target',  'cell', 'run', 'gen', 'replacements'])
+        
+
+        
         
         num_data_points = total_batches // config.record_frequency_batch
         self.agg_fitness_by_batch = torch.ones((n_cells, num_data_points), device='cpu')*-torch.inf
@@ -42,6 +48,12 @@ class Record():
             self.time_elapsed = torch.ones((num_data_points), device='cpu')*-torch.inf
             
             self.start_time = time.time()
+            
+        
+        self.update_queue = queue.Queue()
+        self._stop_event = threading.Event()
+        self.update_thread = threading.Thread(target=self._update_worker, daemon=True)
+        self.update_thread.start()
     
     def update_counts(self, index, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned,n_pruned_nodes):
         self.n_fwds += n_step_fwds
@@ -57,6 +69,8 @@ class Record():
         self.evals_by_batch[index,3] = n_step_evals_incl_sgd
     
     def update(self, index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring):
+        self.update_queue.put((index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring))
+        return
         self.agg_fitness_by_batch[:,index] = agg_fitnesses.cpu()
         self.normed_fitness_by_batch[:,:,index] = normed_fitnesses.cpu()
         if not self.low_mem:
@@ -75,7 +89,42 @@ class Record():
             self.time_elapsed[index] = time.time() - self.start_time
             if all_replacements is not None:
                 self.replacements_by_batch[:,:,index] = all_replacements.cpu()
+    
+    
+    def _update_worker(self):
+        while not self._stop_event.is_set():
+            try:
+                # Wait for work or timeout so we can check the stop event
+                args = self.update_queue.get(timeout=0.1)
+                self._perform_update(*args)
+                self.update_queue.task_done()
+            except queue.Empty:
+                continue    
+
+    def _perform_update(self, index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring):
+        # Original update logic goes here
+        self.agg_fitness_by_batch[:, index] = agg_fitnesses.cpu()
+        self.normed_fitness_by_batch[:, :, index] = normed_fitnesses.cpu()
+        if not self.low_mem:
+            self.fitness_by_batch[:, :, index] = fitnesses.cpu()
+            self.ids_by_batch[:, index] = torch.tensor([-1 if g is None else g.id for g in population]).cpu()
+            self.parents_by_batch[:, :, index] = torch.tensor([[-1 if g is None else g.parents[0] for g in population],
+                                                            [-1 if g is None else g.parents[1] for g in population]]).cpu()
+            self.lr_by_batch[:, index] = torch.tensor([-torch.inf if g is None else g.sgd_lr for g in population], dtype=torch.float32)
+            self.offspring_by_batch[index] = total_offspring
+            cx_counts = torch.tensor([len(g.enabled_connections) for g in population if g is not None], dtype=torch.float32)
+            node_counts = torch.tensor([len(g.hidden_nodes) for g in population if g is not None], dtype=torch.float32)
+            self.cx_by_batch[index] = torch.tensor([torch.mean(cx_counts), torch.min(cx_counts), torch.max(cx_counts)])
+            self.nodes_by_batch[index] = torch.tensor([torch.mean(node_counts), torch.min(node_counts), torch.max(node_counts)])
+            self.time_elapsed[index] = time.time() - self.start_time
+            if all_replacements is not None:
+                self.replacements_by_batch[:, :, index] = all_replacements.cpu()
             
+        print("Updated index", index)
+    
+    def stop_update_thread(self):
+        self._stop_event.set()
+        self.update_thread.join()
 
     def save(self, run_dir, plot=True):
         logging.info("Saving record")
@@ -185,9 +234,12 @@ class Record():
             pbar.update(1)
         pbar.close()
         if len(imgs)> 0:
-            average_image = np.mean(imgs, axis=0) 
-            plt.imsave(os.path.join(images_path, f"avg_{config.run_id:04d}.png"), average_image, cmap='gray')
-    
+            try:
+                average_image = np.mean(imgs, axis=0) 
+                plt.imsave(os.path.join(images_path, f"avg_{config.run_id:04d}.png"), average_image, cmap='gray')
+            except Exception as e:
+                print(e)
+                pass
     def save_map(self, images_path, map, config, inputs, compress=False, save_path=None):
         # save all images
         flat_map = map.get_population()
@@ -236,6 +288,7 @@ class Record():
     def batch_end(self, alg, skip_fitness=False):
         if hasattr(alg, 'agg_fitnesses') and len(alg.agg_fitnesses) > 0:
             if len(alg.population) > 0:
+                # TODO: this shouldn't reorder alg.population
                 alg.population = sorted(alg.population, key=lambda x: alg.agg_fitnesses[x.id], reverse=True) # sort by fitness
                 # if alg.config.with_grad:
                     # alg.population[0].discard_grads()

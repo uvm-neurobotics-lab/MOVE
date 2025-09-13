@@ -1,0 +1,56 @@
+{
+    "experiment_name": "n-ffts-small",
+
+    "additional_controls":{
+        "stop_condition": "fwds",
+        "stop_condition_value": 5000000,
+        "hidden_nodes_at_start": 0,
+        "connection_prune_threshold": 0.001,
+        "connection_bloat": 3,
+        "bloat_prune_ratio": 0.00,
+        "batch_size": 32,
+        "initial_batch_size": 32,
+        "num_cells":  32,
+        "max_weight":10.0,
+        "soft_mask_sigma": 0.5,
+        "sgd_learning_rate": 0.01,
+        "sgd_early_stop": 20,
+        "target_resize": [33,33],
+        "sgd_steps":2000
+    },
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png",
+        "data/apple.png",
+        "data/butterfly.png"  
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "n_fourier_features"
+    ],
+
+
+    "levels":[
+        [0, 
+        16]
+    ],
+
+    "additional_parameters": {
+    },
+
+    "name_template": "{n_fourier_features:03d}_ffts"
+
+}

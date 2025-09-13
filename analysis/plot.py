@@ -233,30 +233,64 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
 
 
 
-def plot_xy(results, x, y, save_path=None, show=False, x_label=None, y_label=None, title=None, leg_title=None):
+def plot_xy(results, x, y, save_path=None, show=False, x_label=None, y_label=None, title=None, leg_title=None, close = True, conds=[]):
     plt.figure(figsize=(10,8))
+    print("results conditions", results.condition.unique())
+        # filter by conds
+    if len(conds) > 1:
+        results = results[results.condition.isin(conds)]
+
     # use_save_path = os.path.join(save_path, f"{y}.png")
     use_save_path = save_path
+    g = None
     if 'target' not in results.columns:
-        sns.lineplot(results, x=x, y=y, hue="condition")
+        g = sns.lineplot(results, x=x, y=y, hue="condition")
         use_save_path = use_save_path.replace(".pdf", "_avg.pdf")
     else:
-        sns.lineplot(results, x=x, y=y, hue="condition", style="target")
+        g = sns.lineplot(results, x=x, y=y, hue="condition", style="target")
+    plt.xlabel(x_label if x_label is not None else x)
+    plt.ylabel(y_label if y_label is not None else y)
+    # filter legend by conds
+    leg_conds = results.condition.unique()
+    # if len(conds) > 0:
+        # leg_conds = [c for c in leg_conds if c in conds]
 
-    plt.legend(loc="lower center", ncol=min(len(results["condition"].unique()), 2), frameon=False, title=leg_title)
+    plt.legend(loc="lower center", ncol=min(len(results["condition"].unique()), 2), frameon=False, title=leg_title) 
+    legend = plt.gca().get_legend() 
+    for t, l, h in zip(legend.texts, legend.get_texts(), legend.legendHandles):
+        if t.get_text() not in leg_conds:
+            # legend.legendHandles.remove(h)
+            # legend.texts.remove(t)
+            # legend.get_texts().remove(l)
+            l.set_visible(False)
+            t.set_visible(False)
+            h.set_visible(False)
+        
+    # remove empty legend entries
+    # legend.texts = [t for t in legend.texts if t.get_text() in leg_conds]
+    # legend.legendHandles = [h for h, t in zip(legend.legendHandles, legend.texts) if t.get_text() in leg_conds]
+    # legend.get_texts = lambda: legend.texts 
+    # legend.get_legend_handles_labels = lambda: (legend.legendHandles, legend.texts)
+
+
+            
+    
+
     if x_label is not None:
         plt.xlabel(x_label)
     if y_label is not None:
         plt.ylabel(y_label)
     if title is not None:
         plt.title(title)
+    
+    plt.tight_layout(pad=0.1, w_pad=0.1, h_pad=0.1)
 
-    # plt.tight_layout(rect=[0, 0, .8, 1])
     if save_path:
         plt.savefig(use_save_path, bbox_inches='tight')
     if show:
         plt.show()
-    plt.close()
+    if close:
+        plt.close()
 
 
 def plot_vs_batches(results, y, save_path=None, show=False, max_ofs=None):
@@ -264,7 +298,10 @@ def plot_vs_batches(results, y, save_path=None, show=False, max_ofs=None):
         results = results[(results["offspring_by_batch"] <= max_ofs) & (results["offspring_by_batch"] > 0)]
     plot_xy(results, "batch", y, save_path, show)
 
-def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,smooth=None, title=None, y_label=None, x_label=None, experiment_name= None, leg_title=None, x_axis_as_prop=False):
+
+def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False, smooth=None, title=None, y_label=None, x_label=None, experiment_name= None, leg_title=None, x_axis_as_prop=False, close=True):
+    conds =  results.condition.unique()
+    print("in plot: ", results.condition.unique())
     try:
         results = results.drop(columns=[c for c in results.columns if c not in[ "condition", "target", 'run', 'batch', 'evals_by_batch', y]])
         
@@ -293,7 +330,10 @@ def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False,s
             save_name = f"{experiment_name}_{save_name}"
         
         save_path = os.path.join(save_path, save_name)
-        plot_xy(results, "evals", y, save_path, show, x_label="Forward passes", y_label=y_label, title=title, leg_title=leg_title)
+
+        print("in plot after mean: ", results.condition.unique())
+        plot_xy(results, "evals", y, save_path, show, x_label="Forward passes", y_label=y_label, title=title, leg_title=leg_title, close=close, conds = conds)
+
     except Exception as e:
         print(e)
         print(traceback.format_exc())

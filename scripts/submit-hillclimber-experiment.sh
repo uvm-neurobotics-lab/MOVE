@@ -1,6 +1,6 @@
 #!/bin/bash
 # specify a partition
-#SBATCH --partition=dggpu
+#SBATCH --partition=nvgpu
 # Request nodes
 #SBATCH --nodes=1
 # Request some processor cores

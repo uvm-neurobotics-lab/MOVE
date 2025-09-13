@@ -1,0 +1,69 @@
+{
+    "experiment_name": "l2-reg",
+
+    "additional_controls":{
+        "total_offspring": 1000000,
+        "stop_condition": "fwds",
+        "stop_condition_value": 100000,
+        "sgd_early_stop": 10,
+        "batch_size": 8,
+        "initial_batch_size": 8,
+        "single_structural_mutation": false,
+        "objective_functions": [
+            "psnr",
+            "mse",
+            "lpips",
+            "dists",
+            "ssim",
+            "haarpsi",
+            "vif",
+            "msssim",
+            "dss",
+            "gmsd"
+        ],
+        "init_connection_probability": 0.5,
+        "init_connection_probability_fourier": 0.50,
+        "prob_add_node": 0.85,
+        "prob_add_connection": 0.85,
+        "prob_remove_node": 0.15,
+        "prob_disable_connection": 0.15,
+        "hidden_nodes_at_start": [16],
+        "topology_mutation_iters": 2,
+        "node_activation_prune_threshold": 0.01,
+        "prune_threshold": 0.0001,
+        "min_pruned": 1,
+        "sgd_steps" : 1000
+
+    },
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png",
+        "data/apple.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+        "sgd_l2_reg"
+    ],
+
+
+    "levels":[
+        [0, 0.0003, 0.003, 0.03, 0.3]
+    ],
+
+   
+
+    "name_template": "{sgd_l2_reg:03f}_l2"
+
+}

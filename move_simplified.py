@@ -267,6 +267,7 @@ class MOVE():
             print("Total offspring:", self.total_offspring)
             self.target = self.target.repeat(count//self.target.shape[0], *([1]*len(self.target.shape[1:])))
     
+    
     def activate_population(self, genomes):
         if self.config.activation_mode == 'population':
             outputs = activate_population(genomes, self.config, self.inputs)
@@ -428,7 +429,8 @@ class MOVE():
                 after, _, _ = self.measure_fitness(new_children, None)
                 print("SGD improvement:", (after.mean()-before.mean()).item())
         return steps
-        
+    
+    @torch.no_grad()
     def prune_population(self, new_children, n_bloat):
         
         if config.bloat_prune_ratio>0:
@@ -445,7 +447,7 @@ class MOVE():
             n_pruned_nodes += nodes_pruned
         return n_pruned, n_pruned_nodes
 
-
+    @torch.no_grad()
     def replace_by_voting(self, fit_child, normed_fit_child):
         """ 
         The meat of MOVE
@@ -476,7 +478,7 @@ class MOVE():
         
         return votes, improvement, replaces
     
-
+    @torch.no_grad()
     def replacement(self, new_children, fit_children, fc_normed, batch_cell_ids, agg_fc_normed, initial_pop_done):
         all_replacements = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
         
@@ -683,6 +685,8 @@ class MOVE():
         
         self.save_checkpoint()
         
+        self.record.stop_update_thread()
+        
     
     def record_keep(self, new_children, steps, n_pruned, n_pruned_nodes, all_replacements):
         n_step_fwds = len(new_children)
@@ -690,6 +694,12 @@ class MOVE():
         n_step_evals = len(new_children) * len(self.fns)
         n_step_evals_incl_sgd = n_step_evals+(n_step_evals * steps) if self.config.with_grad else n_step_evals
         self.record.update_counts(self.current_batch, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes)
+        
+        print()
+        print()
+        print()
+        print("n_step_fwds:", n_step_fwds, "n_step_fwds_incl_sgd:", n_step_fwds_incl_sgd, "n_step_evals:", n_step_evals, "n_step_evals_incl_sgd:", n_step_evals_incl_sgd)
+        
         if self.current_batch % self.config.record_frequency_batch != 0:
             pass # don't record
         else:

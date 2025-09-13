@@ -1,0 +1,87 @@
+{
+    "experiment_name": "soft-mask",
+    "additional_controls":{
+        "alg": "move", 
+        "total_offspring": 10000000,
+        "stop_condition": "fwds",
+        "stop_condition_value": 1000000,
+        "sgd_early_stop": 5,
+        "sgd_learning_rate": 0.01,
+        "batch_size": 16,
+        "initial_batch_size": 16,
+        "single_structural_mutation": false,
+        "objective_functions": [
+            "psnr",
+            "mse",
+            "lpips",
+            "dists",
+            "ssim",
+            "haarpsi",
+            "vif",
+            "msssim",
+            "dss",
+            "gmsd"
+        ],
+        "init_connection_probability": 0.5,
+        "init_connection_probability_fourier": 0.5,
+        "n_fourier_features": 64,
+        "num_inputs": 67,
+        "prob_add_node": 0.85,
+        "prob_add_connection": 0.85,
+        "prob_remove_node": 0.15,
+        "prob_disable_connection": 0.15,
+        "sgd_l2_reg": 0.0003,
+        "hidden_nodes_at_start": [
+            16
+        ],
+        "topology_mutation_iters": 2,
+        "min_pruned": 1,
+        "connection_bloat": 0,
+        "sgd_steps": 1000,
+        "num_cells": 256,
+        "population_size": 256,
+        "target_resize":[64,64],
+        "prune_threshold": 0.001,
+        "node_activation_prune_threshold": 0.01,
+        "low_mem":true
+    },
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png",
+        "data/apple.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL"
+    ],
+
+    "mode": "enum",
+    "conditions": [
+        {
+            "1.0mu_1.0sigma_0min": {
+                "soft_max_mu": 1.0,
+                "soft_max_sigma": 1.0,
+                "soft_max_min": 0.0
+            }
+        },
+        {
+            "0.5mu_1.0sigma_-1.0min": {
+                "soft_max_mu": 0.5,
+                "soft_max_sigma": 1.0,
+                "soft_max_min": -1.0
+            }
+        },
+        {
+            "voting": {
+                "soft_max_sigma": null
+            }
+        }
+    ]
+
+}

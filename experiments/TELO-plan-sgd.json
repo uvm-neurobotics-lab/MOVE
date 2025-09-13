@@ -1,5 +1,5 @@
 {
-    "experiment_name": "telo-24",
+    "experiment_name": "telo-24-sgd",
 
     "additional_controls":{
         "num_generations": 2000,
@@ -7,7 +7,7 @@
         "target_resize": [128, 128],
         "hidden_nodes_at_start": 0,
         "sgd_learning_rate": 0.01,
-        "sgd_early_stop": 10,
+        "sgd_early_stop": 1000000,
         "connection_prune_threshold": 0.001,
         "extra_bloat": 3,
         "bloat_prune_rate": 0.01,
@@ -15,7 +15,7 @@
         "init_connection_probability": 0.01,
         "stop_condition": "evals",
         "stop_condition_value": 800000,
-        "total_offspring": 8000000,
+        "total_offspring": 10000000,
         "batch_size": 50,
         "initial_batch_size": 50
 

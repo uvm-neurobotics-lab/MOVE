@@ -1,24 +1,40 @@
 {
-    "experiment_name": "telo-24",
+    "experiment_name": "telo-sgd-steps",
 
     "additional_controls":{
-        "num_generations": 2000,
-        "num_cells": 50,
-        "target_resize": [128, 128],
-        "hidden_nodes_at_start": 0,
-        "sgd_learning_rate": 0.01,
-        "sgd_early_stop": 10,
-        "connection_prune_threshold": 0.001,
-        "extra_bloat": 3,
-        "bloat_prune_rate": 0.01,
-        "max_weight": 10.0,
-        "init_connection_probability": 0.01,
-        "stop_condition": "evals",
-        "stop_condition_value": 800000,
-        "total_offspring": 8000000,
-        "batch_size": 50,
-        "initial_batch_size": 50
-
+        "total_offspring": 1000000,
+        "stop_condition": "fwds",
+        "stop_condition_value": 100000,
+        "sgd_early_stop": 1000,
+        "batch_size": 1,
+        "initial_batch_size": 1,
+        "single_structural_mutation": false,
+        "n_fourier_features": 128,
+        "objective_functions": [
+            "psnr",
+            "mse",
+            "lpips",
+            "dists",
+            "ssim",
+            "haarpsi",
+            "vif",
+            "msssim",
+            "dss",
+            "gmsd"
+        ],
+        "init_connection_probability": 0.5,
+        "init_connection_probability_fourier": 0.50,
+        "prob_add_node": 0.85,
+        "prob_add_connection": 0.85,
+        "prob_remove_node": 0.15,
+        "prob_disable_connection": 0.15,
+        "sgd_l2_reg": 0.0003,
+        "hidden_nodes_at_start": [16],
+        "topology_mutation_iters": 2,
+        "node_activation_prune_threshold": 0.01,
+        "prune_threshold": 0.0001,
+        "min_pruned": 1,
+        "target_resize": [64, 64]
     },
 
     "targets":[
@@ -28,9 +44,7 @@
         "data/sunrise.png",
         "data/butterfly.png",
         "data/spiral.png",
-        "data/checkers.png",
-        "data/fly.png",
-        "data/maze.png"
+        "data/checkers.png"
     ],
 
     "color_modes":
@@ -41,8 +55,7 @@
         "HSL",
         "HSL",
         "L",
-        "L",
-        "HSL"
+        "L"
     ],
 
     "mode": "grid",

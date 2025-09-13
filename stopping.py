@@ -43,9 +43,20 @@ class StopAfterEvals(StopCondition):
         print("batch size", alg.config.batch_size)
         # maximum number of batches is if there is (2 + 2*early_stopping) eval per cppn per batch
         # 2 for fwd+backward
-        num_evals_per_cppn = 2 + (2*(alg.config.sgd_early_stop if alg.config.with_grad and alg.config.sgd_steps>0 else 0))
-        return math.ceil(self.value / (num_evals_per_cppn * alg.config.batch_size))
+        # num_evals_per_cppn = 2 + (2*(alg.config.sgd_early_stop if alg.config.with_grad and alg.config.sgd_steps>0 else 0))
+        # return math.ceil(self.value / (num_evals_per_cppn * alg.config.batch_size))
     
+    
+        # maximum number of batches 
+        num_fwds_per_cppn = 0
+        
+        num_sgd_steps_per_cppn = min(alg.config.sgd_steps, alg.config.sgd_early_stop)
+        
+        if alg.config.with_grad and alg.config.sgd_steps>0:
+            num_fwds_per_cppn = 2 + (2*num_sgd_steps_per_cppn)
+        else:
+            num_fwds_per_cppn = 1
+        return math.ceil(self.value / (num_fwds_per_cppn * alg.config.batch_size))
     
 class StopAfterEvalsNoSGD(StopAfterEvals):
     def __call__(self, alg) -> bool:
@@ -64,11 +75,26 @@ class StopAfterFwdCalls(StopCondition):
     def n_batches(self, alg) -> int:
         # maximum number of batches 
         num_fwds_per_cppn = 0
+        
+        num_sgd_steps_per_cppn = min(alg.config.sgd_steps, alg.config.sgd_early_stop)
+        
         if alg.config.with_grad and alg.config.sgd_steps>0:
-            num_fwds_per_cppn = 2 + (1*alg.config.sgd_early_stop)
+            num_fwds_per_cppn = 2 + (1*num_sgd_steps_per_cppn)
         else:
             num_fwds_per_cppn = 1
-        return math.ceil(self.value / (num_fwds_per_cppn * alg.config.batch_size))
+        
+        if alg.config.initial_batch_size != alg.config.batch_size:
+            initial_batches = math.ceil(alg.config.num_cells / alg.config.initial_batch_size)
+            initial_fwds = (initial_batches * alg.config.initial_batch_size * num_fwds_per_cppn)
+            other_fwds = self.value - initial_fwds
+            return initial_batches + math.ceil(other_fwds / (num_fwds_per_cppn * alg.config.batch_size))
+        
+        else:
+            return math.ceil(1.5*(1+math.ceil(self.value / (num_fwds_per_cppn * alg.config.batch_size))))
+    
+        
+        
+        # return math.ceil(self.value / (num_fwds_per_cppn * alg.config.batch_size))
     
     
 class StopAfterFwdCallsNoSGD(StopCondition):

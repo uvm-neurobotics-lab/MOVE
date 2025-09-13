@@ -1,0 +1,55 @@
+{
+    "name": "fourier-features",
+    "controls": {
+        "target": "data/apple.png",
+        "color_mode": "HSL",
+        "output_dir": "../results/test",
+        "alg": "move", 
+    "total_offspring": 1000000,
+    "stop_condition": "fwds",
+    "stop_condition_value": 100000,
+    "sgd_early_stop": 10,
+    "batch_size": 120,
+    "initial_batch_size": 120,
+    "num_cells": 120,
+    "population_size":120,
+    "single_structural_mutation": false,
+    "objective_functions": [
+        "psnr",
+        "mse",
+        "lpips",
+        "dists",
+        "ssim",
+        "haarpsi",
+        "vif",
+        "msssim",
+        "dss",
+        "gmsd"
+    ],
+    "init_connection_probability": 0.5,
+    "init_connection_probability_fourier": 0.5,
+    "prob_add_node": 0.85,
+    "prob_add_connection": 0.85,
+    "prob_remove_node": 0.15,
+    "prob_disable_connection": 0.15,
+    "sgd_l2_reg": 0.0003,
+    "hidden_nodes_at_start": [
+        16
+    ],
+    "topology_mutation_iters": 2,
+    "node_activation_prune_threshold": 0.01,
+    "prune_threshold": 0.0001,
+    "min_pruned": 1,
+    "sgd_steps": 1000
+
+    },
+    "conditions":
+        [
+    {
+        "016_features": {
+            "n_fourier_features": 16,
+            "num_inputs": 19
+        }
+    }
+]
+}

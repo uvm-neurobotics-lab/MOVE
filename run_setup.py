@@ -139,6 +139,7 @@ def run_setup(config_class = MOVEConfig, config_override=None):
         config.genome_type = ImageCPPN
         config.run_id = uuid.uuid1().int>>64 # generate a random (based on clock) 64-bit integer for id
         
+        config.with_grad = config.sgd_steps>0
 
         if config.target is not None:
             fix_target_dimensions(config)

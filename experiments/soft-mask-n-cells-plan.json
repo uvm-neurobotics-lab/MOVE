@@ -1,0 +1,89 @@
+{
+    "experiment_name": "soft-mask-num-cells",
+    "additional_controls":{
+        "alg": "move", 
+        "total_offspring": 10000000,
+        "stop_condition": "fwds",
+        "stop_condition_value": 1000000,
+        "sgd_early_stop": 5,
+        "sgd_learning_rate": 0.01,
+        "batch_size": 16,
+        "initial_batch_size": 16,
+        "single_structural_mutation": false,
+        "objective_functions": [
+            "psnr",
+            "mse",
+            "lpips",
+            "dists",
+            "ssim",
+            "haarpsi",
+            "vif",
+            "msssim",
+            "dss",
+            "gmsd"
+        ],
+        "init_connection_probability": 0.5,
+        "init_connection_probability_fourier": 0.5,
+        "n_fourier_features": 16,
+        "num_inputs": 19,
+        "prob_add_node": 0.85,
+        "prob_add_connection": 0.85,
+        "prob_remove_node": 0.15,
+        "prob_disable_connection": 0.15,
+        "sgd_l2_reg": 0.0003,
+        "hidden_nodes_at_start": [
+            16
+        ],
+        "topology_mutation_iters": 2,
+        "min_pruned": 1,
+        "connection_bloat": 0,
+        "sgd_steps": 1000,
+        "target_resize":[64,64],
+        "prune_threshold": 0.001,
+        "node_activation_prune_threshold": 0.01,
+        "low_mem":true,
+
+        "soft_max_mu": 1.0,
+        "soft_max_sigma": 1.0,
+        "soft_max_min": 0.0
+    },
+
+    "targets":[
+        "data/skull.png",
+        "data/sunrise.png",
+        "data/dolphin.png",
+        "data/apple.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL"
+    ],
+
+  
+    "mode": "grid",
+
+    "variables":[
+       "num_cells"
+    ],
+
+
+    "levels":[
+        [32, 128, 256]
+    ],
+
+    "additional_parameters": {
+        "num_cells": {
+            "population_size":{
+                "32" : 32,
+                "128" : 128,
+                "256" : 256
+            }
+        }
+    },
+
+    "name_template": "1.00-mu_1.00-sigma_0.00-min{num_cells:03d}_cells"
+}

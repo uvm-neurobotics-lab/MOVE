@@ -102,7 +102,7 @@ if __name__=='__main__':
     # results = full_experiment('../../results/sgd-steps', num_steps=500, modulo=10000)
 
     # results.to_csv('sgd-steps-inner-loop.csv')
-    results = pd.read_csv('100-steps-inner-loop-all.csv')
+    results = pd.read_csv('analysis/100-steps-inner-loop-all.csv')
     
     max_step = results.groupby(['run', 'condition_path', 'batch']).max().reset_index()
     min_step = results.groupby(['run', 'condition_path', 'batch']).min().reset_index()
@@ -118,12 +118,47 @@ if __name__=='__main__':
     print(diff_first_step_last_step)
     sns.barplot(data=diff_first_step_last_step, x='condition_path', y='loss_diff', hue='batch')
     plt.savefig('sgd-steps-inner-loop-diff.png')
+    plt.close()
     
     print(get_stats_by_batch(diff_first_step_last_step, 'first', 'last', 'loss_diff'))
-    exit()
-    
-    import seaborn as sns
-    import matplotlib.pyplot as plt
 
-    sns.lineplot(data=results, x='step', y='loss', hue='condition_path', legend='full', style='batch')
-    plt.savefig('sgd-steps-inner-loop.png')
+    plt.figure(figsize=(10, 6))
+    plt.rcParams['font.size'] = 16
+    results = results[results['batch']!='mid']
+    results = results.replace({'batch': {'first': 'First children', 'last': 'Last children'}})
+    sns.lineplot(data=results, x='step', y='loss', hue='batch', legend='full')
+    plt.title('Inner Loop Loss')
+    plt.legend(title="")
+    plt.xlabel('SGD Step')
+    plt.ylabel('SGD Loss')
+
+    plt.savefig('analysis/sgd-steps-inner-loop.png')
+    plt.close()
+    import statsmodels.api as sm
+    import statsmodels.formula.api as smf
+
+    did_results = results.copy()
+
+    # difference in difference test
+    did_results['time'] = did_results['step']
+    did_results['treatment'] = did_results['batch'].apply(lambda x: 1 if x == 'Last children' else 0)
+    did_results['outcome'] = did_results['loss'] - did_results['loss'].mean()
+    did_results['trajectory_id'] = did_results['run']
+
+
+    # normalize time
+    did_results['time'] = (did_results['time'] - did_results['time'].mean()) / did_results['time'].std()
+    # normalize outcome
+    did_results['outcome'] = (did_results['outcome'] - did_results['outcome'].mean()) / did_results['outcome'].std()    
+    # keep only relevant columns
+    did_results = did_results[['outcome', 'step', 'treatment', 'time', 'trajectory_id']]
+
+    # show correlation matrix
+    # print(did_results[['outcome', 'step', 'treatment', 'time']].corr())
+
+    model = smf.mixedlm("outcome ~ treatment + time + treatment:time", 
+                    did_results, 
+                    groups=did_results["trajectory_id"])
+    res = model.fit()
+
+    print(res.summary())
