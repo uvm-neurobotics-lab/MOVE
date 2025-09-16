@@ -29,7 +29,7 @@ class MOVEConfig(CPPNConfig):
         
         self.checkpoint_frequency = 0
 
-        # self.total_offspring = 30_000_000
+        self.total_offspring = 30_000_000
         # self.total_offspring = 3000
         
         self.target_path = "default"
@@ -296,8 +296,8 @@ def target_path_to_tensor(config):
     else:
         config.target = config.target.unsqueeze(1).repeat(1,3,1,1) # add color channel
         
-    if config.target.shape[-2] < 32 or config.target.shape[-1] < 32:
-        config.target = Resize((32,32), antialias=True)(config.target)
+    if config.target.shape[-2] < 33 or config.target.shape[-1] < 33:
+        config.target = Resize((33,33), antialias=True)(config.target)
     
     config.target = torch.clamp(config.target, 0, 1)
 

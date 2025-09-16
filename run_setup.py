@@ -48,7 +48,7 @@ def run_setup(config_class = MOVEConfig, config_override=None):
     parser.add_argument('-t','--target', action='store', help='Target image.')
     parser.add_argument('-v','--verbose', action='store_true', help='Print verbose output (default: False).')
     parser.add_argument('-d','--device', action='store', default=default_device, help=f'Device to run on (default: {default_device}).')
-    parser.add_argument('-sgd','--sgd', type=bool, action='store', default=None, help=f'Use SGD to update weights (default: True).')
+    parser.add_argument('-sgd','--sgd', type=int, action='store', default=None, help=f'Number of SGD steps per generation (default: CONFIG).')
     parser.add_argument('-ff','--num_fourier_features',type=int, action='store', default=-1, help=f'Number of fourier features (default: 8).')
     parser.add_argument('-hn','--num_hidden_nodes',type=int, action='store', default=-1, help=f'Number of hidden nodes at initialization (default: 0).')
     parser.add_argument('-pr','--profile', action='store_true', help=f'Profile the code (default: False).')
@@ -92,8 +92,8 @@ def run_setup(config_class = MOVEConfig, config_override=None):
     if args.output is not None:
         parsed['controls']["output_dir"] = args.output
         
-    if args.sgd:
-        parsed['controls']["with_grad"] = True
+    if args.sgd is not None:
+        parsed['controls']["sgd_steps"] = args.sgd
     
     if args.num_fourier_features > 0:
         parsed['controls']["n_fourier_features"] = args.num_fourier_features

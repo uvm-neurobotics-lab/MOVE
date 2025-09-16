@@ -23,6 +23,8 @@ def control(candidates, target):
 
 
 def correct_dims(candidates, target):
+   return candidates, target # should never be needed
+   # return candidates, target
    f,r = candidates, target
    if len(f.shape) == 2:
       # unbatched L
@@ -70,11 +72,11 @@ def correct_dims(candidates, target):
    f = f.to(torch.float32)
    r = r.to(torch.float32)
    
-   # pad to 32x32 if necessary
-   if f.shape[2] < 32 or f.shape[3] < 32:
-      f = Resize((32,32),antialias=False)(f)
-   if r.shape[2] < 32 or r.shape[3] < 32:
-      r = Resize((32,32),antialias=False)(r)
+   # pad to 33x33 if necessary
+   if f.shape[2] < 33 or f.shape[3] < 33:
+      f = Resize((33,33),antialias=False)(f)
+   if r.shape[2] < 33 or r.shape[3] < 33:
+      r = Resize((33,33),antialias=False)(r)
 
    if f.shape[0] !=1 and r.shape[0] == 1:
       # only one target in batch, repeat for comparison

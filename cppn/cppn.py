@@ -142,8 +142,8 @@ class CPPN(nn.Module):
         res_h, res_w = config.res_h, config.res_w
         print("Initializing inputs with resolution", res_h, res_w)
         inputs = initialize_inputs(
-            res_h//2**config.num_upsamples,
-            res_w//2**config.num_upsamples,
+            res_h,
+            res_w,
             config.use_radial_distance,
             config.use_input_bias,
             2+config.use_radial_distance+config.use_input_bias,
@@ -393,6 +393,7 @@ class CPPN(nn.Module):
         # Gather outputs
         outputs = [self.node_states[node_id] for node_id in outputs]
         outputs = torch.stack(outputs, dim=(0 if channel_first else -1))
+
         
         # outputs = torch.sigmoid(outputs)
         

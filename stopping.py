@@ -31,14 +31,38 @@ class StopAfterBatches(StopCondition):
         return self.curr >= self.value
     def n_batches(self, alg) -> int:
         return self.value
+
+
+class StopAfterCPPNPasses(StopCondition):
+    """
+    Either 1 per CPPN per batch, or 1 per CPPN + (2 per CPPN per sgd step) per batch if using SGD
+    """
+    def __call__(self, alg) -> bool:
+        self.curr = alg.record.n_cppn_passes
+        return self.curr >= self.value
     
-    
+    def n_batches(self, alg) -> int:
+        # maximum number of batches is if there is (1 + 2*early_stopping) eval per cppn per batch
+        # 1 for fwd and 1 for back
+        # num_passes_per_cppn = 1 + (2*(alg.config.sgd_early_stop if alg.config.with_grad and alg.config.sgd_steps>0 else 0))
+        # return math.ceil(self.value / (num_passes_per_cppn * alg.config.batch_size))
+
+        # maximum number of batches
+        num_passes_per_cppn = 0
+        num_sgd_steps_per_cppn = min(alg.config.sgd_steps, alg.config.sgd_early_stop)
+        if alg.config.with_grad and alg.config.sgd_steps > 0:
+            num_passes_per_cppn = 1 + (2 * num_sgd_steps_per_cppn // alg.config.grad_every)
+        else:
+            num_passes_per_cppn = 1
+        return math.ceil(self.value / (num_passes_per_cppn * alg.config.batch_size))
+
 class StopAfterEvals(StopCondition):
     def __call__(self, alg) -> bool:
         self.curr = alg.record.n_evals_incl_sgd
         return self.curr >= self.value
     
     def n_batches(self, alg) -> int:
+        print("WARN:", "does not account for grad_every!=1")
         print("value", self.value)
         print("batch size", alg.config.batch_size)
         # maximum number of batches is if there is (2 + 2*early_stopping) eval per cppn per batch
@@ -183,4 +207,5 @@ name_to_stop_condition_map = {
     "evals_no_sgd": StopAfterEvalsNoSGD,
     "fwds": StopAfterFwdCalls,
     "fwds_no_sgd": StopAfterFwdCallsNoSGD,
+    "passes": StopAfterCPPNPasses,
 }

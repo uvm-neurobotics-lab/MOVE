@@ -76,7 +76,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.use_avg_fit = self.config.get("use_avg_fit", False)
         
         self.record = Record(self.config, self.n_fns, self.n_cells, self.total_batches, self.config.low_mem)
-        self.norm = read_norm_data(self.config.norm_df_path, self.config.target_name)
+        self.norm = read_norm_data(self.config.norm_df_path, self.config.target_path)
         
         self.init_inputs()
         
@@ -108,6 +108,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.agg_fitnesses = self.map.get_agg_fitnesses()
         self.fitnesses = self.map.get_fitnesses()
     
+
     def evolve(self, run_number = 1, show_output=False, initial_population=False, resume=None):
         # start evolving, defaults to no initial population because the initial pop is generated during gen 0
         try:
@@ -189,6 +190,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 batch_imgs = self.activate_population([g for _,_,g in batch_genomes])
             else:
                 batch_imgs = imgs[batch_start_idx:batch_start_idx+len(batch_genomes)]
+            
+            # clamp batch images to [0,1]
+            batch_imgs = torch.clamp(batch_imgs, 0.0, 1.0)
+
             for i, fn in enumerate(self.fns):
                 if fn in ff.GENOTYPE_FUNCTIONS:
                     if skip_genotype:
@@ -283,6 +288,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
 
     def sgd_population(self, new_children, batch_cell_ids):
         steps=0
+        n_passes = [len(new_children),0] # fwd, back (will always do 1 fwd)
         if self.config.sgd_steps > 0 and self.config.with_grad and (self.current_batch+1) % self.config.grad_every == 0:
             # do SGD update
             self.init_sgd(batch_cell_ids)
@@ -295,19 +301,21 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 if self.config.sgd_strat == 'imaml':
                     sgd_fn = sgd_weights_imaml
                 steps = sgd_fn(new_children, 
-                            mask        = self.mask,
-                            # mask        = None, # SGD on all functions
-                            inputs      = self.inputs,
-                            target      = self.target,
-                            fns         = self.sgd_fns,
-                            norm        = self.norm,
-                            # norm        = None,
-                            config      = self.config,
-                            early_stop  = self.config.sgd_early_stop,
+                            mask          = self.mask,
+                            # mask          = None, # SGD on all functions
+                            inputs        = self.inputs,
+                            target        = self.target,
+                            fns           = self.sgd_fns,
+                            norm          = self.norm,
+                            # norm          = None,
+                            config        = self.config,
+                            early_stop    = self.config.sgd_early_stop,
+                            record_passes = n_passes
                             )
                 after, _, _ = self.measure_fitness(new_children, None)
                 print("SGD improvement:", (after.mean()-before.mean()).item())
-        return steps
+        return steps, n_passes
+    
         
     def prune_population(self, new_children, n_bloat):
         
@@ -446,9 +454,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         # Choose parents
         new_children, batch_cell_ids, initial_pop_done = self.selection()
         
-        # Bloat, SGD, prune        
+        # Bloat, SGD, prune  
         n_bloat                  = self.bloat_population(new_children)
-        steps                    = self.sgd_population(new_children, batch_cell_ids)
+        steps, n_passes          = self.sgd_population(new_children, batch_cell_ids)
         n_pruned, n_pruned_nodes = self.prune_population(new_children, n_bloat)
                     
         # Measure children
@@ -463,7 +471,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                                             initial_pop_done)
 
         # Record keeping
-        self.record_keep(new_children, steps, n_pruned, n_pruned_nodes, all_replacements)
+        self.record_keep(new_children, steps, n_pruned, n_pruned_nodes, all_replacements, n_passes)
             
        
     def replace_by_avg_fit(self, fit_child):
@@ -504,6 +512,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         if self.config.checkpoint_frequency > 0 and self.current_batch % self.config.checkpoint_frequency == 0:
             self.save_checkpoint()
     
+
     def save_move_info(self):
         with open(os.path.join(self.run_dir, "cell_names.csv"), "w") as f:
             f.write(",".join(self.map.cell_names))
@@ -539,12 +548,13 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.save_checkpoint()
         
     
-    def record_keep(self, new_children, steps, n_pruned, n_pruned_nodes, all_replacements):
-        n_step_fwds = len(new_children)
-        n_step_fwds_incl_sgd = n_step_fwds+(n_step_fwds * steps) if self.config.with_grad else n_step_evals
+    def record_keep(self, new_children, steps, n_pruned, n_pruned_nodes, all_replacements, n_passes):
+        n_step_fwds = len(new_children) # one guaranteed 
         n_step_evals = len(new_children) * len(self.fns)
-        n_step_evals_incl_sgd = n_step_evals+(n_step_evals * steps) if self.config.with_grad else n_step_evals
-        self.record.update_counts(self.current_batch, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes)
+        n_step_fwds_incl_sgd = n_step_fwds+n_passes[0]
+        n_step_passes = n_passes[0]+n_passes[1]
+        n_step_evals_incl_sgd = n_step_evals+(n_passes[0]*len(self.fns)) # 1 per cppn and 1 per cppn per fwd pass per function
+        self.record.update_counts(self.current_batch, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes, n_step_passes)
         if self.current_batch % self.config.record_frequency_batch != 0:
             pass # don't record
         else:

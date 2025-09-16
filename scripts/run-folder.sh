@@ -95,9 +95,9 @@ for i in $(seq 1 $repeats); do
       }
 
     if [ $dry_run -eq 0 ]; then
-      python3 -O move_mp.py -c $filename -g $gens -pr -o $output & #  >$logdir/$(basename $filename)_$run_id.log &
+      python3 -O move.py -c $filename -g $gens -pr -o $output & #  >$logdir/$(basename $filename)_$run_id.log &
     else
-      echo "would do: python3 -O move_mp.py -c $filename -g $gens -o $output"
+      echo "would do: python3 -O move.py -c $filename -g $gens -o $output"
     fi
       
       running=$((running+1))

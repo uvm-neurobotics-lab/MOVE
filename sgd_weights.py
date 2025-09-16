@@ -49,9 +49,9 @@ class EarlyStopping:
 		
 		return result
 
-resize = Resize((32, 32),antialias=True)
+resize = Resize((33, 33),antialias=True)
 def min_resize(imgs):
-	if imgs.shape[-1] < 32 or imgs.shape[-2] < 32:
+	if imgs.shape[-1] < 33 or imgs.shape[-2] < 33:
 		return resize(imgs)
 	return imgs
 
@@ -125,8 +125,7 @@ def batch_lr_mod(inputs, config, all_params, lr):
 
 def prep_images(imgs, config):
 	assert torch.isfinite(imgs).all(), "NaNs in images"
-	
-	if len(config.color_mode) == 1:
+	if imgs.shape[1] != 3:
 		imgs = imgs.repeat(1, 3, 1, 1) # grayscale to RGB
 	
 	imgs = min_resize(imgs)
@@ -196,7 +195,7 @@ def _sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3,
 	def loss_fn(imgs, target, mask, return_all=False):
 		# prepare images
 		imgs = prep_images(imgs, config)
- 
+	
 		# calculate fitness
 		normed = torch.zeros((imgs.shape[0], len(fns)), device=imgs.device)
 		for i, fn in enumerate(fns):
@@ -322,9 +321,10 @@ def _sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3,
 	return step+1
 
 
-def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0, unequal_shape=False):
+def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0, unequal_shape=False, record_passes=[0,0]):
 	lr = config.sgd_learning_rate
 	sgd_steps = config.sgd_steps
+
 
 	if sgd_steps == 0:
 		return 0
@@ -379,12 +379,14 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, 
 
 		optimizer.zero_grad()
 		loss, per_genome_loss = compute_loss(active_genomes, active_inputs, active_target, active_mask)
+		record_passes[0] += len(active_genomes)
 
 		if record_loss is not None:
 			record_loss[step] = loss.item()
 
 		loss.backward()
-
+		record_passes[1] += len(active_genomes)
+		
 		# Clamp gradients if configured
 		if config.sgd_clamp_grad:
 			torch.nn.utils.clip_grad_norm_(all_params, config.sgd_clamp_grad)

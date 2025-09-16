@@ -1,5 +1,5 @@
 {
-    "experiment_name": "telo-24-sgd",
+    "experiment_name": "telo-25-sgd",
 
     "additional_controls":{
         "num_generations": 2000,
@@ -13,8 +13,8 @@
         "bloat_prune_rate": 0.01,
         "max_weight": 10.0,
         "init_connection_probability": 0.01,
-        "stop_condition": "evals",
-        "stop_condition_value": 800000,
+        "stop_condition": "passes",
+        "stop_condition_value": 2000000,
         "total_offspring": 10000000,
         "batch_size": 50,
         "initial_batch_size": 50
@@ -30,7 +30,8 @@
         "data/spiral.png",
         "data/checkers.png",
         "data/fly.png",
-        "data/maze.png"
+        "data/maze.png",
+        "data/linear_sin.png"
     ],
 
     "color_modes":
@@ -42,7 +43,9 @@
         "HSL",
         "L",
         "L",
-        "HSL"
+        "HSL",
+        "L",
+        "L"
     ],
 
     "mode": "grid",
@@ -69,18 +72,6 @@
                 "16" : 0,
                 "100" : 0,
                 "1000" : 0
-            },
-            "batch_size": {
-                "0" : 8,
-                "16" : 1,
-                "100" : 1,
-                "1000" : 1
-                },
-            "initial_batch_size":{
-                "0" : 8,
-                "16" : 1,
-                "100" : 1,
-                "1000" : 1
             }
         }
     },

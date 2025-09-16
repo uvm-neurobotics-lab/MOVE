@@ -234,13 +234,12 @@ def initialize_inputs(res_h, res_w, use_radial_dist, use_bias, n_inputs, device,
         if use_bias:
             inputs[:, :, -1] = torch.ones((res_h, res_w), dtype=dtype, device=device, requires_grad=False) # bias = 1.0
         
-        repeat_dims = 2 # just y, x
-        if use_radial_dist:
-            repeat_dims += 1 # add radial dist
-        n_repeats = 0   
-        for i in range(n_repeats):
-            inputs  = torch.cat((inputs, inputs[:, :, :repeat_dims]), dim=2)
-        
+        # repeat_dims = 2 # just y, x
+        # if use_radial_dist:
+            # repeat_dims += 1 # add radial dist
+        # n_repeats = 0   
+        # for i in range(n_repeats):
+        #     inputs  = torch.cat((inputs, inputs[:, :, :repeat_dims]), dim=2)
         return inputs
 
 def initialize_inputs_from_config(config):

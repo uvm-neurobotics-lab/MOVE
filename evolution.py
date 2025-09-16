@@ -82,11 +82,11 @@ class CPPNEvolutionaryAlgorithm(object):
                     logging.warning("Target image is grayscale, but color_mode is not set to 'L'. Setting color_mode to 'L'")
                     self.config.color_mode = "L"
                     
-            if self.config.res_w != self.target.shape[0]:
-                self.config.res_w = self.target.shape[0]
+            if self.config.res_w != self.target.shape[-2]:
+                self.config.res_w = self.target.shape[-2]
                 logging.warning("Target image width does not match config.res_w. Setting config.res_w to target image width")
-            if self.config.res_h != self.target.shape[1]:
-                self.config.res_h = self.target.shape[1]
+            if self.config.res_h != self.target.shape[-1]:
+                self.config.res_h = self.target.shape[-1]
                 logging.warning("Target image height does not match config.res_h. Setting config.res_h to target image height")
 
         self.fitnesses = {}
@@ -97,6 +97,8 @@ class CPPNEvolutionaryAlgorithm(object):
         other_batches = math.ceil((self.config.total_offspring-self.config.num_cells) / self.config.batch_size)
 
         self.total_batches = initial_batches + other_batches
+        if self.config.stop_condition is not None:
+            self.total_batches = self.stop_condition.n_batches(self) + 1 # +1 to be safe
         print("Expecting up to", self.total_batches, "batches")
         print("Stop condition:", self.stop_condition.__class__.__name__ if self.stop_condition is not None else "None")
         
@@ -151,16 +153,17 @@ class CPPNEvolutionaryAlgorithm(object):
         if self.config.target is None:
             return
         # repeat the target for easy comparison
-        self.target = torch.stack([self.target.squeeze() for _ in range(self.config.initial_batch_size)])
+        if self.target.shape[0] != self.config.initial_batch_size:
+            self.target = torch.stack([self.target.squeeze() for _ in range(self.config.initial_batch_size)])
 
-        if len(self.target.shape) > 3:
-            self.target = self.target.permute(0, 3, 1, 2) # move color channel to front
-        else:
-            self.target = self.target.unsqueeze(1).repeat(1,3,1,1) # add color channel
+            if len(self.target.shape) > 3:
+                self.target = self.target.permute(0, 3, 1, 2) # move color channel to front
+            else:
+                self.target = self.target.unsqueeze(1).repeat(1,3,1,1) # add color channel
+                
+        if self.target.shape[-2] < 33 or self.target.shape[-1] < 33:
+            self.target = Resize((33,33), antialias=True)(self.target)
             
-        if self.target.shape[-2] < 32 or self.target.shape[-1] < 32:
-            self.target = Resize((32,32), antialias=True)(self.target)
-        
         self.target = torch.clamp(self.target, 0, 1)
         
         # save target to output directory
@@ -213,10 +216,10 @@ class CPPNEvolutionaryAlgorithm(object):
                                                  self.config)
             else:
                 outputs = torch.stack([g(self.inputs) for g in genomes])
-            
-            outputs = outputs.clamp_(0,1)
+            outputs = outputs.clamp_(0.0,1.0)
         if hasattr(self, "target"):
             outputs, self.target = ff.correct_dims(outputs, self.target)
+
         return outputs
 
     def evolve(self, run_number = 1, show_output=False, initial_population=True):

@@ -28,7 +28,9 @@
         "data/sunrise.png",
         "data/butterfly.png",
         "data/spiral.png",
-        "data/checkers.png"
+        "data/checkers.png",
+        "data/fly.png",
+        "data/maze.png"
     ],
 
     "color_modes":
@@ -39,7 +41,8 @@
         "HSL",
         "HSL",
         "L",
-        "L"
+        "L",
+        "HSL"
     ],
 
 "mode": "enum",

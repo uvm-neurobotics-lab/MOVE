@@ -31,8 +31,8 @@ class CPPNConfig:
         self.num_conv = 0
         self.num_post_conv=0
         self.dry_run = False
-        self.res_w = 28
-        self.res_h = 28
+        self.res_w = 33
+        self.res_h = 33
         self.save_w = 512
         self.save_h = 512
         self.color_mode = "RGB"

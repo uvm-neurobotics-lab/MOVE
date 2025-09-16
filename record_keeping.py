@@ -21,9 +21,6 @@ class Record():
         self.fit_df = pd.DataFrame(columns=['condition', 'target', 'cell', 'run', 'function', 'gen', 'fitness'])
         self.replace_df = pd.DataFrame(columns=['condition','target',  'cell', 'run', 'gen', 'replacements'])
         
-
-        
-        
         num_data_points = total_batches // config.record_frequency_batch
         self.agg_fitness_by_batch = torch.ones((n_cells, num_data_points), device='cpu')*-torch.inf
         print("Initializing record with size", self.agg_fitness_by_batch.shape)
@@ -31,7 +28,8 @@ class Record():
         self.n_fwds = 0
         self.n_fwds_incl_sgd = 0
         self.n_evals_incl_sgd = 0
-        self.evals_by_batch = torch.ones((num_data_points, 4), device='cpu')*-torch.inf
+        self.n_cppn_passes = 0
+        self.evals_by_batch = torch.ones((num_data_points, 5), device='cpu')*-torch.inf
         self.normed_fitness_by_batch = torch.ones((n_fns, n_cells, num_data_points), device='cpu')*-torch.inf
         
         if not self.low_mem:
@@ -48,18 +46,19 @@ class Record():
             self.time_elapsed = torch.ones((num_data_points), device='cpu')*-torch.inf
             
             self.start_time = time.time()
-            
         
         self.update_queue = queue.Queue()
         self._stop_event = threading.Event()
         self.update_thread = threading.Thread(target=self._update_worker, daemon=True)
         self.update_thread.start()
     
-    def update_counts(self, index, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned,n_pruned_nodes):
+
+    def update_counts(self, index, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes, n_step_passes):
         self.n_fwds += n_step_fwds
         self.n_fwds_incl_sgd += n_step_fwds_incl_sgd
         self.n_evals += n_step_evals
         self.n_evals_incl_sgd += n_step_evals_incl_sgd
+        self.n_cppn_passes += n_step_passes
         if not self.low_mem:
             self.total_pruned[index,0] = n_pruned
             self.total_pruned[index,1] = n_pruned_nodes
@@ -67,7 +66,9 @@ class Record():
         self.evals_by_batch[index,1] = n_step_fwds_incl_sgd
         self.evals_by_batch[index,2] = n_step_evals
         self.evals_by_batch[index,3] = n_step_evals_incl_sgd
+        self.evals_by_batch[index,4] = n_step_passes
     
+
     def update(self, index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring):
         self.update_queue.put((index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring))
         return
@@ -101,6 +102,7 @@ class Record():
             except queue.Empty:
                 continue    
 
+
     def _perform_update(self, index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring):
         # Original update logic goes here
         self.agg_fitness_by_batch[:, index] = agg_fitnesses.cpu()
@@ -122,9 +124,11 @@ class Record():
             
         print("Updated index", index)
     
+
     def stop_update_thread(self):
         self._stop_event.set()
         self.update_thread.join()
+
 
     def save(self, run_dir, plot=True):
         logging.info("Saving record")
@@ -163,6 +167,7 @@ class Record():
             torch.save(self.nodes_by_batch, os.path.join(run_dir, "nodes_by_batch.pt"))
             torch.save(self.time_elapsed, os.path.join(run_dir, "time_elapsed_by_batch.pt"))
             
+
     def load(self, run_dir):
         logging.info("Loading record")
         self.agg_fitness_by_batch = torch.load(os.path.join(run_dir, "agg_fitness_by_batch.pt"))
@@ -240,6 +245,8 @@ class Record():
             except Exception as e:
                 print(e)
                 pass
+
+        
     def save_map(self, images_path, map, config, inputs, compress=False, save_path=None):
         # save all images
         flat_map = map.get_population()
@@ -265,12 +272,14 @@ class Record():
             with open(save_path, "w") as f:
                 json.dump(genomes, f)
     
+
     def save_checkpoint(self, run_dir, checkpoint_dir, map, config, current_batch, save_data=False):
         if save_data:
             self.save(run_dir)
         checkpoint_name = os.path.join(checkpoint_dir, f"{current_batch:04d}.json.gz")
         self.save_map(None, map, config,None, compress=True, save_path=checkpoint_name)
     
+
     def load_checkpoint(self, run_dir, checkpoint_dir, map, config, current_batch=None):
         self.load(run_dir)
         current_batch = current_batch if current_batch is not None else max([int(f.split(".")[0]) for f in os.listdir(checkpoint_dir) if f.endswith(".json.gz")])
@@ -285,6 +294,7 @@ class Record():
                     map.map[i].to(config.device)
         return current_batch
     
+
     def batch_end(self, alg, skip_fitness=False):
         if hasattr(alg, 'agg_fitnesses') and len(alg.agg_fitnesses) > 0:
             if len(alg.population) > 0:
