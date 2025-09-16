@@ -1,0 +1,66 @@
+{
+    "experiment_name": "telo-25-sgd-inter",
+
+    "additional_controls":{
+        "num_generations": 2000,
+        "num_cells": 50,
+        "target_resize": [128, 128],
+        "hidden_nodes_at_start": 0,
+        "sgd_learning_rate": 0.01,
+        "sgd_early_stop": 1000000,
+        "connection_prune_threshold": 0.001,
+        "extra_bloat": 3,
+        "bloat_prune_rate": 0.01,
+        "max_weight": 10.0,
+        "init_connection_probability": 0.01,
+        "stop_condition": "passes",
+        "stop_condition_value": 2000000,
+        "total_offspring": 10000000,
+        "batch_size": 50,
+        "initial_batch_size": 50
+    },
+
+    "targets":[
+        "data/skull.png",
+        "data/apple.png",
+        "data/dolphin.png",
+        "data/sunrise.png",
+        "data/butterfly.png",
+        "data/spiral.png",
+        "data/checkers.png",
+        "data/fly.png",
+        "data/maze.png",
+        "data/linear_sin.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL",
+        "HSL",
+        "L",
+        "L",
+        "HSL",
+        "L",
+        "L"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "sgd_steps",
+       "grad_every"
+    ],
+
+
+    "levels":[
+        [100, 1000],
+        [25,50,100]
+
+    ],
+
+    "name_template": "{sgd_steps:03d}_steps_every_{grad_every:03d}"
+
+}
