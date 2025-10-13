@@ -85,6 +85,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         if self.config.with_grad:
             self.init_sgd()
         
+        if config.evolve_every != 1 and config.batch_size < config.num_cells:
+            print("\n\nWARNING: evolve_every != 1 with batch_size < num_cells may cause some cells to never be evolved\n\n")
+        if config.grad_every != 1 and config.batch_size < config.num_cells and config.sgd_steps > 0:
+            print("\n\nWARNING: grad_every != 1 with batch_size < num_cells may cause some cells to never be trained with SGD\n\n")
+
         print("Initialized MOVE on device:", self.config.device)
         
                             
@@ -120,6 +125,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             pass # allow user to stop early
         
         
+    @torch.no_grad()
     def new_child(self, parent, all_parents):
         if parent is None:
             child = self.genome_type(self.config)
@@ -132,25 +138,28 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             all_parents = list(filter(lambda x: x is not None, all_parents))
             other_parent = np.random.choice(all_parents)
             child = parent.crossover(other_parent, self.config) # crossover
-            child.mutate(self.config) # mutate
             child.n_cells = parent.n_cells
-            child.reset(self.config)
-            # child.update_layers()
-            # child.disable_invalid_connections(self.config)
+            
+            # mutate
+            # child.mutate(self.config)
+            # child.reset(self.config)
+
             # TODO lineage
             return child
         else:
             # asexual reproduction, child is mutated clone of parent
             child = parent.clone(self.config, new_id=True)
-            child.mutate(self.config)
             child.parents = (parent.id, parent.id)
             child.cell_lineage = parent.cell_lineage
             child.n_cells = parent.n_cells
-            child.reset(self.config)
-            # child.update_layers()
-            # child.disable_invalid_connections(self.config)
+            
+            # mutate
+            # child.mutate(self.config)
+            # child.reset(self.config)
             return child
+        
   
+    @torch.no_grad()
     def correct_target_count(self, count):
         """If the number of children has changed between iterations, 
         adjust the target to match
@@ -231,47 +240,69 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         return fit_children, fc_normed, agg_fc_normed
 
 
-    def selection(self):
-        parents = self.map.get_population(include_empty=True) # current elite map
+    @torch.no_grad()
+    def mutation(self, genomes):
+        for g in genomes:
+            g.mutate(self.config)
+            g.reset(self.config)
 
+
+    @torch.no_grad()
+    def reproduction(self, parents, batch_cell_ids, batch_size):
         new_children = []
-        
+        for child_i, cell_i in enumerate(batch_cell_ids):
+            p = parents[cell_i]
+            child = self.new_child(p, parents)
 
-        assert len(parents) == self.map.n_cells
-        
+            # extra mutations for children
+            for _ in range(self.config.initial_mutations):
+                child.mutate(self.config)
+                
+            new_children.append((child_i, cell_i, child))
+            
+            self.total_offspring += 1
+            
+            if len(new_children) >= batch_size:
+                break
+
+        return new_children
+
+
+    @torch.no_grad()
+    def get_batch_size(self):
         initial_pop_done = self.total_offspring >= self.config.num_cells
         batch_size = self.config.batch_size if initial_pop_done else self.config.initial_batch_size
-        
+        return batch_size, initial_pop_done
+    
 
+    @torch.no_grad()
+    def get_next_batch_ids(self):
+        batch_size, initial_pop_done = self.get_batch_size()
         if initial_pop_done or not self.config.enforce_initial_fill:
             # random parents 
             batch_cell_ids = torch.tensor(np.random.choice(self.map.n_cells, size=batch_size, replace=False), device=self.config.device)
         else:
             # insure each cell is used once at first
             batch_cell_ids = torch.arange(start=self.total_offspring, end=min(self.map.n_cells, self.total_offspring+batch_size), device=self.config.device)
+        return batch_cell_ids
+    
+
+    @torch.no_grad()
+    def selection(self):
+        parents = self.map.get_population(include_empty=True) # current elite map
+
+        assert len(parents) == self.map.n_cells
+        
+        batch_size, initial_pop_done = self.get_batch_size()
+        
+        batch_cell_ids = self.get_next_batch_ids()
 
         if hasattr(self, "target"):
            self.correct_target_count(len(batch_cell_ids))
-        
-        # reproduction
-        for child_i, cell_i in enumerate(batch_cell_ids):
-            p = parents[cell_i]
-            child = self.new_child(p, parents)
-            # child.to(self.config.device)
-            for _ in range(self.config.initial_mutations):
-                child.mutate()
-                
-            new_children.append((child_i, cell_i, child))
-            # new_children[-1][2].to(self.config.device)
-            
-            self.total_offspring += 1
-            
-            if len(new_children) >= batch_size:
-                break
-        
-                
-        return new_children, batch_cell_ids, initial_pop_done
 
+        return parents, batch_cell_ids, initial_pop_done, batch_size
+
+    @torch.no_grad()
     def bloat_population(self, new_children):
         n_bloat = torch.zeros(len(new_children), device=self.config.device, dtype=torch.int32)
         if config.bloat_prune_ratio>0:
@@ -316,7 +347,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 print("SGD improvement:", (after.mean()-before.mean()).item())
         return steps, n_passes
     
-        
+
+    @torch.no_grad()
     def prune_population(self, new_children, n_bloat):
         
         if config.bloat_prune_ratio>0:
@@ -334,6 +366,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         return n_pruned, n_pruned_nodes
 
 
+    @torch.no_grad()
     def replace_by_voting(self, fit_child, normed_fit_child):
         """ 
         The meat of MOVE
@@ -365,6 +398,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         return votes, improvement, replaces
     
 
+    @torch.no_grad()
     def replacement(self, new_children, fit_children, fc_normed, batch_cell_ids, agg_fc_normed, initial_pop_done):
         all_replacements = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
         
@@ -443,17 +477,38 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         return all_replacements
     
     
+    @torch.no_grad()
     def save_checkpoint(self):
         print("Saving checkpoint")
         self.record.save_checkpoint(self.run_dir, self.checkpoints_dir, self.map, self.config, self.current_batch,
                                     save_data=False)
         self.save_move_info()
         
+
+    @torch.no_grad()
     def selection_and_reproduction(self):
+        evolve_this_batch = self.current_batch == 0 or (self.current_batch+1) % self.config.evolve_every == 0
         
-        # Choose parents
-        new_children, batch_cell_ids, initial_pop_done = self.selection()
-        
+        # selection
+        if evolve_this_batch:
+            parents, batch_cell_ids, initial_pop_done, batch_size = self.selection()
+        else: # no need to select
+            batch_size, initial_pop_done = self.get_batch_size()
+            batch_cell_ids = self.get_next_batch_ids()
+
+        # reproduction
+        if evolve_this_batch:
+            new_children = self.reproduction(parents, batch_cell_ids, batch_size)
+        else: # new genomes are parents
+            parents = self.map.get_population(include_empty=True)
+            new_children = []
+            for i, cell_i in enumerate(batch_cell_ids):
+                p = parents[cell_i]
+                new_children.append((i, cell_i, p))
+
+        # mutation
+        self.mutation([g for _,_,g in new_children])
+
         # Bloat, SGD, prune  
         n_bloat                  = self.bloat_population(new_children)
         steps, n_passes          = self.sgd_population(new_children, batch_cell_ids)
@@ -462,13 +517,16 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         # Measure children
         fit_children, fc_normed, agg_fc_normed = self.measure_fitness(new_children, None)
         
-        # Replace elites        
-        all_replacements = self.replacement(new_children,
-                                            fit_children,
-                                            fc_normed,
-                                            batch_cell_ids,
-                                            agg_fc_normed,
-                                            initial_pop_done)
+        # Replace elites    
+        if evolve_this_batch:
+            all_replacements = self.replacement(new_children,
+                                                fit_children,
+                                                fc_normed,
+                                                batch_cell_ids,
+                                                agg_fc_normed,
+                                                initial_pop_done)
+        else:
+            all_replacements = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
 
         # Record keeping
         self.record_keep(new_children, steps, n_pruned, n_pruned_nodes, all_replacements, n_passes)
@@ -495,6 +553,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         return votes, D, replaces
    
    
+    @torch.no_grad()
     def batch_end(self):
         self.solution_fitness = -torch.inf # force to update
         # self.record_keeping(skip_fitness=False)
@@ -513,13 +572,13 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             self.save_checkpoint()
     
 
+    @torch.no_grad()
     def save_move_info(self):
         with open(os.path.join(self.run_dir, "cell_names.csv"), "w") as f:
             f.write(",".join(self.map.cell_names))
         with open(os.path.join(self.run_dir, "function_names.csv"), "w") as f:
             f.write(",".join([fn.__name__ for fn in self.fns]))
-      
-            
+                
         torch.save(self.map.fn_mask, os.path.join(self.run_dir, "fn_mask.pt"))
         
         

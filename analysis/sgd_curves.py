@@ -117,7 +117,7 @@ if __name__=='__main__':
     
     print(diff_first_step_last_step)
     sns.barplot(data=diff_first_step_last_step, x='condition_path', y='loss_diff', hue='batch')
-    plt.savefig('sgd-steps-inner-loop-diff.png')
+    plt.savefig('sgd-steps-inner-loop-diff.pdf')
     plt.close()
     
     print(get_stats_by_batch(diff_first_step_last_step, 'first', 'last', 'loss_diff'))
@@ -125,14 +125,14 @@ if __name__=='__main__':
     plt.figure(figsize=(10, 6))
     plt.rcParams['font.size'] = 16
     results = results[results['batch']!='mid']
-    results = results.replace({'batch': {'first': 'First children', 'last': 'Last children'}})
+    results = results.replace({'batch': {'first': 'First generation', 'last': 'Last generation'}})
     sns.lineplot(data=results, x='step', y='loss', hue='batch', legend='full')
     plt.title('Inner Loop Loss')
     plt.legend(title="")
-    plt.xlabel('SGD Step')
-    plt.ylabel('SGD Loss')
+    plt.xlabel('GD Step')
+    plt.ylabel('GD Loss')
 
-    plt.savefig('analysis/sgd-steps-inner-loop.png')
+    plt.savefig('analysis/sgd-steps-inner-loop.pdf')
     plt.close()
     import statsmodels.api as sm
     import statsmodels.formula.api as smf
@@ -141,7 +141,7 @@ if __name__=='__main__':
 
     # difference in difference test
     did_results['time'] = did_results['step']
-    did_results['treatment'] = did_results['batch'].apply(lambda x: 1 if x == 'Last children' else 0)
+    did_results['treatment'] = did_results['batch'].apply(lambda x: 1 if x == 'Last generation' else 0)
     did_results['outcome'] = did_results['loss'] - did_results['loss'].mean()
     did_results['trajectory_id'] = did_results['run']
 

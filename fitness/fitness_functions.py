@@ -22,8 +22,9 @@ def control(candidates, target):
    return torch.rand(len(candidates), dtype=torch.float32, device=target.device)
 
 
+@torch.no_grad()
 def correct_dims(candidates, target):
-   return candidates, target # should never be needed
+   # return candidates, target # should never be needed
    # return candidates, target
    f,r = candidates, target
    if len(f.shape) == 2:

@@ -9,7 +9,7 @@
 #SBATCH --time=48:00:00
 # GPUS
 #SBATCH --gres=gpu:1
-#SBATCH --mem=64G
+#SBATCH --mem=32G
 # Name of this job
 #SBATCH --job-name=MOVE
 # Output of this job, stderr and stdout are joined by default
@@ -17,8 +17,6 @@
 #SBATCH --output=../results/jobs/%j.out
 # stop 60 seconds early to save output
 #SBATCH --signal=B:SIGINT@60
-
-# USAGE: sbatch submit-move-experiment.sh [EXPERIMENT_FILE] [OUTDIR] [CONDA_ENV] [JOBS]
 
 # Allow for the use of conda activate
 source ~/.bashrc
@@ -30,41 +28,21 @@ cd ${SLURM_SUBMIT_DIR}
 # your job execution follows:
 echo "starting job"
 
-EXPERIMENT_FILE="../default.json"
-OUTDIR="../results/default"
 CONDA_ENV="move"
-
+OUTDIR="../results/default"
 JOBS=1
+
 
 if [ ! -z "$1" ]
   then
-    echo "Using $1 as experiment file"
-    EXPERIMENT_FILE=$1
+    echo "Using $1 as conda env"
+    CONDA_ENV=$1
 fi
 
-if [ ! -z "$2" ]
-  then
-    echo "Using $2 as output directory"
-    OUTDIR=$2
-fi
-
-if [ ! -z "$3" ]
-  then
-    echo "Using $3 as conda env"
-    CONDA_ENV=$3
-fi
-
-
-if [ ! -z "$4" ]
-  then
-    echo "Using $4 jobs"
-    JOBS=$4
-fi
 
 conda activate "$CONDA_ENV"
 
 nvidia-smi
-
 
 
 CMDS=()
@@ -73,16 +51,15 @@ then
   echo "Running $JOBS jobs"
   for i in $(seq 2 $JOBS)
   do
-    CMDS+=("time python -O move.py -c ${EXPERIMENT_FILE} -o ${OUTDIR} &")
+    CMDS+=("time python analysis/topology_mutations.py &")
   done
 
 fi
 
-CMDS+=("time python -O move.py -c ${EXPERIMENT_FILE} -o ${OUTDIR}")
+CMDS+=("time python analysis/topology_mutations.py")
 
 mkdir -p ${OUTDIR}
 NOW="$(date +"%D %T")"
-echo "START $SLURM_JOB_ID : $NOW : run $EXPERIMENT_FILE : $CMDS" >> ../results/record.out
 echo "$SLURM_JOB_ID : $NOW : run $EXPERIMENT_FILE : $CMDS" >> ../results/ongoing.out
 echo "START $SLURM_JOB_ID : $NOW : run $EXPERIMENT_FILE : $CMDS" >> "../results/$OUTDIR/job.out"
 for ((i = 0; i < ${#CMDS[@]}; i++)) 

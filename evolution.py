@@ -98,7 +98,7 @@ class CPPNEvolutionaryAlgorithm(object):
 
         self.total_batches = initial_batches + other_batches
         if self.config.stop_condition is not None:
-            self.total_batches = self.stop_condition.n_batches(self) + 1 # +1 to be safe
+            self.total_batches = math.ceil(self.stop_condition.n_batches(self) * 1.5) # x1.5 to be safe
         print("Expecting up to", self.total_batches, "batches")
         print("Stop condition:", self.stop_condition.__class__.__name__ if self.stop_condition is not None else "None")
         

@@ -24,7 +24,7 @@ metrics = [
 
 condition_filter = ["100_steps_"]
 
-results = read_tensor_results(results_path, metrics, max_runs=None, condition_filter=condition_filter)
+results, unfinished = read_tensor_results(results_path, metrics, max_runs=None, condition_filter=condition_filter)
 
 # %%
 results['condition_path'] = results['condition'].copy()

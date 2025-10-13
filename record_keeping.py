@@ -52,8 +52,34 @@ class Record():
         self.update_thread = threading.Thread(target=self._update_worker, daemon=True)
         self.update_thread.start()
     
+    def expand_arrays(self, additional_batches, config):
+        additional_points = additional_batches // config.record_frequency_batch
+        print(f"Expanding record arrays by {additional_points} points")
+        self.agg_fitness_by_batch = torch.cat((self.agg_fitness_by_batch, torch.ones((self.agg_fitness_by_batch.shape[0], additional_points), device='cpu')*-torch.inf), dim=1)
+        self.evals_by_batch = torch.cat((self.evals_by_batch, torch.ones((additional_points, self.evals_by_batch.shape[1]), device='cpu')*-torch.inf), dim=0)
+        self.normed_fitness_by_batch = torch.cat((self.normed_fitness_by_batch, torch.ones((self.normed_fitness_by_batch.shape[0], self.normed_fitness_by_batch.shape[1], additional_points), device='cpu')*-torch.inf), dim=2)
+        if not self.low_mem:
+            self.total_pruned = torch.cat((self.total_pruned, torch.ones((additional_points, self.total_pruned.shape[1]), device='cpu')*-torch.inf), dim=0)
+            self.fitness_by_batch = torch.cat((self.fitness_by_batch, torch.ones((self.fitness_by_batch.shape[0], self.fitness_by_batch.shape[1], additional_points), device='cpu')*-torch.inf), dim=2)
+            # self.votes_by_batch = torch.cat((self.votes_by_batch, torch.zeros((self.votes_by_batch.shape[0], self.votes_by_batch.shape[1], self.votes_by_batch.shape[2], additional_points), device='cpu')), dim=3)
+            self.replacements_by_batch = torch.cat((self.replacements_by_batch, torch.zeros((self.replacements_by_batch.shape[0], self.replacements_by_batch.shape[1], additional_points), device='cpu')), dim=2)
+            self.ids_by_batch = torch.cat((self.ids_by_batch, torch.ones((self.ids_by_batch.shape[0], additional_points), device='cpu', dtype=torch.int64)*-1), dim=1)
+            self.parents_by_batch = torch.cat((self.parents_by_batch, torch.ones((self.parents_by_batch.shape[0], self.parents_by_batch.shape[1], additional_points), device='cpu', dtype=torch.int64)*-1), dim=2)
+            self.lr_by_batch = torch.cat((self.lr_by_batch, torch.ones((self.lr_by_batch.shape[0], additional_points), device='cpu')*-torch.inf), dim=1)
+            self.offspring_by_batch = torch.cat((self.offspring_by_batch, torch.ones((self.offspring_by_batch.shape[0]+additional_points), device='cpu')*-torch.inf), dim=0)
+            self.cx_by_batch = torch.cat((self.cx_by_batch, torch.ones((self.cx_by_batch.shape[0]+additional_points, self.cx_by_batch.shape[1]), device='cpu')*-torch.inf), dim=0)
+            self.nodes_by_batch = torch.cat((self.nodes_by_batch, torch.ones((self.nodes_by_batch.shape[0]+additional_points, self.nodes_by_batch.shape[1]), device='cpu')*-torch.inf), dim=0)
+            self.time_elapsed = torch.cat((self.time_elapsed, torch.ones((self.time_elapsed.shape[0]+additional_points), device='cpu')*-torch.inf), dim=0)
+
+
 
     def update_counts(self, index, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes, n_step_passes):
+        # check to ensure we don't overflow
+        if index >= self.evals_by_batch.shape[0]:
+            # expand
+            self.expand_arrays((index - self.evals_by_batch.shape[0] + 1)*10, config={'record_frequency_batch':1})
+
+
         self.n_fwds += n_step_fwds
         self.n_fwds_incl_sgd += n_step_fwds_incl_sgd
         self.n_evals += n_step_evals
@@ -104,7 +130,6 @@ class Record():
 
 
     def _perform_update(self, index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring):
-        # Original update logic goes here
         self.agg_fitness_by_batch[:, index] = agg_fitnesses.cpu()
         self.normed_fitness_by_batch[:, :, index] = normed_fitnesses.cpu()
         if not self.low_mem:
@@ -214,9 +239,9 @@ class Record():
                 individual = flat_map[i]
                 individual.to(config.device)
                 img = individual(inputs, channel_first=True, act_mode="node").detach().cpu()
-                if len(config.color_mode)<3:
+                if img.shape[0]<3:
                     img = img.repeat(3, 1, 1)
-                
+
                 try:
                     img = img.permute(1,2,0) # (H,W,C)
                     img = torch.clamp(img,0,1).numpy()
@@ -337,3 +362,4 @@ class Record():
         #     plt.ylabel("Aggregated fitness")
         #     plt.savefig(os.path.join(alg.run_dir, "current_fitness.png"))
         #     plt.close()
+

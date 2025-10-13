@@ -491,7 +491,7 @@ class CPPN(nn.Module):
 
     def add_connection(self, config, specific_cx=None):
         """Adds a connection to the CPPN."""
-        if len(self.connections) >= config.max_connections:
+        if config.max_connections != None and len(self.connections) >= config.max_connections:
             return
         self.update_layers()
         
@@ -541,7 +541,7 @@ class CPPN(nn.Module):
             Looks for an eligible connection to split, add the node in the middle
             of the connection.
         """
-        if len(self.nodes) >= config.max_nodes:
+        if config.max_nodes != None and len(self.nodes) >= config.max_nodes:
             return
         
         # only add nodes in the middle of non-recurrent connections (TODO)

@@ -103,6 +103,11 @@ class MOVEConfig(CPPNConfig):
         self.coord_range = (-0.5, 0.5)
         
         self.grad_every = 1
+        self.evolve_every = 1
+
+        self.evolve_only_after_sgd = False
+        if self.evolve_only_after_sgd:
+            self.evolve_every = self.grad_every
         
 
         
@@ -166,6 +171,11 @@ class MOVEConfig(CPPNConfig):
         
         self.record_frequency_batch = 1 # record every batch
     
+    def intialize_linked_variables(self):
+        if self.evolve_only_after_sgd:
+            self.evolve_every = self.grad_every
+        
+        self.num_outputs = len(self.color_mode)
 
     def fns_to_strings(self):
         """Converts the activation functions to strings."""
@@ -224,6 +234,7 @@ class MOVEConfig(CPPNConfig):
                 self.objective_functions[i] = name_to_fn[self.objective_functions[i]]
         
         self.NO_GRADIENT = ff.NO_GRADIENT
+        self.intialize_linked_variables()
         
 
 def resize_image(image, size, device):

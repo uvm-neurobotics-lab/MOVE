@@ -14,10 +14,12 @@
         "max_weight": 10.0,
         "init_connection_probability": 0.01,
         "stop_condition": "passes",
-        "stop_condition_value": 2000000,
+        "stop_condition_value": 1000000,
         "total_offspring": 10000000,
         "batch_size": 50,
-        "initial_batch_size": 50
+        "initial_batch_size": 50,
+        "max_nodes": null,
+        "max_connections": null
     },
 
     "targets":[
@@ -51,16 +53,18 @@
 
     "variables":[
        "sgd_steps",
-       "grad_every"
+       "grad_every",
+        "evolve_only_after_sgd"
     ],
 
 
     "levels":[
-        [100, 1000],
-        [25,50,100]
+        [1000],
+        [25, 50, 100],
+        [true, false]
 
     ],
 
-    "name_template": "{sgd_steps:03d}_steps_every_{grad_every:03d}"
+    "name_template": "{sgd_steps:03d}_steps_every_{grad_every:03d}_evolve_{evolve_only_after_sgd}"
 
 }

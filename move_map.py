@@ -126,7 +126,7 @@ class MOVEMap(object):
                 raise ValueError("Cannot use novelty tiebreaker without an autoencoder.")
             raise NotImplementedError("Novelty tiebreaker not implemented yet")
         
-    def get_population(self, include_empty=False):
+    def get_population(self, include_empty=False) -> list:
         output = []
         output = np.array(self.map).flatten()
         if include_empty:

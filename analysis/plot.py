@@ -76,7 +76,7 @@ def process_tensor(result, name, fns=None, reduce=True, max_batch=None):
 def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=True, only_final=False, condition_filter=None, max_batch=None, exclude_targets=[None, "None"]):
     cond_dir = os.path.join(results_path, "conditions")
     results = []
-    
+    unfinished = []
     total_expected_results = 0
     for name in names:
         for cond in os.listdir(cond_dir):
@@ -89,6 +89,7 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
             for run in runs:
                 pt_path = os.path.join(cond_path, run, f"{name}.pt")
                 if not os.path.exists(pt_path):
+                    unfinished.append(os.path.join(cond_path, run))
                     continue
                 target_path = os.path.join(cond_path, run, "target.txt")
                 if not os.path.exists(target_path):
@@ -117,6 +118,8 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
                 for run in runs:
                     pt_path = os.path.join(cond_path, run, f"{name}.pt")
                     if not os.path.exists(pt_path):
+                        if not os.path.join(cond_path, run) in unfinished:
+                            unfinished.append(os.path.join(cond_path, run))
                         continue
                     t = torch.load(pt_path)
                     t = process_tensor(t, name, fns, reduce, max_batch)
@@ -129,6 +132,8 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
 
                     if t is None:
                         print("Did not find tensor for", name, "at", pt_path)
+                        if not os.path.join(cond_path, run) in unfinished:
+                            unfinished.append(os.path.join(cond_path, run))
                         continue
 
                     target_path = os.path.join(cond_path, run, "target.txt")
@@ -229,7 +234,7 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
     final_df = results[0]
     for df in tqdm(results[1:], desc="Merging"):
         final_df = final_df.combine_first(df)
-    return final_df
+    return final_df, unfinished
 
 
 
@@ -272,10 +277,6 @@ def plot_xy(results, x, y, save_path=None, show=False, x_label=None, y_label=Non
     # legend.get_texts = lambda: legend.texts 
     # legend.get_legend_handles_labels = lambda: (legend.legendHandles, legend.texts)
 
-
-            
-    
-
     if x_label is not None:
         plt.xlabel(x_label)
     if y_label is not None:
@@ -299,25 +300,25 @@ def plot_vs_batches(results, y, save_path=None, show=False, max_ofs=None):
     plot_xy(results, "batch", y, save_path, show)
 
 
-def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False, smooth=None, title=None, y_label=None, x_label=None, experiment_name= None, leg_title=None, x_axis_as_prop=False, close=True):
+def plot_vs_evals(results, y, save_path=None, show=False, mean_by_target=False, smooth=None, title=None, y_label=None, x_label=None, experiment_name= None, leg_title=None, x_axis_as_prop=False, close=True, x_var = 'evals_by_batch'):
     conds =  results.condition.unique()
     print("in plot: ", results.condition.unique())
     try:
-        results = results.drop(columns=[c for c in results.columns if c not in[ "condition", "target", 'run', 'batch', 'evals_by_batch', y]])
+        results = results.drop(columns=[c for c in results.columns if c not in[ "condition", "target", 'run', 'batch', x_var, y]])
         
 
         if x_axis_as_prop:
-            results['evals'] = results['evals_by_batch'] / results['evals_by_batch'].max()
+            results['evals'] = results[x_var] / results[x_var].max()
             
         else:
             num_points = len(results['batch'].unique())
             if smooth is not None and smooth > 0:
                 num_points = int(num_points * (1.0-smooth))
-            evals_by_batch = np.linspace(results['evals_by_batch'].min(),
-                                        results['evals_by_batch'].max(),
+            evals_by_batch = np.linspace(results[x_var].min(),
+                                        results[x_var].max(),
                                         num_points)
             # find closest evals 
-            results['evals'] = results['evals_by_batch'].apply(lambda x: evals_by_batch[np.abs(evals_by_batch - x + 1).argmin()])
+            results['evals'] = results[x_var].apply(lambda x: evals_by_batch[np.abs(evals_by_batch - x + 1).argmin()])
         
         save_name = f"{y}_v_evals.pdf"
         if mean_by_target:
@@ -392,7 +393,7 @@ if __name__ == "__main__":
 
     ]
     # offs_results = read_tensor_results(args.results_path, "offspring_by_batch")
-    results = read_tensor_results(args.results_path, metrics, max_runs=None)
+    results, unfinished = read_tensor_results(args.results_path, metrics, max_runs=None)
     # results = results.dropna()
     print(results)
 
