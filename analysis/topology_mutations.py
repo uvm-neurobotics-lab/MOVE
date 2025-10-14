@@ -23,19 +23,20 @@ import imageio as iio
 
 # from cppn_torch.graph_util import activate_population
 # from cppn.util import visualize_network, initialize_inputs
-from cppn.util import *
-from cppn.cppn import CPPN
-from move_config import MoveConfig, resize_image
+from MOVE.cppn.util import *
+from MOVE.cppn.cppn import CPPN
+from MOVE.move_config import MOVEConfig, resize_image
+MoveConfig = MOVEConfig
 
-from util import *
+from MOVE.util import *
 
-from move_map import MOVEMap
-from run_setup import run_setup
-from sgd_weights import sgd_weights, sgd_weights_imaml
-from record_keeping import Record
+from MOVE.move_map import MOVEMap
+from MOVE.run_setup import run_setup
+from MOVE.sgd_weights import sgd_weights, sgd_weights_imaml
+from MOVE.record_keeping import Record
 
-from norm import norm_tensor, read_norm_data
-import fitness.fitness_functions as ff
+from MOVE.norm import norm_tensor, read_norm_data
+from MOVE.fitness import fitness_functions as ff
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

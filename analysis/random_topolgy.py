@@ -69,13 +69,13 @@ N_TRIALS = 2
 
 
 # %%
-from norm import read_norm_data
-from sgd_weights import sgd_weights
+from MOVE.norm import read_norm_data
+from MOVE.sgd_weights import sgd_weights
 
-from cppn import CPPN
+from MOVE.cppn import CPPN
 from tqdm import trange
-from move_config import MOVEConfig
-from cppn.visualize import visualize_network
+from MOVE.move_config import MOVEConfig
+from MOVE.cppn.visualize import visualize_network
 import copy 
 
 

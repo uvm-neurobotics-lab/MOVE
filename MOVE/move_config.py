@@ -2,16 +2,15 @@
 import os
 from typing import Callable
 import uuid
-from cppn.activation_functions import *
-# from evolution_torch import AlgorithmConfig
-from cppn.config import CPPNConfig
 import torch
 import imageio.v2 as iio
-from cppn.util import center_crop, resize
 import logging
-from fitness.name_to_fn import name_to_fn
+from .cppn.activation_functions import *
+from .cppn.config import CPPNConfig
+from .cppn.util import center_crop, resize
+from .fitness.name_to_fn import name_to_fn
 from torchvision.transforms import Resize
-import fitness.fitness_functions as ff
+from .fitness import fitness_functions as ff
 
 
 class MOVEConfig(CPPNConfig):
@@ -65,7 +64,7 @@ class MOVEConfig(CPPNConfig):
         #                     KernelEdgeActivation,
         #                     KernelEmbossActivation,
         #                     torch.nn.Hardshrink,
-                            
+        
         #                     ] 
         
         self.soft_mask_sigma = None # don't use a soft mask (binary mask)

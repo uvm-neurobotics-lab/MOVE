@@ -25,7 +25,7 @@ sns.color_palette("colorblind")
 
 import dask.dataframe as dd
 
-from norm import norm_from_saved, read_norm_data
+from MOVE.norm import norm_from_saved, read_norm_data
 
 try:
     from .collect_data import collect_data

@@ -1,21 +1,37 @@
 """Fitness functions."""
 import logging
-import piq
+import warnings
 import torch
 from torchvision.transforms import Resize
 import networkx as nx
 
 from torchvision.models import vgg16, VGG16_Weights
 
-from fitness.style_loss import StyleLoss
-from fitness.dists import DISTS
-from fitness.lpips import LPIPS
-from fitness.dss import dss as piq_dss
+try:
+   import piq
+except ImportError:  # pragma: no cover - optional dependency
+   piq = None  # type: ignore
+
+try:
+   import piqa
+   from piqa import HaarPSI
+except ImportError:  # pragma: no cover - optional dependency
+   piqa = None  # type: ignore
+   HaarPSI = None  # type: ignore
+
+from .style_loss import StyleLoss
+from .dists import DISTS
+from .lpips import LPIPS
+from .dss import dss as piq_dss
 
 FEATURE_EXTRACTOR = vgg16(weights=VGG16_Weights.DEFAULT).features
 
-from piqa import HaarPSI
-import piqa
+
+def _require_piq():
+   if piq is None or piqa is None or HaarPSI is None:
+      raise ImportError(
+         "The 'piq' and 'piqa' packages are required for fitness metrics such as DSS, GMSD, MDSI, MS-SSIM, and HaarPSI."
+      )
 
 
 def control(candidates, target):
@@ -139,6 +155,7 @@ def lpips(candidates, target):
 
 
 def haarpsi(candidates, target):
+   _require_piq()
    assert_images(candidates, target)
    if "HAARPSI_INSTANCE" in globals().keys() and candidates.device in globals()["HAARPSI_INSTANCE"].keys():
       haarpsi_instance = globals()["HAARPSI_INSTANCE"][candidates.device]
@@ -157,16 +174,19 @@ def dss(candidates, target):
    return value
    
 def gmsd(candidates, target):
+   _require_piq()
    assert_images(candidates, target)
    loss = piq.gmsd(candidates, target, data_range=1., reduction='none')
    return torch.sub(0.35, loss) # 0.35 is max value
 
 def mdsi(candidates, target):
    # TODO NAN IN GRAD
+   _require_piq()
    assert_images(candidates, target)
    return 1.0 - piq.mdsi(candidates, target, data_range=1., reduction='none')
 
 def msssim(candidates, target):
+   _require_piq()
    assert_images(candidates, target)
    value = piq.multi_scale_ssim(candidates, target, data_range=1., kernel_size=3,k2=0.2,
                                 reduction='none')
@@ -192,6 +212,7 @@ def style(candidates, target):
    return value
 
 def content(candidates, target):
+   _require_piq()
    if "CONTENT_INSTANCE" in globals().keys() and candidates.device in globals()["CONTENT_INSTANCE"].keys():
       content_instance = globals()["CONTENT_INSTANCE"][candidates.device]
    else:
@@ -205,6 +226,7 @@ def content(candidates, target):
    return value
 
 def pieAPP(candidates, target):
+   _require_piq()
    assert_images(candidates, target)
    candidates,target = Resize((128,128))(candidates), Resize((128,128))(target)
    loss = piq.PieAPP(reduction='none', stride=32)(candidates, target)
@@ -216,21 +238,25 @@ def pieAPP(candidates, target):
 approach is that the human visual system is highly adapted to
 extract structural information from visual scenes. (https://ece.uwaterloo.ca/~z70wang/publications/SPM09.pdf pg. 105)"""
 def ssim(candidates, target):
+   _require_piq()
    assert_images(candidates, target)
    value = piq.ssim(candidates, target, data_range=1.0, reduction='none')
    return value
 
 def psnr(candidates, target):
+   _require_piq()
    assert_images(candidates, target)
    return torch.div(piq.psnr(candidates, target, data_range=1.0, reduction='none'), 50.0) # max is normally 50 DB
 
 def vif(candidates, target):
+   _require_piq()
    assert_images(candidates, target)
    candidates, target = Resize((41,41),antialias=False)(candidates), Resize((41,41),antialias=False)(target)
    value = piq.vif_p(candidates, target, data_range=1.0, reduction='none')
    return value
 
 def vsi(candidates, target):
+   _require_piq()
    # TODO NAN IN GRAD
    if "VSI_INSTANCE" in globals().keys() and candidates.device in globals()["VSI_INSTANCE"].keys():
       vsi_instance = globals()["VSI_INSTANCE"][candidates.device]
@@ -249,12 +275,14 @@ def vsi(candidates, target):
    return value
 
 def srsim(candidates, target):
+   _require_piq()
    assert_images(candidates, target)
    candidates, target = Resize((161,161),antialias=False)(candidates), Resize((161,161),antialias=False)(target)
    value = piq.srsim(candidates, target, data_range=1.0, reduction='none')
    return value
 
 def fsim(candidates, target):
+   _require_piq()
    # TODO NAN IN GRAD
    if "FSIM_INSTANCE" in globals().keys() and candidates.device in globals()["FSIM_INSTANCE"].keys():
       fsim_instance = globals()["FSIM_INSTANCE"][candidates.device]

@@ -9,7 +9,7 @@ import __main__ as main
 
 from tqdm import trange
 from tqdm import tqdm
-from norm import norm_tensor, norm_tensor_by_tensor
+from .norm import norm_tensor, norm_tensor_by_tensor
 
 
 class EarlyStopping:
@@ -32,14 +32,18 @@ class EarlyStopping:
 				return True
 		return False
 	
-	def mask_stop(self, loss):
-		loss=loss.flatten()
-		improve = loss < (self.min_loss_tensor + self.min_delta)
+	def mask_stop(self, loss, indices=None):
+		loss = loss.flatten()
+		if indices is None:
+			indices = torch.arange(loss.shape[0], device=self.counter_tensor.device)
+		else:
+			indices = indices.to(self.counter_tensor.device)
+		improve = loss < (self.min_loss_tensor[indices] + self.min_delta)
 		
-		self.counter_tensor = torch.where(improve, 0, self.counter_tensor+1)
-		self.min_loss_tensor = torch.where(improve, loss, self.min_loss_tensor)
+		self.counter_tensor[indices] = torch.where(improve, 0, self.counter_tensor[indices] + 1)
+		self.min_loss_tensor[indices] = torch.where(improve, loss, self.min_loss_tensor[indices])
 		
-		result = self.counter_tensor >= self.patience
+		result = self.counter_tensor[indices] >= self.patience
 
 		# shorten tensors
 		# self.min_loss_tensor = torch.where(result, torch.nan, self.min_loss_tensor) # replace the losses that are stopped with nan
@@ -138,12 +142,11 @@ def _sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3,
 	sgd_steps = config.sgd_steps
 	
 
-
 	if isinstance(sgd_steps, str) and 'annealing' in sgd_steps:
-	   anneal(config, sgd_steps, genomes, current_gen)
+		anneal(config, sgd_steps, genomes, current_gen)
 	if sgd_steps == 0:
 		return 0 # took no steps
-						
+					
 	
 	# if isinstance(genomes[0], tuple):
 		# genomes = [g for c_,ci_,g in genomes]
@@ -152,7 +155,7 @@ def _sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3,
 		# filter fns to only the ones that are enabled in mask
 		fns = [fn for i, fn in enumerate(fns) if mask[i].any()]
 		mask = mask[mask.any(dim=1)]
-	
+		
 		
 	all_params = []
 	for _,_,c in genomes:
@@ -316,7 +319,7 @@ def _sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3,
 		if isinstance(pbar, tqdm):
 			pbar.set_postfix_str(f"loss={loss.detach().clone().mean().item():.3f}")
 			pbar.set_description_str(f"Optimizing {n_params}/{n_params_total} params on {len(this_genomes)}/{len(genomes)} genomes and {len(fns)} fns lr: {avg_lr:.2e}")
-	
+		
 		
 	return step+1
 
@@ -395,37 +398,23 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, 
 
 		# Clamp params if configured
 		if config.max_weight:
-			for pg in all_params:
-				for param in pg['params']:
+			for group in all_params:
+				for param in group['params']:
 					param.data.clamp_(-config.max_weight, config.max_weight)
 
-		# Update stopping mask
-		stop_mask[active_indices] |= stopping.mask_stop(per_genome_loss)
+		stop_updates = stopping.mask_stop(per_genome_loss, indices=active_indices)
+		stop_mask[active_indices] |= stop_updates
 
-		# Global early stopping
-		if early_stop and stopping.check_stop(loss.item()):
+		if stop_mask.all():
 			break
 
 		if isinstance(pbar, tqdm):
-			pbar.set_postfix(loss=f"{loss.item():.4f}")
+			pbar.set_postfix_str(f"loss={loss.item():.4f}")
 
 	return step + 1
 
 
-
-
-"""
-Require: Distribution over tasks P (T ), outer step size η, regularization strength λ,
-	while not converged do
-		Sample mini-batch of tasks {Ti}B i=1 ∼ P (T )
-		for Each task Ti do
-			Compute task meta-gradient gi = Implicit-Meta-Gradient(Ti, θ, λ)
-		end for
-		Average above gradients to get ˆ∇F (θ) = (1/B) ∑B i=1 gi
-		Update meta-parameters with gradient descent: θ ← θ − η ˆ∇F (θ) // (or Adam)
-	end while
-"""
-def sgd_weights_imaml(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0):
+def sgd_weights_imaml(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0, unequal_shape=False, record_passes=[0,0]):
 	assert mask is not None, "IMAML requires a cell-function mask"
 	
 	param_deltas = []
@@ -439,17 +428,19 @@ def sgd_weights_imaml(genomes, mask, inputs, target, fns, norm, config, early_st
 		print("Task", i, task.__name__)
 	
 		total_steps += sgd_weights(these_genomes,
-								   None,
-								   inputs,
-								   target,
-								   [task],
-								   norm,
-								   config,
-								   early_stop,
-								   record_loss,
-								   skip_pbar,
-								   current_gen
-								   )
+							   None,
+							   inputs,
+							   target,
+							   [task],
+							   norm,
+							   config,
+							   early_stop,
+							   record_loss,
+							   skip_pbar,
+							   current_gen,
+							   unequal_shape,
+							   record_passes
+							   )
 		if record_loss is not None:
 			losses.append(record_loss.clone())
 		
@@ -458,7 +449,7 @@ def sgd_weights_imaml(genomes, mask, inputs, target, fns, norm, config, early_st
 		delta = [p1-p0 for p0,p1 in zip(params_before, params_after)]
 		param_deltas.append(delta)
 	
-	if record_loss is not None:
+	if record_loss is not None and losses:
 		record_loss[:] = torch.stack(losses).mean(dim=0) # record the average loss by step
 	
 	delta_mag = 0 # for recording
@@ -493,9 +484,6 @@ def sgd_weights_imaml(genomes, mask, inputs, target, fns, norm, config, early_st
 				
 				
 	print("Ended up with", len(genomes), "genomes")
-	print("\t Avg. parameter delta magnitude:", delta_mag.item()/len(genomes))
+	print("\t Avg. parameter delta magnitude:", delta_mag.item()/len(genomes) if len(genomes) > 0 else 0)
 	
 	return total_steps
-		
-	
-	

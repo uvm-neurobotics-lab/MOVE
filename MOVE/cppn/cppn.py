@@ -5,13 +5,18 @@ from itertools import count
 import json
 import torch
 from torch import nn
-from torchviz import make_dot
-from cppn.util import *
-from cppn.graph_util import *
-import cppn.activation_functions as af
-from cppn.config import CPPNConfig
+
+try:  # Optional dependency used only for graph visualization helpers
+    from torchviz import make_dot
+except ImportError:  # pragma: no cover - visualization is optional
+    make_dot = None
+
+from .util import *
+from .graph_util import *
+from . import activation_functions as af
+from .config import CPPNConfig
 from tqdm import trange
-from cppn.fourier_features import add_fourier_features
+from .fourier_features import add_fourier_features
 
 
 class Node(nn.Module):
@@ -973,9 +978,8 @@ class CPPN(nn.Module):
         
             
     
-if __name__== "__main__":
-    from cppn.fourier_features import add_fourier_features
-    from torchviz import make_dot
+if __name__ == "__main__":
+    from .fourier_features import add_fourier_features
     
     size = (256, 256)
     
@@ -1002,12 +1006,11 @@ if __name__== "__main__":
     output = cppn(inputs)
     
     import imageio.v2 as imageio
-    import cv2
     
     
     target = imageio.imread('../data/sunrise.png', pilmode='RGB')
     # resize
-    target = cv2.resize(target, size) / 255.0
+    target = resize(target, size) / 255.0
     target = torch.tensor(target, dtype=torch.float32, device=device)
     
     loss_fn = nn.MSELoss()

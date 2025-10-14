@@ -1,5 +1,5 @@
 from typing import Callable
-from cppn.activation_functions import ACTIVATION_FUNCTIONS
+from .activation_functions import ACTIVATION_FUNCTIONS
 name_to_fn = ACTIVATION_FUNCTIONS
 
 def register_activation_function(name, fn):

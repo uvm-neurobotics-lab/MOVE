@@ -17,8 +17,12 @@ import torch.nn.functional as F
 from typing import Union
 from torch.nn.modules.loss import _Loss
 
-from piq.utils import _validate_input, _reduce
-from piq.functional import gaussian_filter, rgb2yiq
+try:  # Optional dependency
+    from piq.utils import _validate_input, _reduce  # type: ignore
+    from piq.functional import gaussian_filter, rgb2yiq  # type: ignore
+    _PIQ_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    _PIQ_AVAILABLE = False
 
 
 def dss(x: torch.Tensor, y: torch.Tensor, reduction: str = 'mean',
@@ -47,6 +51,9 @@ def dss(x: torch.Tensor, y: torch.Tensor, reduction: str = 'mean',
         Image will be scaled to [0, 255] because all constants are computed for this range.
         Make sure you know what you are doing when changing default coefficient values.
     """
+    if not _PIQ_AVAILABLE:
+        raise ImportError("piq is required to compute the DSS metric.")
+
     if sigma_weight == 0 or sigma_similarity == 0:
         raise ValueError(f'Gaussian sigmas must not be 0, got sigma_weight: {sigma_weight} and '
                          f'sigma_similarity: {sigma_similarity}')

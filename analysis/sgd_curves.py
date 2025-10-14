@@ -5,8 +5,8 @@ import sys
 sys.path.append(os.path.abspath('../'))
 from analysis_util import *
 
-from norm import read_norm_data
-from sgd_weights import sgd_weights
+from MOVE.norm import read_norm_data
+from MOVE.sgd_weights import sgd_weights
 from stats import *
 
 config=None

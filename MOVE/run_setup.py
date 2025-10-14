@@ -1,15 +1,14 @@
-
 import json
 import os
 import imageio.v2 as iio
 # from evolution_torch import apply_condition
-from move_config import apply_condition
+from .move_config import apply_condition
 import torch
 import matplotlib.pyplot as plt
-import fitness.fitness_functions as ff
-from move_config import MOVEConfig
+from .fitness import fitness_functions as ff
+from .move_config import MOVEConfig
 # from cppn_torch import ImageCPPN
-from cppn.cppn import CPPN as ImageCPPN
+from .cppn.cppn import CPPN as ImageCPPN
 import logging
 
 def fix_target_dimensions(config):

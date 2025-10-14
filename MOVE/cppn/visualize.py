@@ -3,7 +3,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from cppn.graph_util import required_for_output, get_ids_from_individual
+from .graph_util import required_for_output, get_ids_from_individual
 
 def draw_nodes(graph, pos, node_labels, node_size):
     """Draw nodes on the graph"""

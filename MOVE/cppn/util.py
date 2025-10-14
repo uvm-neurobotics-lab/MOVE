@@ -8,13 +8,20 @@ import networkx as nx
 from torch import nn
 import torch
 from typing import List, Union
-from cv2 import resize as cv2_resize
+try:  # Optional dependency; fall back to Pillow if unavailable.
+    from cv2 import resize as cv2_resize  # type: ignore
+except ImportError:  # pragma: no cover - OpenCV is optional
+    cv2_resize = None  # type: ignore
+    try:
+        from PIL import Image
+    except ImportError:  # pragma: no cover - Pillow is optional
+        Image = None  # type: ignore
 import itertools
 import random
 from typing import Callable, List, Union, Tuple
 
 # from cppn.cppn import NodeType
-from cppn.normalization import handle_normalization
+from .normalization import handle_normalization
    
 from torchvision.transforms import GaussianBlur
 
@@ -159,7 +166,16 @@ def gaussian_blur(img, sigma, kernel_size=(5,5)):
         
         
 def resize(img, size):
-    return cv2_resize(img, size)
+    if cv2_resize is not None:
+        return cv2_resize(img, size)
+    if 'Image' in globals() and Image is not None:
+        pil_img = Image.fromarray((img * 255).astype(np.uint8) if img.dtype != np.uint8 else img)
+        resized = pil_img.resize(size[::-1], resample=Image.BILINEAR)
+        output = np.asarray(resized)
+        if img.dtype != np.uint8:
+            output = output.astype(np.float32) / 255.0
+        return output
+    raise ImportError("Neither OpenCV nor Pillow is available for image resizing.")
 
 def center_crop(img, r, c):
     h, w = img.shape[:2]

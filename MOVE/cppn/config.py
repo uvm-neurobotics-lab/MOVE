@@ -10,8 +10,8 @@ import torch
 import typing
 import logging
 
-from cppn.activation_functions import *
-from cppn.name_to_fn import name_to_fn
+from .activation_functions import *
+from .name_to_fn import name_to_fn
 
 class CPPNConfig:
     """Stores configuration parameters for the CPPN."""

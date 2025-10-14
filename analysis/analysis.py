@@ -3,9 +3,9 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from fitness.fitness_functions import GENOTYPE_FUNCTIONS
+from MOVE.fitness.fitness_functions import GENOTYPE_FUNCTIONS
 import math
-from norm import read_norm_data, norm
+from MOVE.norm import read_norm_data, norm
 
 import argparse
 

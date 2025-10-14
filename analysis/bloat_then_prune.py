@@ -9,11 +9,11 @@ import os
 import pandas as pd
 import seaborn as sns
 
-from cppn import CPPN
+from MOVE.cppn import CPPN
 
-from cppn.graph_util import get_matching_connections, genetic_difference
-from norm import read_norm_data
-from sgd_weights import sgd_weights
+from MOVE.cppn.graph_util import get_matching_connections, genetic_difference
+from MOVE.norm import read_norm_data
+from MOVE.sgd_weights import sgd_weights
 from analysis_util import *
 
 

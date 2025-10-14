@@ -1,11 +1,9 @@
-from cppn.cppn import CPPN
-from move_config import MOVEConfig, resize_target
+from MOVE.cppn.cppn import CPPN, Node
+from MOVE.move_config import MOVEConfig, resize_target
 import json
-import os 
+import os
 import torch
 import tqdm
-from cppn.cppn import Node
-from move_config import MOVEConfig, resize_target
 import imageio.v2 as iio
 
 import matplotlib.pyplot as plt

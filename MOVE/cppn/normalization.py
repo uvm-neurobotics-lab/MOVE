@@ -225,7 +225,6 @@ if __name__== '__main__':
     img = img.permute(2,0,1).to(device)
     coords = coords.permute(2,0,1).to(device)
     #%%
-    from cppn.normalization import *
     imagenet = Normalization(device)
     for norm in available_normalizations:
         Y = handle_normalization(img, norm, imagenet)

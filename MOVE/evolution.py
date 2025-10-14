@@ -17,16 +17,16 @@ else:
 import pandas as pd
 import torch
 import os
-from cppn.cppn import CPPN
-from cppn.util import *
-from stopping import *
+from .cppn.cppn import CPPN
+from .cppn.util import *
+from .stopping import *
 import logging
-from util import get_dynamic_mut_rate
-import fitness.fitness_functions as ff
+from .util import get_dynamic_mut_rate
+from .fitness import fitness_functions as ff
 from torchvision.transforms import Resize
-from cppn.visualize import visualize_network
+from .cppn.visualize import visualize_network
 
-from cppn.fourier_features import add_fourier_features
+from .cppn.fourier_features import add_fourier_features
 
 class CPPNEvolutionaryAlgorithm(object):
     def __init__(self, config, debug_output=False) -> None:
