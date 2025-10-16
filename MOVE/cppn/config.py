@@ -185,13 +185,13 @@ class CPPNConfig:
         setattr(self, parameter, value)
         
     def set_res(self, *res):
-        """Sets the resolution of the output image."""
+        """Sets the output resolution using (height, width)."""
         if len(res) == 1:
             self.res_w = res[0]
             self.res_h = res[0]
         else:
-            self.res_w = res[0]
-            self.res_h = res[1]
+            self.res_h = res[0]
+            self.res_w = res[1]
     
     def setup(self):
         if self.output_dir is None:

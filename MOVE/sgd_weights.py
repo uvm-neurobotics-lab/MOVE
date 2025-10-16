@@ -2,14 +2,19 @@ import copy
 import matplotlib.pyplot as plt
 import logging
 import os
+from typing import Dict, Tuple
 import torch
-from torchvision.transforms import Resize
+import torch.nn.functional as F
 import __main__ as main
 
 
 from tqdm import trange
 from tqdm import tqdm
 from .norm import norm_tensor, norm_tensor_by_tensor
+from .util import is_canonical_image_batch
+
+
+_TARGET_PREP_CACHE: Dict[Tuple[int, Tuple[int, ...], torch.device], torch.Tensor] = {}
 
 
 class EarlyStopping:
@@ -53,10 +58,25 @@ class EarlyStopping:
 		
 		return result
 
-resize = Resize((33, 33),antialias=True)
-def min_resize(imgs):
-	if imgs.shape[-1] < 33 or imgs.shape[-2] < 33:
-		return resize(imgs)
+def _ensure_batched_rgb(imgs: torch.Tensor) -> torch.Tensor:
+	if imgs.ndim == 2:
+		imgs = imgs.unsqueeze(0).unsqueeze(0)
+	elif imgs.ndim == 3:
+		imgs = imgs.unsqueeze(0)
+	if imgs.ndim != 4:
+		raise ValueError(f"Unsupported image tensor with shape {tuple(imgs.shape)}")
+	if imgs.shape[1] == 1:
+		imgs = imgs.repeat(1, 3, 1, 1)
+	elif imgs.shape[1] != 3 and imgs.shape[-1] == 3:
+		imgs = imgs.permute(0, 3, 1, 2)
+	elif imgs.shape[1] not in (1, 3):
+		imgs = imgs[:, :3]
+	return imgs.contiguous()
+
+
+def _resize_to_min(imgs: torch.Tensor) -> torch.Tensor:
+	if imgs.shape[-2] < 33 or imgs.shape[-1] < 33:
+		imgs = F.interpolate(imgs, size=(33, 33), mode="bilinear", align_corners=False)
 	return imgs
 
 def anneal_steps_sigmoid(gen, max_gens):
@@ -127,14 +147,20 @@ def batch_lr_mod(inputs, config, all_params, lr):
 		param_group['lr'] = param_group['lr'] * mod
 
 
-def prep_images(imgs, config):
+def prep_images(imgs, config, *, copy: bool = False):
 	assert torch.isfinite(imgs).all(), "NaNs in images"
-	if imgs.shape[1] != 3:
-		imgs = imgs.repeat(1, 3, 1, 1) # grayscale to RGB
-	
-	imgs = min_resize(imgs)
-	
-	return imgs
+	if is_canonical_image_batch(imgs):
+		result = imgs.clone() if copy else imgs
+		return result.contiguous()
+
+	working = imgs.clone() if copy else imgs
+	working = _ensure_batched_rgb(working)
+	if working.dtype != torch.float32:
+		working = working.to(dtype=torch.float32)
+	working = _resize_to_min(working)
+	working = torch.nan_to_num(working, nan=0.0, posinf=1.0, neginf=0.0)
+	working = torch.clamp(working, 0.0, 1.0)
+	return working.contiguous()
 
 
 def _sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0, unequal_shape=False):
@@ -324,7 +350,7 @@ def _sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3,
 	return step+1
 
 
-def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0, unequal_shape=False, record_passes=[0,0]):
+def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0, unequal_shape=False, record_passes=[0,0], normalizer=None):
 	lr = config.sgd_learning_rate
 	sgd_steps = config.sgd_steps
 
@@ -357,14 +383,31 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, 
 	pbar = trange(sgd_steps, disable=skip_pbar or sgd_steps <= 5)
 
 	stop_mask = torch.zeros(len(genomes), dtype=torch.bool, device=config.device)
+	cache_key = (int(target.data_ptr()), tuple(target.shape), target.device)
+	target_prepared = _TARGET_PREP_CACHE.get(cache_key)
+	if target_prepared is None or target_prepared.shape != target.shape:
+		target_prepared = prep_images(target, config, copy=True)
+		_TARGET_PREP_CACHE[cache_key] = target_prepared
 
 	def compute_loss(genomes_batch, inputs_batch, target_batch, mask_batch):
 		imgs = torch.stack([g(inputs_batch[i] if unequal_shape and len(inputs_batch.shape) > 3 else inputs_batch, force_recalculate=True, channel_first=True) for i, g in enumerate(genomes_batch)])
 		imgs = prep_images(imgs, config)
-		normed = torch.stack([
-			norm_tensor(fn(imgs, target_batch), norm, fn.__name__, clamp=True, warn=False) 
-			for fn in fns
-		], dim=1)
+		components = []
+		for fn in fns:
+			fitness = fn(imgs, target_batch)
+			if fitness.dim() == 0:
+				fitness = fitness.unsqueeze(0)
+			if not torch.isfinite(fitness).all():
+				fitness = fn(imgs, target_batch)
+				if fitness.dim() == 0:
+					fitness = fitness.unsqueeze(0)
+			fitness = fitness.to(device=imgs.device, dtype=torch.float32, non_blocking=True)
+			if normalizer is not None:
+				normed_fit = normalizer(fn, fitness)
+			else:
+				normed_fit = norm_tensor(fitness, norm, fn.__name__, clamp=True, warn=False)
+			components.append(normed_fit.to(dtype=torch.float32))
+		normed = torch.stack(components, dim=1) if components else torch.empty((imgs.shape[0], 0), device=imgs.device)
 		if mask_batch is not None:
 			normed *= mask_batch.T
 		loss = (1.0 - normed).mean(dim=1)
@@ -377,11 +420,13 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, 
 
 		active_genomes = [genomes[i][2] for i in active_indices]
 		active_inputs = inputs if inputs.dim() == 3 else inputs[active_indices]
-		active_target = target[active_indices]
+		active_target = target_prepared[active_indices]
 		active_mask = mask[:, active_indices] if mask is not None else None
 
 		optimizer.zero_grad()
 		loss, per_genome_loss = compute_loss(active_genomes, active_inputs, active_target, active_mask)
+		loss = loss.to(dtype=torch.float32)
+		per_genome_loss = per_genome_loss.to(dtype=torch.float32)
 		record_passes[0] += len(active_genomes)
 
 		if record_loss is not None:
@@ -414,7 +459,7 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, 
 	return step + 1
 
 
-def sgd_weights_imaml(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0, unequal_shape=False, record_passes=[0,0]):
+def sgd_weights_imaml(genomes, mask, inputs, target, fns, norm, config, early_stop=3, record_loss=None, skip_pbar=False, current_gen=0, unequal_shape=False, record_passes=[0,0], normalizer=None):
 	assert mask is not None, "IMAML requires a cell-function mask"
 	
 	param_deltas = []
@@ -439,7 +484,8 @@ def sgd_weights_imaml(genomes, mask, inputs, target, fns, norm, config, early_st
 							   skip_pbar,
 							   current_gen,
 							   unequal_shape,
-							   record_passes
+							   record_passes,
+							   normalizer
 							   )
 		if record_loss is not None:
 			losses.append(record_loss.clone())

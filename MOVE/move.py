@@ -3,8 +3,11 @@ import os
 import random
 import copy
 import torch
+import torch.nn.functional as F
 import logging
 import math
+from typing import Dict, Tuple
+from contextlib import nullcontext
 
 import numpy as np
 
@@ -28,12 +31,17 @@ from .record_keeping import Record
 
 from .norm import norm_tensor, read_norm_data
 from .fitness import fitness_functions as ff
+from .fitness.feature_cache import feature_cache_scope
 
 
 class MOVE(CPPNEvolutionaryAlgorithm):
     def __init__(self, config, debug_output=False) -> None:
         self.config = copy.deepcopy(config)
+        self._show_progress = bool(getattr(self.config, "show_progress", True))
         
+        if not hasattr(self.config, "use_amp"):
+            self.config.use_amp = True
+
         
         if self.config.objective_functions is None:
             # default: use all from paper
@@ -68,10 +76,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self.n_fns = self.map.n_fns
         self.fns_per_cell = self.map.fns_per_cell
         self.use_avg_fit = self.config.get("use_avg_fit", False)
-        
+            
         self.record = Record(self.config, self.n_fns, self.n_cells, self.total_batches, self.config.low_mem)
         self.norm = read_norm_data(self.config.norm_df_path, self.config.target_path)
-        
+        self._prepare_norm_stats()
+
         self.init_inputs()
         
         self.init_target()        
@@ -89,6 +98,97 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         print("Initialized MOVE on device:", self.config.device)
         
                             
+    def _prepare_norm_stats(self) -> None:
+        self._norm_stats: Dict[str, Tuple[torch.Tensor, torch.Tensor]] = {}
+        self._norm_eps = torch.tensor(1e-8, device=self.config.device, dtype=torch.float32)
+
+        norm_df = self.norm
+        if norm_df is None or not hasattr(norm_df, "groupby"):
+            return
+        if not hasattr(norm_df, "columns") or "function" not in norm_df.columns:
+            return
+
+        grouped = norm_df.groupby("function").mean(numeric_only=True)
+        min_col = "min_fitness_mean" if "min_fitness_mean" in grouped.columns else "min_fitness"
+        max_col = "max_fitness_mean" if "max_fitness_mean" in grouped.columns else "max_fitness"
+        if min_col not in grouped.columns or max_col not in grouped.columns:
+            return
+
+        for fn_name, row in grouped.iterrows():
+            min_val = float(row[min_col])
+            max_val = float(row[max_col])
+            if not math.isfinite(min_val) or not math.isfinite(max_val):
+                continue
+            span_val = max(max_val - min_val, 1e-8)
+            min_tensor = torch.tensor(min_val, device=self.config.device, dtype=torch.float32)
+            span_tensor = torch.tensor(span_val, device=self.config.device, dtype=torch.float32)
+            self._norm_stats[str(fn_name)] = (min_tensor, span_tensor)
+
+
+    def _normalize_with_cache(self, fn, fitness: torch.Tensor, *, clamp: bool = False) -> torch.Tensor:
+        if fn in ff.NO_NORM or fitness.numel() == 0:
+            return fitness
+
+        key = getattr(fn, "__name__", None)
+        cache = self._norm_stats.get(key) if key is not None else None
+
+        if cache is not None:
+            min_t, span_t = cache
+            if min_t.device != fitness.device or min_t.dtype != fitness.dtype:
+                min_t = min_t.to(device=fitness.device, dtype=fitness.dtype)
+                span_t = span_t.to(device=fitness.device, dtype=fitness.dtype)
+                self._norm_stats[key] = (min_t, span_t)
+
+            eps = self._norm_eps.to(device=span_t.device, dtype=span_t.dtype)
+            denom = torch.clamp(span_t, min=eps)
+            normalized = (fitness - min_t) / denom
+            if clamp:
+                normalized = torch.clamp(normalized, 0.0, 1.0)
+            if torch.isfinite(normalized).all().item():
+                return normalized
+
+        if key is None:
+            return fitness
+
+        normalized = norm_tensor(fitness, self.norm, key, warn=False, clamp=clamp)
+        return normalized
+
+
+    def _can_skip_correct_dims(self, batch_imgs: torch.Tensor) -> bool:
+        return (
+            isinstance(batch_imgs, torch.Tensor)
+            and batch_imgs.ndim == 4
+            and batch_imgs.shape[1] == 3
+            and isinstance(self.target, torch.Tensor)
+            and self.target.ndim == 4
+            and self.target.shape[1] == 3
+        )
+
+
+    def _finalize_target(self, target: torch.Tensor, batch_imgs: torch.Tensor) -> torch.Tensor:
+        batch_size = batch_imgs.shape[0]
+        target = target[:batch_size]
+        if target.device != batch_imgs.device or target.dtype != batch_imgs.dtype:
+            target = target.to(device=batch_imgs.device, dtype=batch_imgs.dtype, non_blocking=True)
+        if target.shape[-2:] != batch_imgs.shape[-2:]:
+            target = F.interpolate(
+                target,
+                size=batch_imgs.shape[-2:],
+                mode="bilinear",
+                align_corners=False,
+            )
+        if not is_canonical_image_batch(target):
+            target = torch.nan_to_num(target, nan=0.0, posinf=1.0, neginf=0.0)
+            target = torch.clamp(target, 0.0, 1.0)
+        else:
+            target = target.contiguous()
+        if target.dtype != torch.float32:
+            target = target.to(dtype=torch.float32)
+        if target is not self.target:
+            self.target = target
+        return target
+
+
     def init_sgd(self, batch_cell_ids=None):
         if self.config.sgd_steps == 0:
             return
@@ -174,65 +274,113 @@ class MOVE(CPPNEvolutionaryAlgorithm):
     
 
     @torch.no_grad()
+    @torch.no_grad()
     def measure_fitness(self, genomes, imgs, skip_genotype=False):
-        # Calculate the number of batches required
-        num_batches = math.ceil(len(genomes) / self.config.batch_size)
-        print("Measuring fitness in", num_batches, "batches")
-        genomes_batched = [genomes[i:i+self.config.batch_size] for i in range(0, len(genomes), self.config.batch_size)]
+        total = len(genomes)
+        if total == 0:
+            empty = torch.zeros((0, len(self.fns)), device=self.config.device, requires_grad=False)
+            return empty, empty.clone(), empty.new_zeros(0)
 
-        fit_children = torch.zeros((len(genomes), len(self.fns)), device=self.config.device, requires_grad=False)
-        fc_normed = torch.zeros((len(genomes), len(self.fns)), device=self.config.device, requires_grad=False)
+        batch_size = self.config.batch_size
+        num_batches = math.ceil(total / batch_size)
+
+        fit_children = torch.zeros((total, len(self.fns)), device=self.config.device, requires_grad=False)
+        fc_normed = torch.zeros_like(fit_children)
 
         if self.config.dry_run:
-            # Random fitness for dry run
-            fit_children = torch.rand((len(genomes), len(self.fns)), device=self.config.device, requires_grad=False)
+            fit_children = torch.rand((total, len(self.fns)), device=self.config.device, requires_grad=False)
             return fit_children, fit_children.clone()
 
-        pbar = tqdm(total=num_batches, desc="Measuring fitness")
-        for batch_index, batch_genomes in enumerate(genomes_batched):
-            self.correct_target_count(len(batch_genomes))
-            batch_start_idx = batch_index * self.config.batch_size
+        pbar = tqdm(total=num_batches, desc="Measuring fitness") if self._show_progress else None
+        for batch_start in range(0, total, batch_size):
+            batch_end = min(batch_start + batch_size, total)
+            batch_slice = slice(batch_start, batch_end)
+            batch_genomes = genomes[batch_slice]
+
+            current_batch_size = batch_end - batch_start
+            self.correct_target_count(current_batch_size)
+
             if imgs is None:
-                batch_imgs = self.activate_population([g for _,_,g in batch_genomes])
+                batch_imgs = self.activate_population([g for _, _, g in batch_genomes])
             else:
-                batch_imgs = imgs[batch_start_idx:batch_start_idx+len(batch_genomes)]
-            
-            # clamp batch images to [0,1]
-            batch_imgs = torch.clamp(batch_imgs, 0.0, 1.0)
+                batch_imgs = imgs[batch_start:batch_end]
 
-            for i, fn in enumerate(self.fns):
-                if fn in ff.GENOTYPE_FUNCTIONS:
-                    if skip_genotype:
-                        continue
-                    # Evaluating genotype directly
-                    fitness = fn([g[2] for g in genomes[batch_start_idx:batch_start_idx+len(batch_imgs)]])
-                    normed_fitness = torch.tensor([-torch.inf]*len(batch_imgs), device=self.config.device, requires_grad=False)
-                else:
-                    # Evaluating based on images
-                    fitness = fn(batch_imgs, self.target)
-                    if fitness.dim() == 0:
-                        fitness = fitness.unsqueeze(0)
-                    if fn not in ff.NO_NORM:
-                        normed_fitness = norm_tensor(fitness, self.norm, fn.__name__, warn=False)
+            if not is_canonical_image_batch(batch_imgs):
+                batch_imgs = torch.nan_to_num(batch_imgs, nan=0.0, posinf=1.0, neginf=0.0)
+                batch_imgs = torch.clamp(batch_imgs, 0.0, 1.0)
+            else:
+                batch_imgs = batch_imgs.contiguous()
 
-                if not fn in ff.NO_MEAN:
-                    fc_normed[batch_start_idx:batch_start_idx+len(batch_imgs), i] = normed_fitness
+            if self._can_skip_correct_dims(batch_imgs):
+                corrected_target = self._finalize_target(self.target, batch_imgs)
+            else:
+                batch_imgs, corrected_target = ff.correct_dims(batch_imgs, self.target)
+                corrected_target = self._finalize_target(corrected_target, batch_imgs)
 
-                fit_children[batch_start_idx:batch_start_idx+len(batch_imgs), i] = normed_fitness if self.use_avg_fit else fitness
-            pbar.update(1)
-            
-        # Normalizing collected fitness components
-        if len(fc_normed) > 0:
-            fc_normed = fc_normed
-        else:
-            fc_normed = fit_children.clone()  # Not normalizing anything
+            use_amp = bool(getattr(self.config, "use_amp", True))
+            use_cuda_amp = use_amp and torch.device(self.config.device).type == "cuda"
+            amp_whitelist = {"lpips", "dists"}
+            with feature_cache_scope():
+                for i, fn in enumerate(self.fns):
+                    normed_fitness = torch.full((current_batch_size,), -torch.inf, device=self.config.device)
+                    if fn in ff.GENOTYPE_FUNCTIONS:
+                        if skip_genotype:
+                            continue
+                        fitness = fn([g[2] for g in genomes[batch_slice]]).to(
+                            device=self.config.device,
+                            dtype=fit_children.dtype,
+                            non_blocking=True,
+                        )
+                    else:
+                        fn_name = getattr(fn, "__name__", "")
+                        amp_ctx = (
+                            torch.cuda.amp.autocast(dtype=torch.float16)
+                            if use_cuda_amp and fn_name in amp_whitelist
+                            else nullcontext()
+                        )
+                        with amp_ctx:
+                            fitness = fn(batch_imgs, corrected_target)
+                        if fitness.dim() == 0:
+                            fitness = fitness.unsqueeze(0)
+                        if not torch.isfinite(fitness).all():
+                            disable_ctx = (
+                                torch.cuda.amp.autocast(enabled=False)
+                                if torch.device(self.config.device).type == "cuda"
+                                else nullcontext()
+                            )
+                            with disable_ctx:
+                                fitness = fn(batch_imgs, corrected_target)
+                                if fitness.dim() == 0:
+                                    fitness = fitness.unsqueeze(0)
+                        fitness = fitness.to(device=self.config.device, non_blocking=True)
+                        normed_fitness = fitness
+                        if fn not in ff.NO_NORM:
+                            normed_fitness = self._normalize_with_cache(fn, fitness)
 
-        # Assigning final fitness to genomes
+                    if fitness.dtype != fit_children.dtype:
+                        fitness = fitness.to(dtype=fit_children.dtype)
+                    if normed_fitness.dtype != fc_normed.dtype:
+                        normed_fitness = normed_fitness.to(dtype=fc_normed.dtype)
+
+                    if fn not in ff.NO_MEAN:
+                        fc_normed[batch_slice, i] = normed_fitness
+
+                    fit_children[batch_slice, i] = normed_fitness if self.use_avg_fit else fitness
+
+            if pbar is not None:
+                pbar.update(1)
+
+        if pbar is not None:
+            pbar.close()
+
+        if len(fc_normed) == 0:
+            fc_normed = fit_children.clone()
+
         for idx, (g, f) in enumerate(zip(genomes, fc_normed)):
             f = f[f != -torch.inf]
             g[2].fitness = f.mean().detach()
-            
-        agg_fc_normed   = fc_normed.detach().mean(dim=1)
+
+        agg_fc_normed = fc_normed.detach().mean(dim=1)
 
         return fit_children, fc_normed, agg_fc_normed
 
@@ -314,34 +462,48 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         return n_bloat
     
 
-    def sgd_population(self, new_children, batch_cell_ids):
-        steps=0
-        n_passes = [len(new_children),0] # fwd, back (will always do 1 fwd)
-        if self.config.sgd_steps > 0 and self.config.with_grad and (self.current_batch+1) % self.config.grad_every == 0:
-            # do SGD update
+    def sgd_population(self, new_children, batch_cell_ids, *, baseline=None, return_fitness: bool = False):
+        steps = 0
+        n_passes = [len(new_children), 0]  # fwd, back (will always do 1 fwd)
+        after_result = baseline
+        before_fit = None
+
+        if self.config.sgd_steps > 0 and self.config.with_grad and (self.current_batch + 1) % self.config.grad_every == 0:
             self.init_sgd(batch_cell_ids)
             if self.config.thread_count > 1:
                 raise NotImplementedError("Multiprocessing no longer implemented for MOVE")
             else:
-                before, _, _ = self.measure_fitness(new_children, None)
+                if baseline is not None:
+                    before_fit, _, _ = baseline
+                else:
+                    before_fit, _, _ = self.measure_fitness(new_children, None)
 
-                sgd_fn = sgd_weights 
+                sgd_fn = sgd_weights
                 if self.config.sgd_strat == 'imaml':
                     sgd_fn = sgd_weights_imaml
-                steps = sgd_fn(new_children, 
-                            mask          = self.mask,
-                            # mask          = None, # SGD on all functions
-                            inputs        = self.inputs,
-                            target        = self.target,
-                            fns           = self.sgd_fns,
-                            norm          = self.norm,
-                            # norm          = None,
-                            config        = self.config,
-                            early_stop    = self.config.sgd_early_stop,
-                            record_passes = n_passes
-                            )
-                after, _, _ = self.measure_fitness(new_children, None)
-                print("SGD improvement:", (after.mean()-before.mean()).item())
+
+                steps = sgd_fn(
+                    new_children,
+                    mask=self.mask,
+                    inputs=self.inputs,
+                    target=self.target,
+                    fns=self.sgd_fns,
+                    norm=self.norm,
+                    config=self.config,
+                    early_stop=self.config.sgd_early_stop,
+                    record_passes=n_passes,
+                    normalizer=lambda fn, fitness: self._normalize_with_cache(fn, fitness, clamp=True),
+                )
+
+                if steps > 0:
+                    after_result = self.measure_fitness(new_children, None)
+                    after_fit, _, _ = after_result
+                    print("SGD improvement:", (after_fit.mean() - before_fit.mean()).item())
+                else:
+                    after_result = baseline if baseline is not None else (before_fit, None, None)
+
+        if return_fitness:
+            return steps, n_passes, after_result
         return steps, n_passes
     
 

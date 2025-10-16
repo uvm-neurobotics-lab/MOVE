@@ -225,6 +225,7 @@ class CPPN(nn.Module):
         
         self.input_node_ids =   [str(i) for i in range(-1, -self.n_input - 1, -1)]
         self.output_node_ids =  [str(i) for i in range(-self.n_input - 1, -self.n_input - self.n_output - 1, -1)]
+        self._fitness = torch.tensor(-torch.inf, device=self.device)
         
         if do_init:
             self.id = type(self).get_id()
@@ -245,6 +246,16 @@ class CPPN(nn.Module):
         if config.sgd_steps <= 0:
             # no SGD so we can disable parameter tracking
             self.remove_parameters()
+
+    @property
+    def fitness(self):
+        return self._fitness
+
+    @fitness.setter
+    def fitness(self, value):
+        if isinstance(value, torch.Tensor):
+            value = value.to(self.device)
+        self._fitness = torch.as_tensor(value, device=self.device)
                 
     def remove_parameters(self):
         for node in self.nodes.values():

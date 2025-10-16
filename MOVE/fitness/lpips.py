@@ -1,4 +1,4 @@
-r"""Learned Perceptual Image Patch Similarity (LPIPS)
+"""Learned Perceptual Image Patch Similarity (LPIPS)
 
 This module implements the LPIPS in PyTorch.
 
@@ -14,15 +14,15 @@ References:
     .. [Deng2009] ImageNet: A large-scale hierarchical image database (Deng et al, 2009)
 """
 
-import inspect
-import os
 import torch
 import torch.nn as nn
-import torchvision.models as models
 import torch.hub as hub
 
 from torch import Tensor
 from typing import Dict, List, Tuple
+
+from .feature_cache import cached_result
+from .vgg_cache import get_vgg_features
 
 ORIGIN: str = 'https://github.com/richzhang/PerceptualSimilarity'
 SHIFT: Tensor = torch.tensor([0.485, 0.456, 0.406])
@@ -137,44 +137,6 @@ def get_weights(
     return weights
 
 
-class Intermediary(nn.Module):
-    r"""Module that catches and returns the outputs of intermediate
-    target layers of a sequential module during its forward pass.
-
-    Args:
-        layers: A sequential module.
-        targets: A list of target layer indexes.
-    """
-
-    def __init__(self, layers: nn.Sequential, targets: List[int]):
-        super().__init__()
-
-        self.layers = nn.ModuleList()
-        j = 0
-
-        seq: List[nn.Module] = []
-
-        for i, layer in enumerate(layers):
-            seq.append(layer)
-
-            if i == targets[j]:
-                self.layers.append(nn.Sequential(*seq))
-                seq.clear()
-
-                j += 1
-                if j == len(targets):
-                    break
-
-    def forward(self, input: Tensor) -> List[Tensor]:
-        output = []
-
-        for layer in self.layers:
-            input = layer(input)
-            output.append(input)
-
-        return output
-
-
 class LPIPS(nn.Module):
     r"""Creates a criterion that measures the LPIPS
     between an input :math:`x` and a target :math:`y`.
@@ -216,7 +178,7 @@ class LPIPS(nn.Module):
 
     def __init__(
         self,
-        vgg16_features,
+        _vgg16_features,
         scaling: bool = True,
         dropout: bool = False,
         pretrained: bool = True,
@@ -246,14 +208,8 @@ class LPIPS(nn.Module):
         # else:
         #     raise ValueError(f'Unknown network architecture {network}')
 
-        layers = vgg16_features
-        targets = [3, 8, 15, 22, 29]
+        self._feature_layers = (3, 8, 15, 22, 29)
         channels = [64, 128, 256, 512, 512]
-        
-
-        self.net = Intermediary(layers, targets)
-        for p in self.net.parameters():
-            p.requires_grad = False
 
         # Linear comparators
         self.lins = nn.ModuleList([
@@ -280,15 +236,48 @@ class LPIPS(nn.Module):
             value_range=(0., 1.) if self.scaling else (0., -1.),
         )
 
-        # ImageNet scaling
-        if self.scaling:
-            input = (input - self.shift) / self.scale
-            target = (target - self.shift) / self.scale
+        raw_input = input
+        raw_target = target
 
-        # LPIPS
+        def _scaled(tensor: Tensor) -> Tensor:
+            if not self.scaling:
+                return tensor
+            return (tensor - self.shift) / self.scale
+
+        # Prepare feature stacks (cached per raw tensor identity)
+        input_scaled = cached_result(
+            ("lpips", "scaled"),
+            raw_input,
+            lambda: _scaled(raw_input),
+        ) if self.scaling else raw_input
+
+        target_scaled = cached_result(
+            ("lpips", "scaled"),
+            raw_target,
+            lambda: _scaled(raw_target),
+            persistent=True,
+        ) if self.scaling else raw_target
+
+        input_features = get_vgg_features(
+            input_scaled,
+            self._feature_layers,
+            cache_tensor=raw_input,
+        )
+        target_features = get_vgg_features(
+            target_scaled,
+            self._feature_layers,
+            persistent=True,
+            detach=True,
+            store_on_cpu=True,
+            cache_tensor=raw_target,
+        )
+
+        if target_features and target_features[0].device != input_features[0].device:
+            target_features = tuple(f.to(input_features[0].device) for f in target_features)
+
         residuals = []
 
-        for lin, fx, fy in zip(self.lins, self.net(input), self.net(target)):
+        for lin, fx, fy in zip(self.lins, input_features, target_features):
             fx = fx / l2_norm(fx, dims=[1], keepdim=True)
             fy = fy / l2_norm(fy, dims=[1], keepdim=True)
 

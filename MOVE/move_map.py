@@ -115,7 +115,7 @@ class MOVEMap(object):
         # Set up fitness matrix
         self.fitness = torch.ones((self.n_fns, self.n_cells), device=self.config.device)*-torch.inf # fns in each cell
         self.normed_fitness = torch.ones((self.n_fns, self.n_cells), device=self.config.device)*-torch.inf # fns in each cell
-        self.agg_fitness = torch.zeros((self.n_cells), device="cpu") # fitness of each cell (normed)
+        self.agg_fitness = torch.zeros((self.n_cells), device=self.config.device) # fitness of each cell (normed)
     
         self.map = [None] * np.prod(self.n_cells) # fill with None
     
@@ -144,7 +144,7 @@ class MOVEMap(object):
         return agg_fitnesses
 
     def get_fitnesses(self):
-        return self.fitness.cpu()
+        return self.fitness
 
         
     def random_non_empty_cell(self):

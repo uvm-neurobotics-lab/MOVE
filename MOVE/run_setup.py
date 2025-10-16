@@ -54,7 +54,9 @@ def run_setup(config_class = MOVEConfig, config_override=None):
     parser.add_argument('-pl', '--parallel', action='store_true', help=f'Run in parallel (default: False).')
     parser.add_argument('-ci', '--condition', action='store', help=f'Condition index to run (default: None, run all).')
     parser.add_argument('-r', '--resume', action='store', type=str, help=f'Resume from a checkpoint.')
-    
+    parser.add_argument('-sv', '--stop-value', type=int, default=None, help='Stop if stop_condition(value() is reached.')
+    parser.add_argument('-sc', '--stop-condition', type=str, default=None, help='Condition to stop on (see docs TODO).')
+
     args = parser.parse_args()
     
     if args.config is None and config_override is not None:
@@ -101,6 +103,12 @@ def run_setup(config_class = MOVEConfig, config_override=None):
     if args.num_hidden_nodes > 0:
         parsed['controls']["hidden_nodes_at_start"] = args.num_hidden_nodes
     
+        
+    if args.stop_condition is not None:
+        parsed['controls']["stop_condition"] = args.stop_condition
+    if args.stop_value is not None:
+        parsed['controls']["stop_value"] = args.stop_value
+        
     config = config_class()
     config.device = torch.device(args.device)
     

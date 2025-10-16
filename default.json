@@ -19,7 +19,7 @@
         "n_fourier_features": 0,
         "max_weight":10.0,
         "stop_condition": "passes",
-        "stop_condition_value": 500,
+        "stop_condition_value": 50000,
         "target_resize":[33,33]
     },
     "conditions": [

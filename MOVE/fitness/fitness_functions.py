@@ -2,10 +2,11 @@
 import logging
 import warnings
 import torch
+import torch.nn.functional as F
 from torchvision.transforms import Resize
 import networkx as nx
 
-from torchvision.models import vgg16, VGG16_Weights
+from torchvision.models import VGG16_Weights
 
 try:
    import piq
@@ -23,8 +24,8 @@ from .style_loss import StyleLoss
 from .dists import DISTS
 from .lpips import LPIPS
 from .dss import dss as piq_dss
-
-FEATURE_EXTRACTOR = vgg16(weights=VGG16_Weights.DEFAULT).features
+from ..util import is_canonical_image_batch
+from .backbones import FEATURE_EXTRACTOR
 
 
 def _require_piq():
@@ -38,69 +39,66 @@ def control(candidates, target):
    return torch.rand(len(candidates), dtype=torch.float32, device=target.device)
 
 
+def _ensure_batched_rgb(img: torch.Tensor) -> torch.Tensor:
+   if img.ndim == 2:
+      img = img.unsqueeze(0).unsqueeze(0)
+   elif img.ndim == 3:
+      if img.shape[0] in (1, 3) and img.shape[1] != 3 and img.shape[2] != 3:
+         img = img.unsqueeze(0)
+      elif img.shape[-1] == 3 and img.shape[0] != 3:
+         img = img.permute(2, 0, 1).unsqueeze(0)
+      else:
+         img = img.unsqueeze(1)
+   elif img.ndim == 4:
+      if img.shape[1] not in (1, 3) and img.shape[-1] == 3:
+         img = img.permute(0, 3, 1, 2)
+   else:
+      raise ValueError(f"Unsupported image tensor with shape {tuple(img.shape)}")
+
+   if img.ndim != 4:
+      img = img.unsqueeze(0)
+
+   if img.shape[1] == 3:
+      return img.contiguous()
+   if img.shape[1] == 1:
+      return img.repeat(1, 3, 1, 1).contiguous()
+   if img.shape[-1] == 3:
+      return img.permute(0, 3, 1, 2).contiguous()
+   return img[:, :1].repeat(1, 3, 1, 1).contiguous()
+
+
+def _resize_to_min(img: torch.Tensor) -> torch.Tensor:
+   if img.shape[-2] < 33 or img.shape[-1] < 33:
+      img = F.interpolate(img, size=(33, 33), mode="bilinear", align_corners=False)
+   return img
+
+
 @torch.no_grad()
 def correct_dims(candidates, target):
-   # return candidates, target # should never be needed
-   # return candidates, target
-   f,r = candidates, target
-   if len(f.shape) == 2:
-      # unbatched L
-      f = f.repeat(3, 1, 1) # to RGB
-      f = f.unsqueeze(0) # create batch
-   elif len(f.shape) == 3:
-      # either batched L or unbatched RGB
-      if min(f.shape) == 3:
-         # color images
-         if torch.argmin(torch.tensor(f.shape)) != 0:
-            f = f.permute(2,0,1)
-         f = f.unsqueeze(0) # batch
-      else:
-         # batched L
-         f = torch.stack([x.repeat(3,1,1) for x in f])
+   if is_canonical_image_batch(candidates):
+      f = candidates.contiguous()
    else:
-      # color
-      if f.shape[1] != 3:
-         if f.shape[1] == 1:
-            # L
-            f = f.repeat(1,3,1,1)
-         else:
-            # RGB in wrong order
-            f = f.permute(0,3,1,2)
-   if len(r.shape) == 2:
-      # unbatched L
-      r = r.repeat(3,1,1) # to RGB
-      r = r.unsqueeze(0) # create batch
-   elif len(r.shape) == 3:
-      # either batched L or unbatched RGB
-      if min(r.shape) == 3:
-         # color images
-         if torch.argmin(torch.tensor(r.shape)) != 0:
-            # move color to front
-            r = r.permute(2,0,1)
-         r = r.unsqueeze(0) # batch
-      else:
-         # batched L
-         r = torch.stack([x.repeat(3,1,1) for x in r])         
+      f = _ensure_batched_rgb(candidates).to(dtype=torch.float32)
+      f = _resize_to_min(f)
+      f = torch.nan_to_num(f, nan=0.0, posinf=1.0, neginf=0.0)
+      f = torch.clamp(f, 0.0, 1.0)
+
+   if is_canonical_image_batch(target):
+      r = target.contiguous()
    else:
-      # color
-      if r.shape[1] != 3:
-         r = r.permute(0,3,1,2)
+      r = _ensure_batched_rgb(target).to(device=f.device, dtype=torch.float32)
+      r = _resize_to_min(r)
+      r = torch.nan_to_num(r, nan=0.0, posinf=1.0, neginf=0.0)
+      r = torch.clamp(r, 0.0, 1.0)
 
-   f = f.to(torch.float32)
-   r = r.to(torch.float32)
-   
-   # pad to 33x33 if necessary
-   if f.shape[2] < 33 or f.shape[3] < 33:
-      f = Resize((33,33),antialias=False)(f)
-   if r.shape[2] < 33 or r.shape[3] < 33:
-      r = Resize((33,33),antialias=False)(r)
+   if f.shape[0] != 1 and r.shape[0] == 1:
+      logging.warning(
+         "Only one target in batch but %s candidates. Repeating target for comparison.",
+         f.shape[0],
+      )
+      r = r.repeat(f.shape[0], 1, 1, 1)
 
-   if f.shape[0] !=1 and r.shape[0] == 1:
-      # only one target in batch, repeat for comparison
-      logging.warning(f"Only one target in batch but {f.shape[0]} candidates. Repeating target for comparison.")
-      r = torch.stack([r.squeeze() for _ in range(f.shape[0])])
-
-   return f,r
+   return f.contiguous(), r.contiguous()
 
 def assert_images(*images):
    for img in images:

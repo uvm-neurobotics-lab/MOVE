@@ -82,11 +82,11 @@ class CPPNEvolutionaryAlgorithm(object):
                     logging.warning("Target image is grayscale, but color_mode is not set to 'L'. Setting color_mode to 'L'")
                     self.config.color_mode = "L"
                     
-            if self.config.res_w != self.target.shape[-2]:
-                self.config.res_w = self.target.shape[-2]
+            if self.config.res_w != self.target.shape[-1]:
+                self.config.res_w = self.target.shape[-1]
                 logging.warning("Target image width does not match config.res_w. Setting config.res_w to target image width")
-            if self.config.res_h != self.target.shape[-1]:
-                self.config.res_h = self.target.shape[-1]
+            if self.config.res_h != self.target.shape[-2]:
+                self.config.res_h = self.target.shape[-2]
                 logging.warning("Target image height does not match config.res_h. Setting config.res_h to target image height")
 
         self.fitnesses = {}

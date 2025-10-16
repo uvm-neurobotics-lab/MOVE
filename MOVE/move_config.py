@@ -153,6 +153,9 @@ class MOVEConfig(CPPNConfig):
                 "msssim",
                 "haarpsi",
             ]
+
+        # Functions that cannot be differentiated (copied so we can safely mutate)
+        self.NO_GRADIENT = list(ff.NO_GRADIENT)
     
         self.prob_mutate_activation = .35
         self.prob_add_connection = .85 # 0.05 in the original NEAT
@@ -231,10 +234,10 @@ class MOVEConfig(CPPNConfig):
         for i in range(len(self.objective_functions)):
             if isinstance(self.objective_functions[i], str):
                 self.objective_functions[i] = name_to_fn[self.objective_functions[i]]
-        
+
         self.NO_GRADIENT = ff.NO_GRADIENT
         self.intialize_linked_variables()
-        
+
 
 def resize_image(image, size, device):
     # resize such that the smallest dimension is size
@@ -296,6 +299,7 @@ def target_path_to_tensor(config):
         pilmode = "RGB" if len(config.color_mode) == 3 else "L"
         config.target = torch.tensor(iio.imread(config.target_path, pilmode=pilmode), dtype=torch.float32, device=config.device)
         if config.target.max() > 1.0:
+            logging.warning(f"Target image max value is {config.target.max()}, scaling to [0,1]")
             config.target = config.target / 255.0
 
     resize_target(config)
@@ -310,7 +314,6 @@ def target_path_to_tensor(config):
         config.target = Resize((33,33), antialias=True)(config.target)
     
     config.target = torch.clamp(config.target, 0, 1)
-
     config.target = config.target.to(config.device)
         
     if len(config.target.shape) < 3:
@@ -318,12 +321,10 @@ def target_path_to_tensor(config):
         if config.color_mode != "L":
             logging.warning("Target image is grayscale, but color_mode is not set to 'L'. Setting color_mode to 'L'")
             config.color_mode = "L"
-            
-    if config.res_w != config.target.shape[2]:
-        config.res_w = config.target.shape[2]
-        logging.warning("Target image width does not match config.res_w. Setting config.res_w to config.target image width")
-    if config.res_h != config.target.shape[3]:
-        config.res_h = config.target.shape[3]
-        logging.warning("Target image height does not match config.res_h. Setting config.res_h to config.target image height")
+
+    if config.target_resize:
+        config.set_res(*config.target_resize)
+    else:
+        config.set_res(config.target.shape[-2], config.target.shape[-1])
 
     return config.target

@@ -22,28 +22,28 @@ class Record():
         self.replace_df = pd.DataFrame(columns=['condition','target',  'cell', 'run', 'gen', 'replacements'])
         
         num_data_points = total_batches // config.record_frequency_batch
-        self.agg_fitness_by_batch = torch.ones((n_cells, num_data_points), device='cpu')*-torch.inf
+        self.agg_fitness_by_batch = torch.full((n_cells, num_data_points), -torch.inf, device='cpu', pin_memory=True)
         print("Initializing record with size", self.agg_fitness_by_batch.shape)
         self.n_evals = 0
         self.n_fwds = 0
         self.n_fwds_incl_sgd = 0
         self.n_evals_incl_sgd = 0
         self.n_cppn_passes = 0
-        self.evals_by_batch = torch.ones((num_data_points, 5), device='cpu')*-torch.inf
-        self.normed_fitness_by_batch = torch.ones((n_fns, n_cells, num_data_points), device='cpu')*-torch.inf
+        self.evals_by_batch = torch.full((num_data_points, 5), -torch.inf, device='cpu', pin_memory=True)
+        self.normed_fitness_by_batch = torch.full((n_fns, n_cells, num_data_points), -torch.inf, device='cpu', pin_memory=True)
         
         if not self.low_mem:
-            self.total_pruned = torch.ones((num_data_points,2), device='cpu')*-torch.inf
-            self.fitness_by_batch = torch.ones((n_fns, n_cells, num_data_points), device='cpu')*-torch.inf
+            self.total_pruned = torch.full((num_data_points,2), -torch.inf, device='cpu', pin_memory=True)
+            self.fitness_by_batch = torch.full((n_fns, n_cells, num_data_points), -torch.inf, device='cpu', pin_memory=True)
             # self.votes_by_batch = torch.zeros((n_cells, n_fns, n_cells, num_data_points), device='cpu')
-            self.replacements_by_batch = torch.zeros((n_cells, n_cells, num_data_points), device='cpu')
-            self.ids_by_batch = torch.ones((n_cells, num_data_points), device='cpu', dtype=torch.int64)*-1
-            self.parents_by_batch = torch.ones((2, n_cells, num_data_points), device='cpu', dtype=torch.int64)*-1
-            self.lr_by_batch = torch.ones((n_cells, num_data_points), device='cpu')*-torch.inf
-            self.offspring_by_batch = torch.ones((num_data_points), device='cpu')*-torch.inf
-            self.cx_by_batch = torch.ones((num_data_points,3), device='cpu')*-torch.inf
-            self.nodes_by_batch = torch.ones((num_data_points,3), device='cpu')*-torch.inf
-            self.time_elapsed = torch.ones((num_data_points), device='cpu')*-torch.inf
+            self.replacements_by_batch = torch.zeros((n_cells, n_cells, num_data_points), device='cpu', pin_memory=True)
+            self.ids_by_batch = torch.full((n_cells, num_data_points), -1, device='cpu', dtype=torch.int64)
+            self.parents_by_batch = torch.full((2, n_cells, num_data_points), -1, device='cpu', dtype=torch.int64)
+            self.lr_by_batch = torch.full((n_cells, num_data_points), -torch.inf, device='cpu', pin_memory=True)
+            self.offspring_by_batch = torch.full((num_data_points,), -torch.inf, device='cpu', pin_memory=True)
+            self.cx_by_batch = torch.full((num_data_points,3), -torch.inf, device='cpu', pin_memory=True)
+            self.nodes_by_batch = torch.full((num_data_points,3), -torch.inf, device='cpu', pin_memory=True)
+            self.time_elapsed = torch.full((num_data_points,), -torch.inf, device='cpu', pin_memory=True)
             
             self.start_time = time.time()
         
@@ -55,21 +55,73 @@ class Record():
     def expand_arrays(self, additional_batches, config):
         additional_points = additional_batches // config.record_frequency_batch
         print(f"Expanding record arrays by {additional_points} points")
-        self.agg_fitness_by_batch = torch.cat((self.agg_fitness_by_batch, torch.ones((self.agg_fitness_by_batch.shape[0], additional_points), device='cpu')*-torch.inf), dim=1)
-        self.evals_by_batch = torch.cat((self.evals_by_batch, torch.ones((additional_points, self.evals_by_batch.shape[1]), device='cpu')*-torch.inf), dim=0)
-        self.normed_fitness_by_batch = torch.cat((self.normed_fitness_by_batch, torch.ones((self.normed_fitness_by_batch.shape[0], self.normed_fitness_by_batch.shape[1], additional_points), device='cpu')*-torch.inf), dim=2)
+        self.agg_fitness_by_batch = torch.cat(
+            (self.agg_fitness_by_batch,
+             torch.full((self.agg_fitness_by_batch.shape[0], additional_points), -torch.inf, device='cpu', pin_memory=True)),
+            dim=1,
+        ).pin_memory()
+        self.evals_by_batch = torch.cat(
+            (self.evals_by_batch,
+             torch.full((additional_points, self.evals_by_batch.shape[1]), -torch.inf, device='cpu', pin_memory=True)),
+            dim=0,
+        ).pin_memory()
+        self.normed_fitness_by_batch = torch.cat(
+            (self.normed_fitness_by_batch,
+             torch.full((self.normed_fitness_by_batch.shape[0], self.normed_fitness_by_batch.shape[1], additional_points), -torch.inf, device='cpu', pin_memory=True)),
+            dim=2,
+        ).pin_memory()
         if not self.low_mem:
-            self.total_pruned = torch.cat((self.total_pruned, torch.ones((self.total_pruned.shape[0]+additional_points, self.total_pruned.shape[1]), device='cpu')*-torch.inf), dim=0)
-            self.fitness_by_batch = torch.cat((self.fitness_by_batch, torch.ones((self.fitness_by_batch.shape[0], self.fitness_by_batch.shape[1], additional_points), device='cpu')*-torch.inf), dim=2)
+            self.total_pruned = torch.cat(
+                (self.total_pruned,
+                 torch.full((self.total_pruned.shape[0]+additional_points, self.total_pruned.shape[1]), -torch.inf, device='cpu', pin_memory=True)),
+                dim=0,
+            ).pin_memory()
+            self.fitness_by_batch = torch.cat(
+                (self.fitness_by_batch,
+                 torch.full((self.fitness_by_batch.shape[0], self.fitness_by_batch.shape[1], additional_points), -torch.inf, device='cpu', pin_memory=True)),
+                dim=2,
+            ).pin_memory()
             # self.votes_by_batch = torch.cat((self.votes_by_batch, torch.zeros((self.votes_by_batch.shape[0], self.votes_by_batch.shape[1], self.votes_by_batch.shape[2], additional_points), device='cpu')), dim=3)
-            self.replacements_by_batch = torch.cat((self.replacements_by_batch, torch.zeros((self.replacements_by_batch.shape[0], self.replacements_by_batch.shape[1], additional_points), device='cpu')), dim=2)
-            self.ids_by_batch = torch.cat((self.ids_by_batch, torch.ones((self.ids_by_batch.shape[0], additional_points), device='cpu', dtype=torch.int64)*-1), dim=1)
-            self.parents_by_batch = torch.cat((self.parents_by_batch, torch.ones((self.parents_by_batch.shape[0], self.parents_by_batch.shape[1], additional_points), device='cpu', dtype=torch.int64)*-1), dim=2)
-            self.lr_by_batch = torch.cat((self.lr_by_batch, torch.ones((self.lr_by_batch.shape[0], additional_points), device='cpu')*-torch.inf), dim=1)
-            self.offspring_by_batch = torch.cat((self.offspring_by_batch, torch.ones((self.offspring_by_batch.shape[0]+additional_points), device='cpu')*-torch.inf), dim=0)
-            self.cx_by_batch = torch.cat((self.cx_by_batch, torch.ones((self.cx_by_batch.shape[0]+additional_points, self.cx_by_batch.shape[1]), device='cpu')*-torch.inf), dim=0)
-            self.nodes_by_batch = torch.cat((self.nodes_by_batch, torch.ones((self.nodes_by_batch.shape[0]+additional_points, self.nodes_by_batch.shape[1]), device='cpu')*-torch.inf), dim=0)
-            self.time_elapsed = torch.cat((self.time_elapsed, torch.ones((self.time_elapsed.shape[0]+additional_points), device='cpu')*-torch.inf), dim=0)
+            self.replacements_by_batch = torch.cat(
+                (self.replacements_by_batch,
+                 torch.zeros((self.replacements_by_batch.shape[0], self.replacements_by_batch.shape[1], additional_points), device='cpu', pin_memory=True)),
+                dim=2,
+            ).pin_memory()
+            self.ids_by_batch = torch.cat(
+                (self.ids_by_batch,
+                 torch.full((self.ids_by_batch.shape[0], additional_points), -1, device='cpu', dtype=torch.int64)),
+                dim=1,
+            )
+            self.parents_by_batch = torch.cat(
+                (self.parents_by_batch,
+                 torch.full((self.parents_by_batch.shape[0], self.parents_by_batch.shape[1], additional_points), -1, device='cpu', dtype=torch.int64)),
+                dim=2,
+            )
+            self.lr_by_batch = torch.cat(
+                (self.lr_by_batch,
+                 torch.full((self.lr_by_batch.shape[0], additional_points), -torch.inf, device='cpu', pin_memory=True)),
+                dim=1,
+            ).pin_memory()
+            self.offspring_by_batch = torch.cat(
+                (self.offspring_by_batch,
+                 torch.full((self.offspring_by_batch.shape[0]+additional_points,), -torch.inf, device='cpu', pin_memory=True)),
+                dim=0,
+            ).pin_memory()
+            self.cx_by_batch = torch.cat(
+                (self.cx_by_batch,
+                 torch.full((self.cx_by_batch.shape[0]+additional_points, self.cx_by_batch.shape[1]), -torch.inf, device='cpu', pin_memory=True)),
+                dim=0,
+            ).pin_memory()
+            self.nodes_by_batch = torch.cat(
+                (self.nodes_by_batch,
+                 torch.full((self.nodes_by_batch.shape[0]+additional_points, self.nodes_by_batch.shape[1]), -torch.inf, device='cpu', pin_memory=True)),
+                dim=0,
+            ).pin_memory()
+            self.time_elapsed = torch.cat(
+                (self.time_elapsed,
+                 torch.full((self.time_elapsed.shape[0]+additional_points,), -torch.inf, device='cpu', pin_memory=True)),
+                dim=0,
+            ).pin_memory()
 
 
 
@@ -130,10 +182,14 @@ class Record():
 
 
     def _perform_update(self, index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring):
-        self.agg_fitness_by_batch[:, index] = agg_fitnesses.cpu()
-        self.normed_fitness_by_batch[:, :, index] = normed_fitnesses.cpu()
+        agg_src = agg_fitnesses.detach()
+        self.agg_fitness_by_batch[:, index].copy_(agg_src, non_blocking=agg_src.is_cuda)
+
+        normed_src = normed_fitnesses.detach()
+        self.normed_fitness_by_batch[:, :, index].copy_(normed_src, non_blocking=normed_src.is_cuda)
         if not self.low_mem:
-            self.fitness_by_batch[:, :, index] = fitnesses.cpu()
+            fitness_src = fitnesses.detach()
+            self.fitness_by_batch[:, :, index].copy_(fitness_src, non_blocking=fitness_src.is_cuda)
             self.ids_by_batch[:, index] = torch.tensor([-1 if g is None else g.id for g in population]).cpu()
             self.parents_by_batch[:, :, index] = torch.tensor([[-1 if g is None else g.parents[0] for g in population],
                                                             [-1 if g is None else g.parents[1] for g in population]]).cpu()
@@ -145,7 +201,8 @@ class Record():
             self.nodes_by_batch[index] = torch.tensor([torch.mean(node_counts), torch.min(node_counts), torch.max(node_counts)])
             self.time_elapsed[index] = time.time() - self.start_time
             if all_replacements is not None:
-                self.replacements_by_batch[:, :, index] = all_replacements.cpu()
+                repl_src = all_replacements.detach().to(self.replacements_by_batch.dtype)
+                self.replacements_by_batch[:, :, index].copy_(repl_src, non_blocking=repl_src.is_cuda)
             
         print("Updated index", index)
     

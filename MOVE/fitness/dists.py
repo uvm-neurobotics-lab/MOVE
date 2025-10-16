@@ -10,6 +10,8 @@ from torchvision import models,transforms
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .feature_cache import cached_result
+
 class L2pooling(nn.Module):
     def __init__(self, filter_size=5, stride=2, channels=None, pad_off=0):
         super(L2pooling, self).__init__()
@@ -64,7 +66,7 @@ class DISTS(torch.nn.Module):
             weights = torch.load(os.path.join(os.path.dirname(os.path.realpath(__file__)), 'dists_weights.pt'))
             self.alpha.data = weights['alpha']
             self.beta.data = weights['beta']
-        
+
     def forward_once(self, x):
         h = (x-self.mean)/self.std
         h = self.stage1(h)
@@ -80,13 +82,24 @@ class DISTS(torch.nn.Module):
         return [x,h_relu1_2, h_relu2_2, h_relu3_3, h_relu4_3, h_relu5_3]
 
     def forward(self, x, y, require_grad=False, batch_average=False):
+        raw_x = x
+        raw_y = y
+
         if require_grad:
-            feats0 = self.forward_once(x)
-            feats1 = self.forward_once(y)   
+            feats0 = cached_result(("dists", "features_grad"), raw_x, lambda: self.forward_once(x))
         else:
-            with torch.no_grad():
-                feats0 = self.forward_once(x)
-                feats1 = self.forward_once(y) 
+            feats0 = cached_result(
+                ("dists", "features_nograd"),
+                raw_x,
+                lambda: _forward_detached(self.forward_once, x),
+            )
+
+        feats1 = cached_result(
+            ("dists", "features_target"),
+            raw_y,
+            lambda: _forward_detached(self.forward_once, y),
+        )
+
         dist1 = 0 
         dist2 = 0 
         c1 = 1e-6
@@ -117,3 +130,8 @@ def prepare_image(image, resize=True):
         image = transforms.functional.resize(image,256)
     image = transforms.ToTensor()(image)
     return image.unsqueeze(0)
+
+
+def _forward_detached(fn, tensor):
+    with torch.no_grad():
+        return [feat.detach() for feat in fn(tensor)]
