@@ -78,7 +78,7 @@ then
 
 fi
 
-CMDS+=("time python -O move.py -c ${EXPERIMENT_FILE} -o ${OUTDIR}")
+CMDS+=("time python -O -m MOVE -c ${EXPERIMENT_FILE} -o ${OUTDIR}")
 
 mkdir -p ${OUTDIR}
 NOW="$(date +"%D %T")"

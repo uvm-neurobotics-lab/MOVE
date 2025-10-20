@@ -1,0 +1,128 @@
+{
+    "experiment_name": "telo-25-growth",
+
+
+    "additional_controls":{
+        "num_generations": 2000,
+        "num_cells": 50,
+        "target_resize": [128, 128],
+        "hidden_nodes_at_start": 0,
+        "sgd_learning_rate": 0.01,
+        "sgd_early_stop": 20,
+        "connection_prune_threshold": 0.001,
+        "extra_bloat": 3,
+        "bloat_prune_rate": 0.01,
+        "max_weight": 10.0,
+        "init_connection_probability": 0.01,
+        "stop_condition": "passes",
+        "stop_condition_value": 1000000,
+        "total_offspring": 10000000,
+        "batch_size": 50,
+        "initial_batch_size": 50,
+        "max_nodes": null,
+        "max_connections": null
+
+    },
+
+
+    "targets":[
+        "data/skull.png",
+        "data/apple.png",
+        "data/dolphin.png",
+        "data/sunrise.png",
+        "data/butterfly.png",
+        "data/spiral.png",
+        "data/checkers.png",
+        "data/fly.png",
+        "data/maze.png",
+        "data/linear_sin.png"
+    ],
+
+    "color_modes":
+    [
+        "L",
+        "HSL",
+        "HSL",
+        "HSL",
+        "HSL",
+        "L",
+        "L",
+        "HSL",
+        "L",
+        "L"
+    ],
+
+
+"mode": "enum",
+"conditions": [
+    {
+        "MOVE-Back-Slow-Growth": {
+            "hidden_nodes_at_start": 0,
+            "sgd_steps":100,
+            "no_param_mutations": true,
+            "connection_prune_threshold": 0.001,
+            "extra_bloat": 0,
+            "bloat_prune_rate": 0.00,
+            "min_pruned": 0
+        }
+    },
+    {
+        "MOVE-Back-Fast-Grow": {
+            "hidden_nodes_at_start": 0,
+            "n_fourier_features": 0,   
+            "sgd_steps":100,
+            "no_param_mutations": true,
+            "extra_bloat":10,
+            "topology_mutation_iters":10,
+            "bloat_prune_rate": 0.0,
+            "connection_prune_threshold": 0.0,
+            "min_pruned": 0
+        }
+    },
+    {
+        "MOVE-Back-Fast-Grow-And-Prune": {
+            "hidden_nodes_at_start": 0,
+            "n_fourier_features": 0,   
+            "sgd_steps":100,
+            "no_param_mutations": true,
+            "extra_bloat":10,
+            "topology_mutation_iters":10,
+            "bloat_prune_rate": 0.01,
+            "connection_prune_threshold": 0.01,
+            "min_pruned": 5
+        }
+    },
+    {
+        "MOVE-Back-Start-Big-No-Grow": {
+            "hidden_nodes_at_start": [64,64],
+            "init_connection_probability": 0.04,
+            "n_fourier_features": 0,   
+            "sgd_steps":100,
+            "no_param_mutations": true,
+            "topology_mutation_iters":0,
+            "bloat_prune_rate": 0.00,
+            "connection_prune_threshold": 0.00,
+            "extra_bloat":0,
+            "min_pruned": 0,
+            "prob_add_node": 1.0,
+            "prob_remove_node_node": 1.0
+        }
+    },
+    {
+        "MOVE-Back-Start-Small-No-Grow": {
+            "hidden_nodes_at_start": 0,
+            "n_fourier_features": 0,   
+            "sgd_steps":100,
+            "no_param_mutations": true,
+            "topology_mutation_iters":0,
+            "bloat_prune_rate": 0.00,
+            "connection_prune_threshold": 0.00,
+            "extra_bloat":0,
+            "min_pruned": 0,
+            "prob_add_node": 1.0,
+            "prob_remove_node_node": 1.0
+        }
+    }
+]
+
+}
