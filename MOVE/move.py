@@ -560,6 +560,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
     @torch.no_grad()
     def replacement(self, new_children, fit_children, fc_normed, batch_cell_ids, agg_fc_normed, initial_pop_done):
         all_replacements = torch.zeros((self.n_cells, self.n_cells), device=self.config.device)
+        latest_jump_for_target: Dict[int, int] = {}
         
         random.shuffle(new_children) # random order of children
         for _, c_tuple in enumerate(new_children):
@@ -620,7 +621,15 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             if self.debug_output:
                 logging.debug(f"Replacing cells: {idxs_to_replace} with {child.id}")
                 
+            source_idx = int(cell_i.item()) if torch.is_tensor(cell_i) else int(cell_i)
             for r in idxs_to_replace:
+                target_idx = int(r)
+                if target_idx != source_idx:
+                    prev_jump = latest_jump_for_target.get(target_idx)
+                    if prev_jump is not None:
+                        self.record.mark_jump_overridden(prev_jump)
+                    jump_index = self.record.log_jump(source_idx, target_idx, self.current_batch)
+                    latest_jump_for_target[target_idx] = jump_index
                 placed = child.clone(self.config, new_id=False, cpu=True)
                 placed.cell_lineage = child.cell_lineage + [r]
                 placed.n_cells = child.n_cells

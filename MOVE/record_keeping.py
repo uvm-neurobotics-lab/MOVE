@@ -4,7 +4,7 @@ import os
 import pandas as pd
 import torch
 from tqdm import tqdm
-from typing import Callable
+from typing import Callable, List
 import matplotlib.pyplot as plt
 import json
 import numpy as np
@@ -46,6 +46,8 @@ class Record():
             self.time_elapsed = torch.full((num_data_points,), -torch.inf, device='cpu', pin_memory=torch.device(config.device)!=torch.device('cpu'))
             
             self.start_time = time.time()
+
+        self.jump_history: List[List[object]] = []
         
         self.update_queue = queue.Queue()
         self._stop_event = threading.Event()
@@ -147,6 +149,17 @@ class Record():
         self.evals_by_batch[index,4] = n_step_passes
     
 
+    def log_jump(self, from_cell, to_cell, batch) -> int:
+        entry = [int(from_cell), int(to_cell), True, int(batch)]
+        self.jump_history.append(entry)
+        return len(self.jump_history) - 1
+
+
+    def mark_jump_overridden(self, jump_index: int) -> None:
+        if 0 <= jump_index < len(self.jump_history):
+            self.jump_history[jump_index][2] = False
+
+
     def update(self, index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring):
         self.update_queue.put((index, all_replacements, fitnesses, normed_fitnesses, agg_fitnesses, population, total_offspring))
         return
@@ -222,6 +235,9 @@ class Record():
         with open(os.path.join(run_dir, "evals.csv"), 'w') as f:
             f.write("total_fwds,total_fwds_incl_sgd,total_evals,total_evals_incl_sgd,total_fwds_backs\n")
             f.write(f"{self.n_fwds},{self.n_fwds_incl_sgd},{self.n_evals},{self.n_evals_incl_sgd},{(self.n_fwds_incl_sgd-self.n_fwds)*2}\n")
+
+        jump_df = pd.DataFrame(self.jump_history, columns=["from_cell", "to_cell", "survived", "batch"])
+        jump_df.to_csv(os.path.join(run_dir, "jump_history.csv"), index=False)
         
         # plot normed fitness
         if plot:
@@ -265,6 +281,22 @@ class Record():
             self.n_fwds_incl_sgd = int(parts[1])
             self.n_evals = int(parts[2])
             self.n_evals_incl_sgd = int(parts[3])
+
+        jump_path = os.path.join(run_dir, "jump_history.csv")
+        if os.path.exists(jump_path):
+            jump_df = pd.read_csv(jump_path)
+            if len(jump_df.columns) > 0:
+                if "survived" in jump_df.columns:
+                    jump_df["survived"] = jump_df["survived"].apply(
+                        lambda v: bool(v)
+                        if isinstance(v, (bool, np.bool_))
+                        else str(v).strip().lower() in {"true", "1", "yes"}
+                    )
+                self.jump_history = jump_df[["from_cell", "to_cell", "survived", "batch"]].values.tolist()
+            else:
+                self.jump_history = []
+        else:
+            self.jump_history = []
         
         if not self.low_mem:
             self.total_pruned[:,0] = torch.load(os.path.join(run_dir, "pruned_cxs.pt"))
