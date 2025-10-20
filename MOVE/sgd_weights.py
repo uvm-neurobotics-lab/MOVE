@@ -343,8 +343,8 @@ def _sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3,
 		
 		
 		if isinstance(pbar, tqdm):
-			pbar.set_postfix_str(f"loss={loss.detach().clone().mean().item():.3f}")
-			pbar.set_description_str(f"Optimizing {n_params}/{n_params_total} params on {len(this_genomes)}/{len(genomes)} genomes and {len(fns)} fns lr: {avg_lr:.2e}")
+			pbar.set_postfix_str(f"loss={loss.detach().clone().mean().item():.3f} {n_params}p {len(this_genomes)}/{len(genomes)} gs")
+			# pbar.set_description_str(f"Optimizing {n_params}/{n_params_total} params on {len(this_genomes)}/{len(genomes)} genomes and {len(fns)} fns lr: {avg_lr:.2e}")
 		
 		
 	return step+1
@@ -454,7 +454,7 @@ def sgd_weights(genomes, mask, inputs, target, fns, norm, config, early_stop=3, 
 			break
 
 		if isinstance(pbar, tqdm):
-			pbar.set_postfix_str(f"loss={loss.item():.4f}")
+			pbar.set_postfix_str(f"loss={loss.item():.4f}, {len(active_genomes)}/{len(genomes)} gs")
 
 	return step + 1
 

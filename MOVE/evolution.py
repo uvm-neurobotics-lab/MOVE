@@ -365,8 +365,13 @@ class CPPNEvolutionaryAlgorithm(object):
         b = self.get_best()
         if b is None:
             return
-        # b.to(self.config.device)
-        img = b(self.inputs, channel_first=False, act_mode="node")
+        run_device = getattr(b, "device", torch.device("cpu"))
+        inputs = self.inputs
+        if isinstance(inputs, torch.Tensor) and inputs.device != run_device:
+            inputs = inputs.to(run_device, non_blocking=True)
+
+        with torch.no_grad():
+            img = b(inputs, channel_first=False, act_mode="node")
         if len(self.config.color_mode)<3:
             img = img.repeat(1, 1, 3)
         
@@ -376,7 +381,10 @@ class CPPNEvolutionaryAlgorithm(object):
         if show_target:
             fig, (ax1, ax2) = plt.subplots(1, 2)
             ax1.imshow(img, cmap='gray')
-            ax2.imshow(self.target.squeeze(), cmap='gray')
+            target_img = self.target
+            if isinstance(target_img, torch.Tensor):
+                target_img = torch.clamp(target_img, 0.0, 1.0).detach().cpu().numpy()
+            ax2.imshow(target_img.squeeze(), cmap='gray')
             ax1.set_title("Champion")
             ax2.set_title("Target")
             plt.savefig(fname)
@@ -397,7 +405,7 @@ class CPPNEvolutionaryAlgorithm(object):
             c_b = b.clone(self.config, new_id=False)
             # c_b.forward(self.inputs)
             # c_b.vis(fname.replace(".png", "_torch_graph"))
-            c_b.vis(self.inputs, fname.replace(".png", "_torch_graph"))
+            c_b.vis(inputs, fname.replace(".png", "_torch_graph"))
             
             visualize_network(b, self.config, save_name=fname.replace(".png", "_graph.png"))
             plt.close()

@@ -294,7 +294,10 @@ class Record():
             cell_fns = [map.fns[i] for i in cell_fns_inds]
             if(flat_map[i] is not None):
                 individual = flat_map[i]
-                individual.to(config.device)
+                original_device = getattr(individual, "device", torch.device("cpu"))
+                target_device = torch.device(config.device)
+                move_back = original_device != target_device
+                individual = individual.to(target_device)
                 img = individual(inputs, channel_first=True, act_mode="node").detach().cpu()
                 if img.shape[0]<3:
                     img = img.repeat(3, 1, 1)
@@ -315,6 +318,8 @@ class Record():
                 except Exception as e:
                     print(e)
                     pass
+                if move_back:
+                    individual.to(original_device)
                 genomes.append(flat_map[i].clone(config, new_id=False).to_json())
             else:
                 genomes.append("null")

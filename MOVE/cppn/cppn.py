@@ -247,6 +247,35 @@ class CPPN(nn.Module):
             # no SGD so we can disable parameter tracking
             self.remove_parameters()
 
+    def to(self, *args, **kwargs):
+        module = super().to(*args, **kwargs)
+
+        target_device = kwargs.get("device", None)
+        if target_device is None:
+            for arg in args:
+                if isinstance(arg, torch.device):
+                    target_device = arg
+                    break
+                if isinstance(arg, str):
+                    try:
+                        target_device = torch.device(arg)
+                        break
+                    except (RuntimeError, TypeError, ValueError):
+                        continue
+        if target_device is not None:
+            if not isinstance(target_device, torch.device):
+                target_device = torch.device(target_device)
+            self.device = target_device
+            if isinstance(self._fitness, torch.Tensor):
+                self._fitness = self._fitness.to(target_device)
+            if isinstance(self.node_states, dict) and self.node_states:
+                self.node_states = {
+                    key: value.to(target_device) if isinstance(value, torch.Tensor) else value
+                    for key, value in self.node_states.items()
+                }
+
+        return module
+
     @property
     def fitness(self):
         return self._fitness

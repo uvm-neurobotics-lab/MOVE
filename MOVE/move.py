@@ -253,7 +253,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             # mutate
             # child.mutate(self.config)
             # child.reset(self.config)
-            return child
+            return child.to(self.config.device)
         
   
     @torch.no_grad()
@@ -621,7 +621,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 logging.debug(f"Replacing cells: {idxs_to_replace} with {child.id}")
                 
             for r in idxs_to_replace:
-                placed = child.clone(self.config, new_id=False, cpu=False)
+                placed = child.clone(self.config, new_id=False, cpu=True)
                 placed.cell_lineage = child.cell_lineage + [r]
                 placed.n_cells = child.n_cells
                 self.map.map[r] = placed
