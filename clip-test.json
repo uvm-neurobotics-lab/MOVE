@@ -37,7 +37,12 @@
   "clip_noise_final_scale": 0.0,
   "clip_noise_anneal_start": 0.2,
   "clip_noise_anneal_end": 0.8,
-  "clip_noise_anneal_power": 1.0
+  "clip_noise_anneal_power": 1.0,
+    "clip_augmentations": 6,
+  "clip_aug_min_scale": 0.45,
+  "clip_aug_max_scale": 1.0,
+  "clip_aug_flip_prob": 0.5,
+  "clip_aug_jitter_std": 0.02
       }
     }
   ]

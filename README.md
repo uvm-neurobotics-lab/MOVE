@@ -11,11 +11,11 @@ experiment output.
 
 ---
 
-## ✨ Highlights
+## Highlights
 
 - **CPPN evolution** with configurable activation libraries and topology
   mutation rates.
-- **Many-objective optimisation** across perceptual metrics (LPIPS, DISTS,
+- **Many-objective optimization** across perceptual metrics (LPIPS, DISTS,
   SSIM, style/content, …) and CLIP similarity.
 - **Optional SGD fine-tuning** (AdamW) with early stopping per genome.
 - **Feature caching & AMP** support for faster CLIP/perceptual evaluation.
@@ -23,19 +23,18 @@ experiment output.
 
 ---
 
-## 🛠 Requirements
+## Requirements
 
 - Python 3.10 or newer (3.11 recommended).
 - CUDA-capable GPU (MOVE will fall back to CPU but runs considerably slower).
-- Conda or mamba is recommended for reproducing the paper environment.
-- Disk space ~4 GB for cached datasets, CLIP weights, and experiment outputs.
+- Conda is recommended for reproducing the paper environment.
 
 PyTorch, TorchVision, LPIPS, and other dependencies are pinned inside
 `environment.yml`.
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 1. **Create and activate the environment** (once):
 
@@ -44,9 +43,7 @@ PyTorch, TorchVision, LPIPS, and other dependencies are pinned inside
    conda activate move
    ```
 
-2. **Run MOVE with the default configuration** (recreates the paper’s Apple
-   target example):
-
+2. **Run MOVE with the default configuration**
    ```bash
    python -m move --config default.json
    ```
@@ -77,7 +74,7 @@ python -m move --help
 
 ---
 
-## 🧭 Command-line reference
+## Command-line reference
 
 | Flag | Description |
 | --- | --- |
@@ -101,7 +98,7 @@ file-based values.
 
 ---
 
-## 🗂 Configuration files
+## Configuration files
 
 MOVE experiments are described in JSON. The minimal structure contains a
 `controls` object for global defaults and an optional list of `conditions` for
@@ -127,20 +124,20 @@ batched sweeps:
   (see `MOVE/move_config.py` for the full catalogue).
 - Each entry in `conditions` defines a named variant and the overrides that
   should apply when running that variant.
-- When a run starts, MOVE materialises `output/<condition-name>/<run-id>/` and
+- When a run starts, MOVE materializes `output/<condition-name>/<run-id>/` and
   persists checkpoints, fitness tables, rendered images, and lineage metadata.
 
 Helpful starter configs:
 
 - `default.json` – replicates the paper’s Apple image reconstruction target.
-- `clip-test.json` – runs CLIP text-to-image optimisation with partial prompts.
+- `clip-test.json` – runs CLIP text-to-image optimization with partial prompts.
 - `clip-test/` – directory containing example CLIP experiments and targets.
 
 ---
 
-## 🧠 Using CLIP objectives
+## Using CLIP objectives
 
-MOVE’s CLIP integration lets you optimise CPPNs directly against text prompts.
+MOVE’s CLIP integration lets you optimize CPPNs directly against text prompts.
 When `clip_text_target` is present (either in a config or via
 `python -m move --target "your prompt"`), the traditional image-based
 objectives are replaced with a bundle of CLIP similarity objectives:
@@ -165,6 +162,10 @@ Key configuration knobs:
 | `clip_partial_stopwords` | Words to ignore when extracting partial prompts (defaults to a short English list). |
 | `clip_max_partial_prompts` | Hard cap on the number of partial prompts. |
 | `clip_microbatch_size` | Number of images to embed at once when generating CLIP activations (helps with GPU memory). |
+| `clip_augmentations` | Number of additional random crops per candidate used when embedding for CLIP. Averaged scores make guidance less brittle (defaults to 4). |
+| `clip_aug_min_scale` / `clip_aug_max_scale` | Range of crop scales sampled for each extra view (fraction of the original image size). |
+| `clip_aug_flip_prob` | Probability of applying a horizontal flip to each augmented view. |
+| `clip_aug_jitter_std` | Standard deviation of additive Gaussian noise applied to augmented views (in `[0,1]`). |
 | `clip_random_seed` | Seed for reproducible embedding variants. |
 
 You can also add CLIP-driven scores to standard MOVE runs (with a fixed image
@@ -181,7 +182,7 @@ These objectives sit alongside existing metrics such as MSE or PSNR, making it
 easy to blend low-level reconstruction with high-level semantics without
 enabling the full CLIP mode.
 
-Tips:
+Notes:
 
 - The CLIP objectives rely on the OpenAI `clip` Python package. It’s already
   included in `environment.yml`; if you run outside Conda, install it with
@@ -189,17 +190,19 @@ Tips:
 - Feature caching and automatic mixed precision (AMP) are active by default to
   keep CLIP scoring efficient. You can adjust `clip_microbatch_size` to control
   the embedding batch size, and `use_amp` to disable mixed precision if you run
-  into stability issues.
+  into stability issues. If prompts feel unstable, increase `clip_augmentations`
+  or narrow the crop range (`clip_aug_min_scale` closer to `clip_aug_max_scale`) to
+  smooth CLIP feedback at the cost of a small runtime increase.
 - Per-objective results (full variants, partial prompts, and their scores) are
   saved alongside other fitness logs in the run directory. This makes it easy to
-  inspect which prompts each elite specialised for.
+  inspect which prompts each elite specialized for.
 
 See `clip-test.json` for a compact example that exercises most of the CLIP
 options.
 
 ---
 
-## 📦 Outputs & artefacts
+## Outputs & artifacts
 
 Each run directory contains:
 
@@ -207,25 +210,15 @@ Each run directory contains:
 - `lineages.json` – parentage data per MAP-Elites cell.
 - `checkpoints/` – serialized evolutionary state for resuming.
 - `images/` – periodic renderings of elites.
-- `metrics/` – CSV and NumPy dumps of raw and normalised fitness history.
+- `metrics/` – CSV and NumPy dumps of raw and normalized fitness history.
 
 Utility scripts in `scripts/` and notebooks in `analysis/` demonstrate how to
-visualise these artefacts.
+visualize these artifacts.
 
 ---
 
-## 🧪 Development & testing
 
-- The `tests/` directory contains smoke tests for the fitness modules and core
-  data structures. Run them inside the environment with `pytest`.
-- Use `python -m compileall MOVE` to quickly sanity-check syntax after making
-  changes.
-- Style guide: follow the documented, heavily annotated style used throughout
-  `MOVE/` (docstrings, type hints, and explicit logging).
-
----
-
-## ❓Troubleshooting
+## Troubleshooting
 
 | Symptom | Likely cause / fix |
 | --- | --- |
@@ -239,7 +232,7 @@ open an issue with the resulting stack trace plus your configuration.
 
 ---
 
-## 📚 Citation
+## Citation
 
 If you use MOVE in research, please cite the original paper:
 
@@ -251,7 +244,3 @@ If you use MOVE in research, please cite the original paper:
   year={2023}
 }
 ```
-
-Happy evolving! 🧬
-
-

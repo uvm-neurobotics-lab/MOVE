@@ -135,7 +135,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             generate_partial_prompts,
             DEFAULT_STOP_WORDS,
         )
-        from .clip.clip_objectives import build_clip_objectives, ClipSimilarityObjective
+        from .clip.clip_objectives import (
+            ClipAugmentations,
+            ClipSimilarityObjective,
+            build_clip_objectives,
+        )
         from .clip.clip_model import embed_text
 
         variants = max(1, int(getattr(self.config, "clip_num_variants", 1)))
@@ -148,10 +152,26 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         )
         embeddings = generate_clip_targets(config)
         microbatch = int(getattr(self.config, "clip_microbatch_size", 0) or 0)
+        augmentations = None
+        aug_views = int(getattr(self.config, "clip_augmentations", 4) or 0)
+        if aug_views > 0:
+            min_scale = float(getattr(self.config, "clip_aug_min_scale", 0.5))
+            max_scale = float(getattr(self.config, "clip_aug_max_scale", 1.0))
+            flip_prob = float(getattr(self.config, "clip_aug_flip_prob", 0.5))
+            jitter_std = float(getattr(self.config, "clip_aug_jitter_std", 0.02))
+            augmentations = ClipAugmentations(
+                num_random_crops=aug_views,
+                min_crop_scale=min_scale,
+                max_crop_scale=max_scale,
+                flip_prob=flip_prob,
+                jitter_std=jitter_std,
+            )
+
         objectives = build_clip_objectives(
             embeddings,
             prefix="clip",
             microbatch_size=microbatch,
+            augmentations=augmentations,
         )
         self.clip_embeddings = embeddings
         self._clip_variant_objectives = objectives[: len(embeddings)]
