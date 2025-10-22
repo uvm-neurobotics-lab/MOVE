@@ -1,6 +1,9 @@
 """Fitness functions."""
 import logging
 import warnings
+import re
+from typing import Callable, Dict, Optional, Tuple
+
 import torch
 import torch.nn.functional as F
 from torchvision.transforms import Resize
@@ -24,6 +27,60 @@ from .lpips import LPIPS
 from .dss import dss as piq_dss
 from ..util import is_canonical_image_batch
 from .backbones import FEATURE_EXTRACTOR
+
+try:  # pragma: no cover - optional dependency
+   from ..clip.clip_model import embed_images as clip_embed_images
+   from ..clip.clip_model import embed_text as clip_embed_text
+   from ..clip.clip_model import cosine_similarity as clip_cosine_similarity
+except ImportError:  # pragma: no cover - optional dependency
+   clip_embed_images = None  # type: ignore
+   clip_embed_text = None  # type: ignore
+   clip_cosine_similarity = None  # type: ignore
+_CLIP_TEXT_FN_CACHE: Dict[str, Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = {}
+_CLIP_TEXT_EMBED_CACHE: Dict[Tuple[str, torch.device], torch.Tensor] = {}
+
+
+def _ensure_clip_available() -> None:
+   if clip_embed_images is None or clip_embed_text is None or clip_cosine_similarity is None:
+      raise ImportError(
+         "CLIP-based fitness requires the 'clip' package. Install it with `pip install git+https://github.com/openai/CLIP.git`."
+      )
+
+
+def _normalize_embeddings(embeddings: torch.Tensor) -> torch.Tensor:
+   return torch.nn.functional.normalize(embeddings, dim=-1)
+
+
+def _clip_text_embedding(text: str, device: torch.device) -> torch.Tensor:
+   _ensure_clip_available()
+   key = (text, device)
+   embedding = _CLIP_TEXT_EMBED_CACHE.get(key)
+   if embedding is None:
+      with torch.no_grad():
+         embedding = clip_embed_text(text, device=device).detach()  # type: ignore[arg-type]
+      embedding = _normalize_embeddings(embedding)
+      _CLIP_TEXT_EMBED_CACHE[key] = embedding
+   elif embedding.device != device:
+      embedding = embedding.to(device)
+      _CLIP_TEXT_EMBED_CACHE[key] = embedding
+   return embedding
+
+
+def _pairwise_cosine(image_embeddings: torch.Tensor, target_embeddings: torch.Tensor) -> torch.Tensor:
+   image_norm = _normalize_embeddings(image_embeddings)
+   target_norm = _normalize_embeddings(target_embeddings)
+   if target_norm.shape[0] == 1 and image_norm.shape[0] > 1:
+      target_norm = target_norm.expand(image_norm.shape[0], -1)
+   elif target_norm.shape[0] != image_norm.shape[0]:
+      target_norm = target_norm[: image_norm.shape[0]]
+   score = (image_norm * target_norm).sum(dim=-1)
+   return torch.clamp((score + 1.0) / 2.0, 0.0, 1.0)
+
+
+def _sanitize_clip_candidates(candidates: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+   sanitized, _ = correct_dims(candidates, target)
+   assert_images(sanitized, sanitized)
+   return sanitized
 
 
 def _require_piq():
@@ -225,6 +282,54 @@ def pieAPP(candidates, target):
    loss = piq.PieAPP(reduction='none', stride=32)(candidates, target)
    value = torch.tensor([1.0]*len(candidates)).to(loss) - loss
    return value
+
+
+def clip_similarity(candidates: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+   """CLIP cosine similarity between candidate images and the target image batch."""
+
+   _ensure_clip_available()
+   sanitized = _sanitize_clip_candidates(candidates, target)
+   target_sanitized = _sanitize_clip_candidates(target, target)
+   image_embeddings = clip_embed_images(sanitized, device=sanitized.device)  # type: ignore[arg-type]
+   with torch.no_grad():
+      target_embeddings = clip_embed_images(target_sanitized, device=sanitized.device).detach()  # type: ignore[arg-type]
+   return _pairwise_cosine(image_embeddings, target_embeddings)
+
+
+def _make_clip_text_objective(text: str) -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
+
+   def clip_text_objective(candidates: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+      _ensure_clip_available()
+      sanitized = _sanitize_clip_candidates(candidates, target)
+      image_embeddings = clip_embed_images(sanitized, device=sanitized.device)  # type: ignore[arg-type]
+      text_embedding = _clip_text_embedding(text, sanitized.device).unsqueeze(0)
+      return _pairwise_cosine(image_embeddings, text_embedding)
+
+   clip_text_objective.__name__ = f"clip_{re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')}"
+   return clip_text_objective
+
+
+def get_clip_text_objective(name: str) -> Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]]:
+   """Return a CLIP text objective for ``name`` or ``None`` if unsupported."""
+
+   if not isinstance(name, str) or not name.startswith("clip_"):
+      return None
+   if name == "clip_similarity":
+      return clip_similarity
+   text = name[len("clip_"):]
+   text = text.replace("_", " ")
+   text = text.replace("-", " ")
+   text = re.sub(r"\s+", " ", text).strip()
+   if not text:
+      return clip_similarity
+   cached = _CLIP_TEXT_FN_CACHE.get(name)
+   if cached is not None:
+      return cached
+   objective = _make_clip_text_objective(text)
+   objective.__name__ = name
+   _CLIP_TEXT_FN_CACHE[name] = objective
+   FITNESS_FUNCTIONS[name] = objective
+   return objective
 
 
 """The principle philosophy underlying the original SSIM

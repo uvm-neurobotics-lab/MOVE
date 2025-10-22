@@ -78,10 +78,19 @@ class MOVE(CPPNEvolutionaryAlgorithm):
 
             self.config.objective_functions = self.fns
         else:
-            self.fns = self.config.objective_functions
-            for i, fn in enumerate(self.fns):
+            resolved_fns = []
+            for fn in self.config.objective_functions:
                 if isinstance(fn, str):
-                    self.fns[i] = getattr(ff, fn)
+                    resolved = getattr(ff, fn, None)
+                    if resolved is None:
+                        resolved = ff.get_clip_text_objective(fn)
+                    if resolved is None:
+                        raise AttributeError(f"Unknown objective function '{fn}'")
+                    resolved_fns.append(resolved)
+                else:
+                    resolved_fns.append(fn)
+            self.fns = resolved_fns
+            self.config.objective_functions = self.fns
                 
         
         self.allow_multiple_placements = self.config.allow_jumps > 0

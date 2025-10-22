@@ -1,5 +1,6 @@
 """Stores configuration parameters for the MOVE algorithm."""
 import os
+import math
 from typing import Callable
 import uuid
 import torch
@@ -257,15 +258,23 @@ class MOVEConfig(CPPNConfig):
 def resize_image(image, size, device):
     # resize such that the smallest dimension is size
     h, w = image.shape[:2]
+    if h <= 0 or w <= 0:
+        raise ValueError(f"Cannot resize image with non-positive dimensions: {h}x{w}")
+
+    target_h = max(1, int(size[0]))
+    target_w = max(1, int(size[1]))
+
     if h < w:
-        new_h = size[0]
-        new_w = int(w * size[1] / h)
+        scale = target_h / h
+        new_h = target_h
+        new_w = max(target_w, int(math.ceil(w * scale)))
     else:
-        new_w = size[1]
-        new_h = int(h * size[0] / w)
-        
+        scale = target_w / w
+        new_w = target_w
+        new_h = max(target_h, int(math.ceil(h * scale)))
+
     image = resize(image, (new_h, new_w))
-    image = center_crop(image, size[0], size[1])
+    image = center_crop(image, target_h, target_w)
     resized_img = torch.tensor(image, dtype=torch.float32, device=device)
     return resized_img
 

@@ -167,6 +167,20 @@ Key configuration knobs:
 | `clip_microbatch_size` | Number of images to embed at once when generating CLIP activations (helps with GPU memory). |
 | `clip_random_seed` | Seed for reproducible embedding variants. |
 
+You can also add CLIP-driven scores to standard MOVE runs (with a fixed image
+target) by mixing the new fitness functions into your `objective_functions`
+list:
+
+- `"clip_similarity"` – compares each candidate’s CLIP embedding to the CLIP
+  embedding of the current target image.
+- `"clip_a-red-dog"`, `"clip_space-ship"`, etc. – any string beginning with
+  `clip_` creates a text objective where hyphens/underscores become spaces. The
+  example `clip_a-red-dog` evaluates cosine similarity to the phrase “a red dog”.
+
+These objectives sit alongside existing metrics such as MSE or PSNR, making it
+easy to blend low-level reconstruction with high-level semantics without
+enabling the full CLIP mode.
+
 Tips:
 
 - The CLIP objectives rely on the OpenAI `clip` Python package. It’s already
