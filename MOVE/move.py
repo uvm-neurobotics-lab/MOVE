@@ -379,8 +379,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 align_corners=False,
             )
         if not is_canonical_image_batch(target):
-            target = torch.nan_to_num(target, nan=0.0, posinf=1.0, neginf=0.0)
+            if not torch.isfinite(target).all():
+                raise ValueError("Non-finite values detected in target images")
             target = torch.clamp(target, 0.0, 1.0)
+            if not torch.isfinite(target).all():
+                raise ValueError("Non-finite values detected after clamping target images")
         else:
             target = target.contiguous()
         if target.dtype != torch.float32:
@@ -507,8 +510,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 batch_imgs = imgs[batch_start:batch_end]
 
             if not is_canonical_image_batch(batch_imgs):
-                batch_imgs = torch.nan_to_num(batch_imgs, nan=0.0, posinf=1.0, neginf=0.0)
+                if not torch.isfinite(batch_imgs).all():
+                    raise ValueError("Non-finite values detected in candidate batch images")
                 batch_imgs = torch.clamp(batch_imgs, 0.0, 1.0)
+                if not torch.isfinite(batch_imgs).all():
+                    raise ValueError("Non-finite values detected after clamping batch images")
             else:
                 batch_imgs = batch_imgs.contiguous()
 

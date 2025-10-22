@@ -134,17 +134,27 @@ def correct_dims(candidates, target):
       f = candidates.contiguous()
    else:
       f = _ensure_batched_rgb(candidates).to(dtype=torch.float32)
+      if not torch.isfinite(f).all():
+         raise ValueError("Non-finite values detected in candidate images")
       f = _resize_to_min(f)
-      f = torch.nan_to_num(f, nan=0.0, posinf=1.0, neginf=0.0)
+      if not torch.isfinite(f).all():
+         raise ValueError("Non-finite values detected after resizing candidate images")
       f = torch.clamp(f, 0.0, 1.0)
+      if not torch.isfinite(f).all():
+         raise ValueError("Non-finite values detected after clamping candidate images")
 
    if is_canonical_image_batch(target):
       r = target.contiguous()
    else:
       r = _ensure_batched_rgb(target).to(device=f.device, dtype=torch.float32)
+      if not torch.isfinite(r).all():
+         raise ValueError("Non-finite values detected in target images")
       r = _resize_to_min(r)
-      r = torch.nan_to_num(r, nan=0.0, posinf=1.0, neginf=0.0)
+      if not torch.isfinite(r).all():
+         raise ValueError("Non-finite values detected after resizing target images")
       r = torch.clamp(r, 0.0, 1.0)
+      if not torch.isfinite(r).all():
+         raise ValueError("Non-finite values detected after clamping target images")
 
    if f.shape[0] != 1 and r.shape[0] == 1:
       logging.warning(

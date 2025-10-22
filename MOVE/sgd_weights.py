@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import nullcontext
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
 
 import torch
 import torch.nn.functional as F
@@ -106,8 +106,9 @@ def _resize_to_min(imgs: torch.Tensor) -> torch.Tensor:
 
 def prep_images(imgs: torch.Tensor, config, *, copy: bool = False) -> torch.Tensor:
     """Normalise arbitrary tensors into canonical MOVE image batches."""
+    if not torch.isfinite(imgs).all():
+        raise ValueError("Non-finite values detected in image batch")
 
-    assert torch.isfinite(imgs).all(), "NaNs detected in candidate images"
     if is_canonical_image_batch(imgs):
         result = imgs.clone() if copy else imgs
         return result.contiguous()
@@ -117,8 +118,9 @@ def prep_images(imgs: torch.Tensor, config, *, copy: bool = False) -> torch.Tens
     if working.dtype != torch.float32:
         working = working.to(dtype=torch.float32)
     working = _resize_to_min(working)
-    working = torch.nan_to_num(working, nan=0.0, posinf=1.0, neginf=0.0)
     working = torch.clamp(working, 0.0, 1.0)
+    if not torch.isfinite(working).all():
+        raise ValueError("Non-finite values detected after preprocessing")
     return working.contiguous()
 
 
@@ -196,11 +198,13 @@ def sgd_weights(
         mask_tensor = mask_tensor[mask_tensor.any(dim=1)]
 
     parameter_groups: List[Dict[str, object]] = []
-    for _, _, genome in genomes:
+    group_to_genome: List[int] = []
+    for genome_idx, (_, _, genome) in enumerate(genomes):
         params = list(genome.parameters())
         if not params:
             continue
         parameter_groups.append({"params": params, "lr": getattr(genome, "sgd_lr", lr)})
+        group_to_genome.append(genome_idx)
         for param in params:
             param.requires_grad_(True)
 
@@ -209,6 +213,10 @@ def sgd_weights(
         return 0
 
     optimizer = torch.optim.AdamW(parameter_groups, lr=lr, weight_decay=config.sgd_l2_reg)
+    param_snapshots: List[List[torch.Tensor]] = [
+        [param.detach().clone() for param in group["params"]]
+        for group in parameter_groups
+    ]
     stopping = EarlyStopping(
         patience=early_stop or sgd_steps,
         min_delta=getattr(config, "sgd_early_stop_delta", 0.0),
@@ -226,7 +234,26 @@ def sgd_weights(
     amp_whitelist = {"lpips", "dists"}
     use_amp = bool(getattr(config, "use_amp", True))
     device_type = torch.device(config.device).type if config.device is not None else "cpu"
-    use_cuda_amp = use_amp and device_type == "cuda"
+
+    # Determine whether any parameter lives on CUDA; AMP/GradScaler only works there.
+    has_cuda_params = any(
+        isinstance(group.get("params"), list) and any(param.is_cuda for param in group["params"])
+        for group in parameter_groups
+    )
+    has_cpu_params = any(
+        isinstance(group.get("params"), list) and any(not param.is_cuda for param in group["params"])
+        for group in parameter_groups
+    )
+
+    use_cuda_amp = use_amp and device_type == "cuda" and has_cuda_params and not has_cpu_params
+
+    if use_amp and device_type == "cuda" and has_cpu_params:
+        logging.debug(
+            "Disabling CUDA AMP for SGD step because some parameters remain on CPU; move genomes to CUDA to re-enable."
+        )
+
+    # GradScaler for safe mixed precision training when using CUDA autocast
+    scaler = torch.cuda.amp.GradScaler() if use_cuda_amp else None
 
     steps_executed = 0
 
@@ -244,7 +271,8 @@ def sgd_weights(
         active_target = prepared_target[active_indices]
         active_mask = mask_tensor[:, active_indices] if mask_tensor is not None else None
 
-        optimizer.zero_grad()
+        # Use set_to_none for a small performance improvement and clearer grad checks
+        optimizer.zero_grad(set_to_none=True)
 
         total_active = len(active_genomes)
         per_genome_loss = torch.zeros(total_active, device=config.device, dtype=torch.float32)
@@ -312,7 +340,12 @@ def sgd_weights(
             record_tracker[0] += len(chunk_genomes)
 
             chunk_weight = loss_per_example.numel() / max(1, total_active)
-            (loss_mean * chunk_weight).backward()
+            # Backprop with optional scaling when in mixed precision
+            scaled_loss = loss_mean * chunk_weight
+            if scaler is not None:
+                scaler.scale(scaled_loss).backward()
+            else:
+                scaled_loss.backward()
 
             record_tracker[1] += len(chunk_genomes)
 
@@ -324,10 +357,60 @@ def sgd_weights(
         if record_loss is not None:
             record_loss[step_idx] = loss_value.item()
 
-        if getattr(config, "sgd_clamp_grad", None):
-            torch.nn.utils.clip_grad_norm_(parameter_groups, config.sgd_clamp_grad)
+        invalid_indices: Set[int] = set()
 
-        optimizer.step()
+        if getattr(config, "sgd_clamp_grad", None):
+            # If using AMP, unscale gradients before clipping
+            if scaler is not None:
+                scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(
+                [param for group in parameter_groups for param in group["params"]],
+                config.sgd_clamp_grad,
+            )
+
+        for group_idx, group in enumerate(parameter_groups):
+            genome_idx = group_to_genome[group_idx]
+            grads_finite = True
+            for param in group["params"]:
+                grad = param.grad
+                if grad is None:
+                    continue
+                if not torch.isfinite(grad).all():
+                    grads_finite = False
+                    break
+            if not grads_finite:
+                invalid_indices.add(genome_idx)
+                for param in group["params"]:
+                    if param.grad is not None:
+                        param.grad.detach().zero_()
+
+        # Step the optimizer; if using AMP, use scaler.step() and update the scaler
+        if scaler is not None:
+            # scaler.step will skip the step if gradients contain NaNs/Infs after unscale
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            optimizer.step()
+
+        for group_idx, group in enumerate(parameter_groups):
+            genome_idx = group_to_genome[group_idx]
+            params = group["params"]
+            has_nonfinite = any(not torch.isfinite(param).all() for param in params)
+            if has_nonfinite:
+                invalid_indices.add(genome_idx)
+                for param, backup in zip(params, param_snapshots[group_idx]):
+                    param.data.copy_(backup)
+                    if param in optimizer.state:
+                        optimizer.state[param].clear()
+                continue
+            param_snapshots[group_idx] = [param.detach().clone() for param in params]
+
+        if invalid_indices:
+            stop_mask[list(invalid_indices)] = True
+            logging.warning(
+                "Skipping SGD updates for genomes %s due to non-finite gradients or parameters",
+                sorted(int(idx) for idx in invalid_indices),
+            )
 
         if getattr(config, "max_weight", None):
             for group in parameter_groups:

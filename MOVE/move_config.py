@@ -6,6 +6,7 @@ import uuid
 import torch
 import imageio.v2 as iio
 import logging
+import numpy as np
 from .cppn.activation_functions import *
 from .cppn.config import CPPNConfig
 from .cppn.util import center_crop, resize
@@ -256,27 +257,75 @@ class MOVEConfig(CPPNConfig):
 
 
 def resize_image(image, size, device):
-    # resize such that the smallest dimension is size
-    h, w = image.shape[:2]
-    if h <= 0 or w <= 0:
-        raise ValueError(f"Cannot resize image with non-positive dimensions: {h}x{w}")
-
+    """Resizes an image or batch of images, preserving aspect ratio before center cropping."""
     target_h = max(1, int(size[0]))
     target_w = max(1, int(size[1]))
 
-    if h < w:
-        scale = target_h / h
-        new_h = target_h
-        new_w = max(target_w, int(math.ceil(w * scale)))
+    if isinstance(image, torch.Tensor):
+        image_np = image.detach().cpu().numpy()
     else:
-        scale = target_w / w
-        new_w = target_w
-        new_h = max(target_h, int(math.ceil(h * scale)))
+        image_np = np.asarray(image)
 
-    image = resize(image, (new_h, new_w))
-    image = center_crop(image, target_h, target_w)
-    resized_img = torch.tensor(image, dtype=torch.float32, device=device)
-    return resized_img
+    print(f"resize_image input shape: {image_np.shape}")
+
+    if image_np.ndim < 2:
+        raise ValueError(f"Unsupported image rank {image_np.ndim}; expected at least 2 dimensions.")
+
+    def _resize_sample(sample: np.ndarray) -> np.ndarray:
+        h, w = sample.shape[:2]
+        if h <= 0 or w <= 0:
+            raise ValueError(f"Cannot resize image with non-positive dimensions: {h}x{w}")
+
+        if h < w:
+            scale = target_h / h
+            new_h = target_h
+            new_w = max(target_w, int(math.ceil(w * scale)))
+        else:
+            scale = target_w / w
+            new_w = target_w
+            new_h = max(target_h, int(math.ceil(h * scale)))
+
+        resized = resize(sample, (new_h, new_w))
+        return center_crop(resized, target_h, target_w)
+
+    if image_np.ndim == 2:
+        channel_last = image_np[..., None]
+        resized = _resize_sample(channel_last)[..., 0]
+        return torch.from_numpy(resized).to(device=device, dtype=torch.float32)
+
+    if image_np.ndim == 3:
+        if image_np.shape[-1] in (1, 2, 3, 4) and image_np.shape[0] not in (1, 2, 3, 4):
+            layout = "hwc"
+            channel_last = image_np
+        elif image_np.shape[0] in (1, 2, 3, 4):
+            layout = "chw"
+            channel_last = np.moveaxis(image_np, 0, -1)
+        else:
+            layout = "hwc"
+            channel_last = image_np
+
+        resized = _resize_sample(channel_last)
+        if layout == "chw":
+            resized = np.moveaxis(resized, -1, 0)
+        return torch.from_numpy(resized).to(device=device, dtype=torch.float32)
+
+    if image_np.ndim == 4:
+        if image_np.shape[-1] in (1, 2, 3, 4) and image_np.shape[1] not in (1, 2, 3, 4):
+            layout = "bhwc"
+            channel_last = image_np
+        elif image_np.shape[1] in (1, 2, 3, 4):
+            layout = "bchw"
+            channel_last = np.moveaxis(image_np, 1, -1)
+        else:
+            raise ValueError(f"Unsupported channel configuration for image shape {image_np.shape}")
+
+        resized_samples = [_resize_sample(sample) for sample in channel_last]
+        resized_stack = np.stack(resized_samples, axis=0)
+        if layout == "bchw":
+            resized_stack = np.moveaxis(resized_stack, -1, 1)
+        return torch.from_numpy(resized_stack).to(device=device, dtype=torch.float32)
+
+    raise ValueError(f"Unsupported image rank {image_np.ndim} for resizing.")
 
 
 def resize_target(config):
@@ -288,7 +337,7 @@ def resize_target(config):
     tar = config.target.cpu().numpy()
     
     # check if shape is already correct
-    if tar.shape[:2] == config.target_resize:
+    if tar.shape[-2:] == tuple(config.target_resize):
         return
 
     config.target = resize_image(tar, config.target_resize, device)
@@ -344,12 +393,53 @@ def target_path_to_tensor(config):
         config.target = config.target / 255.0
 
     resize_target(config)
-    config.target = torch.stack([config.target.squeeze() for _ in range(config.initial_batch_size)])
 
-    if len(config.target.shape) > 3:
-        config.target = config.target.permute(0, 3, 1, 2) # move color channel to front
+    target = config.target
+    channel_counts = {1, 2, 3, 4}
+
+    if not isinstance(target, torch.Tensor):
+        target = torch.as_tensor(target, dtype=torch.float32, device=config.device)
     else:
-        config.target = config.target.unsqueeze(1).repeat(1,3,1,1) # add color channel
+        target = target.to(device=config.device, dtype=torch.float32)
+
+    if target.ndim == 2:  # H, W
+        target = target.unsqueeze(0).unsqueeze(0)
+    elif target.ndim == 3:
+        if target.shape[0] in channel_counts and target.shape[-1] not in channel_counts:
+            target = target.unsqueeze(0)
+        elif target.shape[-1] in channel_counts:
+            target = target.permute(2, 0, 1).unsqueeze(0)
+        else:
+            raise ValueError(f"Ambiguous target shape {tuple(target.shape)}; unable to infer channels.")
+    elif target.ndim == 4:
+        if target.shape[1] in channel_counts and target.shape[-1] not in channel_counts:
+            pass  # already B,C,H,W
+        elif target.shape[-1] in channel_counts:
+            target = target.permute(0, 3, 1, 2)
+        else:
+            raise ValueError(f"Ambiguous batched target shape {tuple(target.shape)}; unable to infer channels.")
+    else:
+        raise ValueError(f"Unsupported target tensor rank {target.ndim}; expected 2D-4D input.")
+
+    batch_size = config.initial_batch_size or 1
+    if target.shape[0] == 1 and batch_size > 1:
+        target = target.repeat(batch_size, 1, 1, 1)
+    elif target.shape[0] != batch_size:
+        logging.warning(
+            "Target batch dimension %d does not match initial_batch_size %d; duplicating first sample.",
+            target.shape[0], batch_size)
+        target = target[:1].repeat(batch_size, 1, 1, 1)
+
+    if target.shape[1] == 1 and len(config.color_mode) == 3:
+        target = target.repeat(1, 3, 1, 1)
+    elif target.shape[1] != len(config.color_mode):
+        logging.warning(
+            "Target channel count %d does not match color_mode '%s'; adjusting via repeat as needed.",
+            target.shape[1], config.color_mode)
+        if target.shape[1] == 1:
+            target = target.repeat(1, len(config.color_mode), 1, 1)
+
+    config.target = target
         
     if config.target.shape[-2] < 33 or config.target.shape[-1] < 33:
         config.target = Resize((33,33), antialias=True)(config.target)

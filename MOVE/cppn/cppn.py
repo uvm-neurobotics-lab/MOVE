@@ -3,6 +3,7 @@ from calendar import c
 import copy
 from itertools import count
 import json
+import math
 import torch
 from torch import nn
 
@@ -430,7 +431,13 @@ class CPPN(nn.Module):
                 node_inputs = list(self.gather_inputs(node_id))
                 # Sum inputs and apply activation function
                 if len(node_inputs) > 0:
-                    self.node_states[node_id] = self.nodes[node_id](torch.sum(torch.stack(node_inputs), dim=0))
+                    combined = torch.sum(torch.stack(node_inputs), dim=0)
+                    activated = self.nodes[node_id](combined)
+                    if not torch.isfinite(activated).all():
+                        raise ValueError(
+                            f"Non-finite activation in node {node_id} of genome {self.id}"
+                        )
+                    self.node_states[node_id] = activated
                 elif node_id not in self.node_states:
                     # TODO: shouldn't need to do this
                     self.node_states[node_id] = torch.zeros(x.shape[0:2], device=x.device, requires_grad=False)
@@ -438,6 +445,8 @@ class CPPN(nn.Module):
         # Gather outputs
         outputs = [self.node_states[node_id] for node_id in outputs]
         outputs = torch.stack(outputs, dim=(0 if channel_first else -1))
+        if not torch.isfinite(outputs).all():
+            raise ValueError(f"Non-finite CPPN outputs before transform for genome {self.id}")
 
         
         # outputs = torch.sigmoid(outputs)
@@ -449,8 +458,12 @@ class CPPN(nn.Module):
         
         # outputs = torch.nn.functional.relu(outputs)
         
-        outputs = 1.0-torch.abs(outputs)
+        outputs = 1.0 - torch.abs(outputs)
+        if not torch.isfinite(outputs).all():
+            raise ValueError(f"Non-finite CPPN outputs after absolute transform for genome {self.id}")
         outputs = torch.clamp(outputs, 0, 1)
+        if not torch.isfinite(outputs).all():
+            raise ValueError(f"Non-finite CPPN outputs after clamp for genome {self.id}")
         
         return outputs
 
@@ -697,7 +710,24 @@ class CPPN(nn.Module):
             elif R_reset[i] < config.prob_weight_reinit:
                 connection.reset(self.rand_weight)
 
-        # self.clamp_weights()
+        max_weight = getattr(config, "max_weight", None)
+        finite_cap = None
+        if max_weight is not None:
+            try:
+                max_candidate = float(max_weight)
+                if math.isfinite(max_candidate):
+                    finite_cap = max_candidate
+            except (TypeError, ValueError):
+                finite_cap = None
+
+        with torch.no_grad():
+            for connection in self.connections.values():
+                if finite_cap is not None:
+                    connection.weight.data.clamp_(-finite_cap, finite_cap)
+                if not torch.isfinite(connection.weight).all():
+                    raise ValueError(
+                        f"Non-finite connection weight detected in genome {getattr(self, 'id', 'unknown')}"
+                    )
 
 
     def mutate_bias(self, prob, config):
@@ -710,6 +740,25 @@ class CPPN(nn.Module):
                 node.add_to_bias(delta)
             elif R_reset[i] < config.prob_weight_reinit:
                 node.reset()
+
+        max_weight = getattr(config, "max_weight", None)
+        finite_cap = None
+        if max_weight is not None:
+            try:
+                max_candidate = float(max_weight)
+                if math.isfinite(max_candidate):
+                    finite_cap = max_candidate
+            except (TypeError, ValueError):
+                finite_cap = None
+
+        with torch.no_grad():
+            for node in self.nodes.values():
+                if finite_cap is not None:
+                    node.bias.data.clamp_(-finite_cap, finite_cap)
+                if not torch.isfinite(node.bias).all():
+                    raise ValueError(
+                        f"Non-finite node bias detected in genome {getattr(self, 'id', 'unknown')}"
+                    )
 
         
     def mutate_lr(self, sigma):
@@ -1058,14 +1107,22 @@ if __name__ == "__main__":
     
     from tqdm import trange
     pbar = trange(100000)
+    use_cuda = torch.device(device).type == "cuda"
+    scaler = torch.cuda.amp.GradScaler() if use_cuda else None
     images = []
     try:
         for step in pbar:
-            output = cppn(inputs)
-            loss = loss_fn(output, target)
+            with torch.cuda.amp.autocast(enabled=(scaler is not None)):
+                output = cppn(inputs)
+                loss = loss_fn(output, target)
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                optimizer.step()
             pbar.set_description(f"Loss: {loss.item():.4f}")
             
             if step % 1 == 0:

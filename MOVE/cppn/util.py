@@ -2,6 +2,7 @@ import torch
 from torch import nn
 
 import math
+import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 import networkx as nx
@@ -9,13 +10,18 @@ from torch import nn
 import torch
 from typing import List, Union
 try:  # Optional dependency; fall back to Pillow if unavailable.
-    from cv2 import resize as cv2_resize  # type: ignore
+    import cv2  # type: ignore
+    cv2_resize = cv2.resize  # type: ignore
+    CV2_INTER_LINEAR = cv2.INTER_LINEAR  # type: ignore[attr-defined]
 except ImportError:  # pragma: no cover - OpenCV is optional
+    cv2 = None  # type: ignore
     cv2_resize = None  # type: ignore
-    try:
-        from PIL import Image
-    except ImportError:  # pragma: no cover - Pillow is optional
-        Image = None  # type: ignore
+    CV2_INTER_LINEAR = None  # type: ignore
+
+try:  # Pillow fallback is optional as well.
+    from PIL import Image
+except ImportError:  # pragma: no cover - Pillow is optional
+    Image = None  # type: ignore
 import itertools
 import random
 from typing import Callable, List, Union, Tuple
@@ -166,13 +172,30 @@ def gaussian_blur(img, sigma, kernel_size=(5,5)):
         
         
 def resize(img, size):
-    assert img != None, "No image provided for resizing."
-    
+    if img is None:
+        raise ValueError("No image provided for resizing.")
+
+    if not isinstance(size, (tuple, list)) or len(size) != 2:
+        raise ValueError(f"Size must be a tuple of (height, width); received {size!r}")
+
+    height = max(1, int(size[0]))
+    width = max(1, int(size[1]))
+    target_size = (width, height)
+
     if cv2_resize is not None:
-        return cv2_resize(img, size)
+        try:
+            interpolation = CV2_INTER_LINEAR if CV2_INTER_LINEAR is not None else 1
+            return cv2_resize(img, target_size, interpolation=interpolation)
+        except Exception as exc:
+            if Image is None:
+                raise
+            warnings.warn(
+                f"OpenCV resize failed with {exc}. Falling back to Pillow resize for size={target_size}.",
+                RuntimeWarning,
+            )
     if 'Image' in globals() and Image is not None:
         pil_img = Image.fromarray((img * 255).astype(np.uint8) if img.dtype != np.uint8 else img)
-        resized = pil_img.resize(size[::-1], resample=Image.BILINEAR)
+        resized = pil_img.resize(target_size, resample=Image.BILINEAR)
         output = np.asarray(resized)
         if img.dtype != np.uint8:
             output = output.astype(np.float32) / 255.0

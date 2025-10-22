@@ -272,8 +272,8 @@ class CPPNEvolutionaryAlgorithm(object):
                     pbar.n = self.total_offspring # default progress
                 else:
                     pbar.n = self.stop_condition.curr
+                    print(self.stop_condition.curr,"/",self.stop_condition.value)
                 pbar.refresh()
-
             
         except KeyboardInterrupt:
             self.on_end()
