@@ -166,6 +166,8 @@ def gaussian_blur(img, sigma, kernel_size=(5,5)):
         
         
 def resize(img, size):
+    assert img != None, "No image provided for resizing."
+    
     if cv2_resize is not None:
         return cv2_resize(img, size)
     if 'Image' in globals() and Image is not None:
