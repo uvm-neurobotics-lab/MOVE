@@ -6,8 +6,6 @@ import torch.nn.functional as F
 from torchvision.transforms import Resize
 import networkx as nx
 
-from torchvision.models import VGG16_Weights
-
 try:
    import piq
 except ImportError:  # pragma: no cover - optional dependency
@@ -20,7 +18,7 @@ except ImportError:  # pragma: no cover - optional dependency
    piqa = None  # type: ignore
    HaarPSI = None  # type: ignore
 
-from .style_loss import StyleLoss
+from .style_loss import StyleLoss, ContentLoss
 from .dists import DISTS
 from .lpips import LPIPS
 from .dss import dss as piq_dss
@@ -195,9 +193,7 @@ def style(candidates, target):
    if "STYLE_INSTANCE" in globals().keys() and candidates.device in globals()["STYLE_INSTANCE"].keys():
       style_instance = globals()["STYLE_INSTANCE"][candidates.device]
    else:
-      
-      style_instance = StyleLoss(FEATURE_EXTRACTOR, candidates.device, target[0].unsqueeze(0))
-      
+      style_instance = StyleLoss(FEATURE_EXTRACTOR, candidates.device, target)
       if "STYLE_INSTANCE" not in globals().keys():
          globals()["STYLE_INSTANCE"] = {}
       globals()["STYLE_INSTANCE"][candidates.device] = style_instance
@@ -210,17 +206,16 @@ def style(candidates, target):
    return value
 
 def content(candidates, target):
-   _require_piq()
    if "CONTENT_INSTANCE" in globals().keys() and candidates.device in globals()["CONTENT_INSTANCE"].keys():
       content_instance = globals()["CONTENT_INSTANCE"][candidates.device]
    else:
-      content_instance = piq.ContentLoss(FEATURE_EXTRACTOR, reduction='none').eval().to(candidates.device)
+      content_instance = ContentLoss(candidates.device, target)
       if "CONTENT_INSTANCE" not in globals().keys():
          globals()["CONTENT_INSTANCE"] = {}
       globals()["CONTENT_INSTANCE"][candidates.device] = content_instance
    assert_images(candidates, target)
    loss = content_instance(candidates, target)
-   value = torch.tensor([1.0]*len(candidates)).to(loss) - loss
+   value = torch.ones_like(loss) - loss
    return value
 
 def pieAPP(candidates, target):

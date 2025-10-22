@@ -11,6 +11,7 @@ from .cppn.util import center_crop, resize
 from .fitness.name_to_fn import name_to_fn
 from torchvision.transforms import Resize
 from .fitness import fitness_functions as ff
+from .clip.semantic_targets import DEFAULT_STOP_WORDS
 
 
 class MOVEConfig(CPPNConfig):
@@ -24,6 +25,20 @@ class MOVEConfig(CPPNConfig):
         self.run_id = uuid.uuid1().int>>64
 
         self.target = None # set later
+        self.clip_text_target = None
+        self.clip_num_variants = 8
+        self.clip_noise_scale = 0.2
+        self.clip_random_seed = None
+        self.clip_noise_anneal = False
+        self.clip_noise_final_scale = 0.0
+        self.clip_noise_anneal_start = 0.0
+        self.clip_noise_anneal_end = 1.0
+        self.clip_noise_anneal_power = 1.0
+        self.clip_include_partials = True
+        self.clip_partial_min_length = 3
+        self.clip_partial_stopwords = list(DEFAULT_STOP_WORDS)
+        self.clip_max_partial_prompts = 8
+        self.clip_microbatch_size = 0
         self.do_profile = False
         
         self.checkpoint_frequency = 0
@@ -207,16 +222,16 @@ class MOVEConfig(CPPNConfig):
         super().strings_to_fns()
         if hasattr(self, "objective_functions") and self.objective_functions is not None:
             for i, fn in enumerate(self.objective_functions):
-                if isinstance(fn, str):
+                if isinstance(fn, str) and fn in name_to_fn:
                     self.objective_functions[i] = name_to_fn[fn]
     
         if hasattr(self, "fitness_schedule") and self.fitness_schedule is not None:
             for i, fn in enumerate(self.fitness_schedule):
-                if isinstance(fn, str):
+                if isinstance(fn, str) and fn in name_to_fn:
                     self.fitness_schedule[i] = name_to_fn[fn]
 
         for fn in self.NO_GRADIENT:
-            if isinstance(fn, str):
+            if isinstance(fn, str) and fn in name_to_fn:
                 self.NO_GRADIENT[self.NO_GRADIENT.index(fn)] = name_to_fn[fn]
                 
                 
@@ -258,6 +273,8 @@ def resize_image(image, size, device):
 def resize_target(config):
     if not config.target_resize:
         return 
+    if config.target is None:
+        return
     device = config.target.device
     tar = config.target.cpu().numpy()
     
@@ -291,16 +308,31 @@ def apply_condition(config, controls, condition, name, name_to_function_map):
 
 
 def target_path_to_tensor(config):
-    if (config.target_path is None or config.target_path.strip()=="default") and (type(config.target)== str or type(config.target) == os.PathLike):
-        config.target_path = config.target
-        pilmode = "RGB" if len(config.color_mode) == 3 else "L"
-        config.target = torch.tensor(iio.imread(config.target, pilmode=pilmode), dtype=torch.float32, device=config.device)
+    raw_target = config.target if config.target is not None else config.target_path
+
+    if raw_target is None or (isinstance(raw_target, str) and raw_target.strip() == "default"):
+        return config.target
+
+    pilmode = "RGB" if len(config.color_mode) == 3 else "L"
+
+    if isinstance(raw_target, (str, os.PathLike)):
+        candidate_path = os.fspath(raw_target)
+        if os.path.exists(candidate_path):
+            config.target_path = candidate_path
+            config.target = torch.tensor(iio.imread(candidate_path, pilmode=pilmode), dtype=torch.float32, device=config.device)
+        else:
+            config.clip_text_target = str(raw_target)
+            config.target = None
+            config.target_path = None
+            return None
+    elif isinstance(raw_target, torch.Tensor):
+        config.target = raw_target.to(device=config.device)
     else:
-        pilmode = "RGB" if len(config.color_mode) == 3 else "L"
-        config.target = torch.tensor(iio.imread(config.target_path, pilmode=pilmode), dtype=torch.float32, device=config.device)
-        if config.target.max() > 1.0:
-            logging.warning(f"Target image max value is {config.target.max()}, scaling to [0,1]")
-            config.target = config.target / 255.0
+        raise ValueError("Unsupported target specification; provide an image tensor, path, or text string")
+
+    if config.target.max() > 1.0:
+        logging.warning(f"Target image max value is {config.target.max()}, scaling to [0,1]")
+        config.target = config.target / 255.0
 
     resize_target(config)
     config.target = torch.stack([config.target.squeeze() for _ in range(config.initial_batch_size)])

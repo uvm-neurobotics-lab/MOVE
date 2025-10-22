@@ -1,0 +1,47 @@
+{
+    "name": "telo-25-growth",
+    "controls": {
+        "target": "data/apple.png",
+        "color_mode": "HSL",
+        "output_dir": "../results/telo-25-growth",
+        "alg": "move", 
+    "num_generations": 2000,
+    "num_cells": 50,
+    "target_resize": [
+        128,
+        128
+    ],
+    "hidden_nodes_at_start": 0,
+    "sgd_learning_rate": 0.01,
+    "sgd_early_stop": 20,
+    "connection_prune_threshold": 0.001,
+    "extra_bloat": 3,
+    "bloat_prune_rate": 0.01,
+    "max_weight": 10.0,
+    "init_connection_probability": 0.01,
+    "stop_condition": "passes",
+    "stop_condition_value": 1000000,
+    "total_offspring": 10000000,
+    "batch_size": 50,
+    "initial_batch_size": 50,
+    "max_nodes": null,
+    "max_connections": null
+
+    },
+    "conditions":
+        [
+    {
+        "MOVE-Back-Fast-Grow": {
+            "hidden_nodes_at_start": 0,
+            "n_fourier_features": 0,
+            "sgd_steps": 1,
+            "no_param_mutations": true,
+            "extra_bloat": 10,
+            "topology_mutation_iters": 10,
+            "bloat_prune_rate": 0.0,
+            "connection_prune_threshold": 0.0,
+            "min_pruned": 0
+        }
+    }
+]
+}

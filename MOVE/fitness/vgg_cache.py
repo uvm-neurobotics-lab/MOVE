@@ -1,7 +1,7 @@
 """Helpers for caching VGG feature extractor outputs across fitness metrics."""
 from __future__ import annotations
 
-from typing import Iterable, Sequence, Tuple
+from typing import Iterable, Optional, Sequence, Tuple
 
 import torch
 
@@ -39,7 +39,7 @@ def get_vgg_features(
     persistent: bool = False,
     detach: bool = False,
     store_on_cpu: bool = False,
-    cache_tensor: torch.Tensor | None = None,
+    cache_tensor: Optional[torch.Tensor] = None,
 ) -> Tuple[torch.Tensor, ...]:
     """Return cached VGG16 feature maps for ``tensor`` at ``layers`` indices.
 

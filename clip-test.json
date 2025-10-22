@@ -1,0 +1,42 @@
+{
+  "name": "clip-test",
+  "controls": {
+    "alg": "move",
+    "output_dir": "tmp_results/clip_test",
+    "target": "a smiley face",
+    "clip_random_seed": 7,
+    "clip_microbatch_size": 8,
+    "num_cells": 100,
+    "batch_size": 32,
+    "allow_jumps": 2,
+    "initial_batch_size": 32,
+    "soft_mask_sigma": 1.0,
+    "soft_mask_mu": 0.1,
+    "soft_mask_min": 0.0,
+    "move_fns_per_cell": 3,
+    "stop_condition": "passes",
+    "stop_condition_value": 2560000,
+    "sgd_early_stop": 20,
+    "sgd_steps": 1000,
+    "n_fourier_features": 16,
+    "use_fourier_features": true,
+    "sgd_learning_rate": 0.001,
+    "color_mode": "L",
+    "target_resize": [
+      256,
+      256
+    ]
+  },
+  "conditions": [
+    {
+      "clip-test": {
+  "clip_noise_scale": 0.25,
+  "clip_noise_anneal": false,
+  "clip_noise_final_scale": 0.0,
+  "clip_noise_anneal_start": 0.2,
+  "clip_noise_anneal_end": 0.8,
+  "clip_noise_anneal_power": 1.0
+      }
+    }
+  ]
+}

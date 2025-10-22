@@ -1,0 +1,105 @@
+"""CLIP similarity objectives used by MOVE's evolutionary loop.
+
+The helpers in this module expose lightweight wrappers that turn frozen CLIP
+embeddings into callable fitness objectives compatible with the MOVE fitness
+API.  They support mixed-precision micro-batching and integrate with the global
+feature cache to avoid redundant CLIP forward passes.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable, List, Optional, Union
+
+import torch
+
+from .clip_model import embed_images, cosine_similarity
+from ..fitness.feature_cache import cached_result
+
+
+@dataclass(eq=False)
+class ClipSimilarityObjective:
+    """Callable CLIP objective that scores candidates against a text embedding."""
+
+    embedding: torch.Tensor
+    identifier: str
+    microbatch_size: int = 0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.embedding, torch.Tensor):
+            raise TypeError("embedding must be a torch.Tensor")
+        if self.embedding.ndim != 1:
+            raise ValueError("embedding must be a 1D tensor")
+        if isinstance(self.identifier, str):
+            self.__name__ = self.identifier
+        else:
+            self.__name__ = "clip_similarity"
+        self.embedding = torch.nn.functional.normalize(self.embedding.detach(), dim=0)
+        if self.microbatch_size is None:
+            self.microbatch_size = 0
+        if self.microbatch_size < 0:
+            raise ValueError("microbatch_size must be non-negative")
+
+    def to(self, device: Union[torch.device, str]) -> "ClipSimilarityObjective":
+        """Move the reference embedding to ``device`` and return ``self``."""
+
+        self.embedding = self.embedding.to(device)
+        return self
+
+    def __call__(self, candidates: torch.Tensor, _unused_target: Optional[torch.Tensor]) -> torch.Tensor:
+        """Compute CLIP cosine similarity for ``candidates``.
+
+        ``_unused_target`` is part of the generic MOVE fitness signature and is
+        ignored for CLIP objectives.
+        """
+
+        image_embeddings = self._get_image_embeddings(candidates)
+        return cosine_similarity(image_embeddings, self.embedding)
+
+    def _get_image_embeddings(self, candidates: torch.Tensor) -> torch.Tensor:
+        """Embed candidate images, respecting the configured micro-batch size."""
+
+        micro = int(self.microbatch_size) if self.microbatch_size else candidates.shape[0]
+        micro = max(1, micro)
+
+        def build_full_embeddings() -> torch.Tensor:
+            chunks: List[torch.Tensor] = []
+            for chunk in candidates.split(micro):
+                chunk = chunk.contiguous()
+                chunk_embeddings = embed_images(chunk, device=self.embedding.device)
+                chunks.append(chunk_embeddings)
+            if len(chunks) == 1:
+                return chunks[0]
+            return torch.cat(chunks, dim=0)
+
+        slot = ("clip:image_embeddings/full", micro)
+        return cached_result(slot, candidates, build_full_embeddings)
+
+    def __hash__(self) -> int:
+        return hash(self.identifier)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ClipSimilarityObjective):
+            return False
+        return self.identifier == other.identifier
+
+
+def build_clip_objectives(
+    embeddings: Iterable[torch.Tensor],
+    prefix: str = "clip",
+    *,
+    microbatch_size: int = 0,
+) -> List[ClipSimilarityObjective]:
+    """Wrap each embedding in a :class:`ClipSimilarityObjective` instance."""
+
+    objectives: List[ClipSimilarityObjective] = []
+    for idx, embedding in enumerate(embeddings):
+        name = f"{prefix}_{idx:02d}"
+        objectives.append(
+            ClipSimilarityObjective(
+                embedding=embedding,
+                identifier=name,
+                microbatch_size=microbatch_size,
+            )
+        )
+    return objectives

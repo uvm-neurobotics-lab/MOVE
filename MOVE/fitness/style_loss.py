@@ -1,123 +1,260 @@
-# TAKEN FROM: https://pytorch.org/tutorials/advanced/neural_style_tutorial.html
+"""Cached perceptual helpers for MOVE style and content losses."""
+
+from __future__ import annotations
+
 import torch
 import torch.nn.functional as F
-from torchvision.models import vgg19, vgg16, VGG16_Weights, VGG19_Weights
-from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
 from torch import nn
-from ..cppn.normalization import Normalization
 
-content_layers_default = ['conv_4']
-style_layers_default = ['conv_1', 'conv_2', 'conv_3', 'conv_4', 'conv_5']
+from .feature_cache import cached_result
+from .vgg_cache import get_vgg_features
+from .lpips import SHIFT as _IMAGENET_MEAN, SCALE as _IMAGENET_STD
+
+# Indices inside torchvision.models.vgg16().features matching the classic
+# Gatys style transfer configuration. ``STYLE_LAYERS`` corresponds to the
+# first two convolutions in blocks 1 and 2 plus the first convolution in block 3.
+STYLE_LAYERS = (0, 2, 5, 7, 10)
+CONTENT_LAYERS = (19,)  # conv4_2
+_UNION_LAYERS = tuple(sorted(set(STYLE_LAYERS + CONTENT_LAYERS)))
+
+
+def _imagenet_normalize(tensor: torch.Tensor) -> torch.Tensor:
+    shift = _IMAGENET_MEAN.view(1, -1, 1, 1).to(device=tensor.device, dtype=tensor.dtype)
+    scale = _IMAGENET_STD.view(1, -1, 1, 1).to(device=tensor.device, dtype=tensor.dtype)
+    return (tensor - shift) / scale
 
 
 def gram_matrix(x: torch.Tensor) -> torch.Tensor:
-    r"""Compute Gram matrix for batch of features.
+    r"""Compute the Gram matrix for each sample in ``x``.
 
     Args:
-        x: Tensor. Shape :math:`(N, C, H, W)`.
+        x: Tensor of shape ``(N, C, H, W)``.
 
     Returns:
-        Gram matrix for given input
+        Tensor of shape ``(N, C, C)`` containing the normalized Gram matrices.
     """
-    B, C, H, W = x.size()
-    gram = []
-    for i in range(B):
-        features = x[i].view(C, H * W)
 
-        # Add fake channel dimension
-        G = torch.mm(features, features.t()).unsqueeze(0)
-        G = G.div(C * H * W) # norm
-        gram.append(G)
+    n, c, h, w = x.shape
+    features = x.view(n, c, h * w)
+    gram = torch.matmul(features, features.transpose(-1, -2))
+    return gram.div(c * h * w)
 
-    return torch.stack(gram)
+
+def _perceptual_features(
+    tensor: torch.Tensor,
+    *,
+    layers: tuple[int, ...],
+    detach: bool = False,
+    persistent: bool = False,
+    store_on_cpu: bool = False,
+    cache_tensor: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, ...]:
+    """Return cached VGG16 features for ``tensor`` at ``layers`` indices.
+
+    The forward pass is shared across all perceptual metrics via a superset of
+    required layers, so repeated calls for different metrics reuse the same
+    cached activations.
+    """
+
+    key_tensor = cache_tensor if cache_tensor is not None else tensor
+
+    norm_slot = ("imagenet", "normalized", "cpu" if store_on_cpu else "device")
+
+    def _build_normalized() -> torch.Tensor:
+        norm = _imagenet_normalize(tensor)
+        if store_on_cpu and norm.device.type != "cpu":
+            norm = norm.to("cpu")
+        return norm
+
+    normalized = cached_result(norm_slot, key_tensor, _build_normalized, persistent=persistent)
+
+    if store_on_cpu and tensor.device.type != "cpu":
+        device_slot = ("imagenet", "normalized", tensor.device.type, tensor.device.index)
+
+        def _to_device() -> torch.Tensor:
+            return normalized.to(tensor.device)
+
+        normalized = cached_result(device_slot, key_tensor, _to_device)
+
+    union_features = get_vgg_features(
+        normalized,
+        _UNION_LAYERS,
+        persistent=persistent,
+        detach=detach,
+        store_on_cpu=store_on_cpu,
+        cache_tensor=key_tensor,
+    )
+
+    feature_map = {layer: feat for layer, feat in zip(_UNION_LAYERS, union_features)}
+    return tuple(feature_map[layer] for layer in layers)
 
 
 class StyleLoss(nn.Module):
-    def __init__(self, model, device, target, weight=1):
+    """LPIPS-inspired style loss with aggressive feature caching."""
+
+    def __init__(self, _model, device, target, weight: float = 1.0):
         super().__init__()
-        assert isinstance(model, torch.nn.Module) or model in ["vgg16", "vgg19", "mobilenet_v3_small"]
-        self.device = device
-        self.cnn = model
-        self.weight = weight
+        self.device = torch.device(device)
+        self.weight = float(weight)
+
+        self._target_tensor: torch.Tensor | None = None
+        self._target_grams_cpu: tuple[torch.Tensor, ...] | None = None
+        self._target_value: torch.Tensor | None = None
+
         self.setup(target)
-        
-    def setup(self, target):
-        if self.cnn == "mobilenet_v3_small":
-            extractor = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.DEFAULT).features
-        if self.cnn == "vgg19":
-            extractor = vgg19(weights=VGG19_Weights.DEFAULT).features
-        elif self.cnn == "vgg16":
-            extractor = vgg16(weights=VGG16_Weights.DEFAULT).features
-        else:
-            extractor = self.cnn
-        
-        extractor = extractor.to(self.device).eval()
-        extractor.requires_grad = False
-        
-        cnn_normalization_mean = torch.tensor([0.485, 0.456, 0.406]).to(self.device)
-        cnn_normalization_std = torch.tensor([0.229, 0.224, 0.225]).to(self.device)
-        normalization = Normalization(self.device, cnn_normalization_mean, cnn_normalization_std)
 
-        self.weight = self.weight
-        self.target = target # just for assertion
-        self.device = self.device
-    
-        style_losses = []
+    @property
+    def _style_layers(self) -> tuple[int, ...]:
+        return STYLE_LAYERS
 
-        model = nn.Sequential(normalization)
+    def _target_grams_for_device(self, device: torch.device) -> tuple[torch.Tensor, ...]:
+        assert self._target_tensor is not None
+        assert self._target_grams_cpu is not None
 
-        i = 0  
-        for layer in extractor.children():
-            if isinstance(layer, nn.Conv2d):
-                i += 1
-                name = 'conv_{}'.format(i)
-            elif isinstance(layer, nn.ReLU):
-                name = 'relu_{}'.format(i)
-                layer = nn.ReLU(inplace=False)
-            elif isinstance(layer, nn.MaxPool2d):
-                name = 'pool_{}'.format(i)
-            elif isinstance(layer, nn.BatchNorm2d):
-                name = 'bn_{}'.format(i)
-            else:
-                raise RuntimeError('Unrecognized layer: {}'.format(layer.__class__.__name__))
+        if self._target_grams_cpu[0].device == device:
+            return self._target_grams_cpu
 
-            model.add_module(name, layer)
+        return cached_result(
+            ("style", "target_grams", device.type, device.index),
+            self._target_tensor,
+            lambda: tuple(g.to(device) for g in self._target_grams_cpu),
+            persistent=False,
+        )
 
-            if name in style_layers_default:
-                # add style loss:
-                target_feature = model(target).detach()
-                style_loss = StyleLossValue(target_feature)
-                model.add_module("style_loss_{}".format(i), style_loss)
-                style_losses.append(style_loss)
+    def setup(self, target: torch.Tensor) -> None:
+        raw_target = target
+        target_value = raw_target.to(device=self.device, dtype=torch.float32)
+        self._target_tensor = raw_target
+        self._target_value = target_value
 
-        for i in range(len(model) - 1, -1, -1):
-            if isinstance(model[i], StyleLossValue):
-                break
-        self.model = model[:(i + 1)]
-        self.losses = style_losses
-    
-    def forward(self, input, target):
-        if not (self.target.shape == target.shape) or not torch.isclose(self.target, target, rtol=1e-3, atol=1e-3).all():
-            # logging.warning("StyleLoss: target image changed")
+        target_features = _perceptual_features(
+            target_value,
+            layers=self._style_layers,
+            detach=True,
+            persistent=True,
+            store_on_cpu=True,
+            cache_tensor=raw_target,
+        )
+        self._target_grams_cpu = tuple(gram_matrix(feat) for feat in target_features)
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        raw_target = target
+        target_value = raw_target.to(device=self.device, dtype=torch.float32)
+        if (
+            self._target_tensor is None
+            or self._target_value is None
+            or self._target_value.shape != target_value.shape
+            or not torch.isclose(self._target_value, target_value, rtol=1e-3, atol=1e-3).all()
+        ):
             self.setup(target)
-        self.model(input)
-        style_score = torch.zeros(input.shape[0]).to(input)
-        for sl in self.losses:
-            style_score += sl.loss
-        return torch.sqrt(torch.sqrt(style_score * self.weight)) 
 
-class StyleLossValue(nn.Module):
+        raw_input = input
+        input = raw_input.to(device=self.device, dtype=torch.float32)
+        input_features = _perceptual_features(
+            input,
+            layers=self._style_layers,
+            detach=False,
+            persistent=False,
+            store_on_cpu=False,
+            cache_tensor=raw_input,
+        )
 
-    def __init__(self, target_feature):
-        super(StyleLossValue, self).__init__()
-        self.target_G = gram_matrix(target_feature).detach()
+        target_grams = self._target_grams_for_device(input.device)
+        style_score = torch.zeros(input.shape[0], device=input.device, dtype=input.dtype)
 
-    def forward(self, input):
-        G = gram_matrix(input)
-        if G.shape[0] != self.target_G.shape[0]:
-            if len(self.target_G.shape) == 2:
-                self.target_G = self.target_G.unsqueeze(0) # add batch dimension for broadcasting
-            self.loss = (G - self.target_G).pow(2).mean(dim=(1,2,))
-        else:
-            self.loss = F.mse_loss(G, self.target_G)
-        return input
+        for gram_input, gram_target in zip(input_features, target_grams):
+            g_input = gram_matrix(gram_input)
+            g_target = gram_target
+            if g_target.dim() == 2:
+                g_target = g_target.unsqueeze(0)
+            if g_target.shape[0] == 1 and g_input.shape[0] > 1:
+                g_target = g_target.expand(g_input.shape[0], -1, -1)
+            diff = (g_input - g_target).pow(2).mean(dim=(1, 2))
+            style_score += diff
+
+        style_score = torch.sqrt(torch.sqrt(style_score * self.weight))
+        return style_score
+
+
+class ContentLoss(nn.Module):
+    """Content loss that reuses MOVE's perceptual caches."""
+
+    def __init__(self, device, target, weight: float = 1.0):
+        super().__init__()
+        self.device = torch.device(device)
+        self.weight = float(weight)
+
+        self._target_tensor: torch.Tensor | None = None
+        self._target_features_cpu: tuple[torch.Tensor, ...] | None = None
+        self._target_value: torch.Tensor | None = None
+
+        self.setup(target)
+
+    @property
+    def _content_layers(self) -> tuple[int, ...]:
+        return CONTENT_LAYERS
+
+    def _target_features_for_device(self, device: torch.device) -> tuple[torch.Tensor, ...]:
+        assert self._target_tensor is not None
+        assert self._target_features_cpu is not None
+
+        if self._target_features_cpu[0].device == device:
+            return self._target_features_cpu
+
+        return cached_result(
+            ("content", "target_features", device.type, device.index),
+            self._target_tensor,
+            lambda: tuple(feat.to(device) for feat in self._target_features_cpu),
+            persistent=False,
+        )
+
+    def setup(self, target: torch.Tensor) -> None:
+        raw_target = target
+        target_value = raw_target.to(device=self.device, dtype=torch.float32)
+        self._target_tensor = raw_target
+        self._target_value = target_value
+
+        target_features = _perceptual_features(
+            target_value,
+            layers=self._content_layers,
+            detach=True,
+            persistent=True,
+            store_on_cpu=True,
+            cache_tensor=raw_target,
+        )
+        self._target_features_cpu = target_features
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        raw_target = target
+        target_value = raw_target.to(device=self.device, dtype=torch.float32)
+        if (
+            self._target_tensor is None
+            or self._target_value is None
+            or self._target_value.shape != target_value.shape
+            or not torch.isclose(self._target_value, target_value, rtol=1e-3, atol=1e-3).all()
+        ):
+            self.setup(target)
+
+        raw_input = input
+        input = raw_input.to(device=self.device, dtype=torch.float32)
+        input_features = _perceptual_features(
+            input,
+            layers=self._content_layers,
+            detach=False,
+            persistent=False,
+            store_on_cpu=False,
+            cache_tensor=raw_input,
+        )
+
+        target_features = self._target_features_for_device(input.device)
+        content_loss = torch.zeros(input.shape[0], device=input.device, dtype=input.dtype)
+
+        for feat_input, feat_target in zip(input_features, target_features):
+            if feat_target.dim() == 3:  # single target sample
+                feat_target = feat_target.unsqueeze(0)
+            if feat_target.shape[0] == 1 and feat_input.shape[0] > 1:
+                feat_target = feat_target.expand(feat_input.shape[0], -1, -1, -1)
+            diff = (feat_input - feat_target).pow(2).mean(dim=(1, 2, 3))
+            content_loss += diff
+
+        return content_loss * self.weight

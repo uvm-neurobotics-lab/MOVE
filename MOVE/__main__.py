@@ -1,4 +1,4 @@
-"""Module entry point for running MOVE via ``python -m clean``."""
+"""Module entry point for running MOVE via ``python -m MOVE``."""
 
 from .move import main
 

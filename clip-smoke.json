@@ -1,0 +1,34 @@
+{
+  "name": "clip-smoke",
+  "controls": {
+    "alg": "move",
+    "device": "cpu",
+    "output_dir": "tmp_results/clip_smoke",
+    "target": "a vibrant watercolor painting of a glowing jellyfish",
+    "clip_num_variants": 3,
+    "clip_noise_scale": 0.15,
+    "clip_random_seed": 7,
+    "num_cells": 4,
+    "batch_size": 4,
+    "initial_batch_size": 4,
+    "move_fns_per_cell": 1,
+    "total_offspring": 64,
+    "stop_condition": "evals",
+    "stop_condition_value": 256,
+    "sgd_steps": 0,
+    "use_amp": false,
+    "color_mode": "RGB",
+    "target_resize": [
+      33,
+      33
+    ]
+  },
+  "conditions": [
+    {
+      "clip-smoke": {
+        "clip_num_variants": 3,
+        "clip_noise_scale": 0.15
+      }
+    }
+  ]
+}

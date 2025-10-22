@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 import logging
 import math
+import re
 from typing import Dict, Tuple
 from contextlib import nullcontext
 
@@ -38,12 +39,29 @@ class MOVE(CPPNEvolutionaryAlgorithm):
     def __init__(self, config, debug_output=False) -> None:
         self.config = copy.deepcopy(config)
         self._show_progress = bool(getattr(self.config, "show_progress", True))
+        self._clip_variant_objectives = []
+        self._clip_noise_scale_initial = None
+        self._clip_noise_scale_current = None
+        self.clip_partial_prompts = []
         
         if not hasattr(self.config, "use_amp"):
             self.config.use_amp = True
 
         
-        if self.config.objective_functions is None:
+        clip_text = getattr(self.config, "clip_text_target", None)
+        if clip_text is None and isinstance(self.config.objective_functions, list) and len(self.config.objective_functions) == 1:
+            candidate_fn = self.config.objective_functions[0]
+            if isinstance(candidate_fn, str) and candidate_fn not in ff.FITNESS_FUNCTIONS:
+                clip_text = candidate_fn
+                self.config.clip_text_target = clip_text
+
+        self.clip_mode = clip_text is not None
+        self.clip_text = clip_text
+
+        if self.clip_mode:
+            self.fns = self._build_clip_objectives(clip_text)
+            self.config.objective_functions = self.fns
+        elif self.config.objective_functions is None:
             # default: use all from paper
             self.fns = [
                 ff.mse,
@@ -82,8 +100,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self._prepare_norm_stats()
 
         self.init_inputs()
-        
-        self.init_target()        
+
+        if self.clip_mode:
+            self._init_clip_placeholder_target()
+        elif self.config.target is not None:
+            self.init_target()
         
         if self.config.with_grad:
             self.init_sgd()
@@ -98,6 +119,177 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         print("Initialized MOVE on device:", self.config.device)
         
                             
+    def _build_clip_objectives(self, text: str):
+        from .clip.semantic_targets import (
+            ClipSemanticConfig,
+            generate_clip_targets,
+            generate_partial_prompts,
+            DEFAULT_STOP_WORDS,
+        )
+        from .clip.clip_objectives import build_clip_objectives, ClipSimilarityObjective
+        from .clip.clip_model import embed_text
+
+        variants = max(1, int(getattr(self.config, "clip_num_variants", 1)))
+        config = ClipSemanticConfig(
+            text=text,
+            num_variants=variants,
+            noise_scale=float(getattr(self.config, "clip_noise_scale", 0.2)),
+            seed=getattr(self.config, "clip_random_seed", None),
+            device=self.config.device,
+        )
+        embeddings = generate_clip_targets(config)
+        microbatch = int(getattr(self.config, "clip_microbatch_size", 0) or 0)
+        objectives = build_clip_objectives(
+            embeddings,
+            prefix="clip",
+            microbatch_size=microbatch,
+        )
+        self.clip_embeddings = embeddings
+        self._clip_variant_objectives = objectives[: len(embeddings)]
+        self._clip_noise_scale_initial = float(config.noise_scale)
+        self._clip_noise_scale_current = float(config.noise_scale)
+        self.config.clip_noise_scale = float(config.noise_scale)
+
+        if bool(getattr(self.config, "clip_include_partials", False)):
+            stop_words_cfg = getattr(self.config, "clip_partial_stopwords", None)
+            if stop_words_cfg is None:
+                stop_words_set = DEFAULT_STOP_WORDS
+            else:
+                if isinstance(stop_words_cfg, str):
+                    stop_words_iter = [stop_words_cfg]
+                else:
+                    stop_words_iter = stop_words_cfg
+                stop_words_set = {str(word).lower() for word in stop_words_iter}
+            min_length = max(1, int(getattr(self.config, "clip_partial_min_length", 3)))
+            max_partials = getattr(self.config, "clip_max_partial_prompts", None)
+            try:
+                max_partials_int = None if max_partials is None else max(0, int(max_partials))
+            except (TypeError, ValueError):
+                max_partials_int = None
+
+            partial_prompts = generate_partial_prompts(
+                text,
+                min_length=min_length,
+                stop_words=stop_words_set,
+                max_partial_prompts=max_partials_int,
+            )
+            self.clip_partial_prompts = partial_prompts
+
+            for idx, prompt in enumerate(partial_prompts):
+                partial_embedding = embed_text(prompt, device=self.config.device).float()
+                normalized_embedding = F.normalize(partial_embedding, dim=0)
+                slug = re.sub(r"[^a-z0-9]+", "_", prompt.lower()).strip("_")
+                if not slug:
+                    slug = f"token_{idx:02d}"
+                identifier = f"clip_token_{idx:02d}_{slug}"
+                objectives.append(
+                    ClipSimilarityObjective(
+                        embedding=normalized_embedding,
+                        identifier=identifier,
+                        microbatch_size=microbatch,
+                    )
+                )
+
+        else:
+            self.clip_partial_prompts = []
+
+        return objectives
+
+    def _refresh_clip_noise_embeddings(self, noise_scale: float) -> None:
+        if not self._clip_variant_objectives:
+            return
+
+        from .clip.semantic_targets import ClipSemanticConfig, generate_clip_targets
+
+        variant_count = len(self._clip_variant_objectives)
+        config = ClipSemanticConfig(
+            text=self.clip_text,
+            num_variants=variant_count,
+            noise_scale=float(noise_scale),
+            seed=getattr(self.config, "clip_random_seed", None),
+            device=self.config.device,
+        )
+        embeddings = generate_clip_targets(config)
+        for objective, embedding in zip(self._clip_variant_objectives, embeddings):
+            normalized = F.normalize(embedding.detach(), dim=0)
+            objective.embedding = normalized
+        self.clip_embeddings = embeddings
+        self._clip_noise_scale_current = float(noise_scale)
+        self.config.clip_noise_scale = float(noise_scale)
+
+    def _compute_annealed_noise_scale(self) -> float:
+        if self._clip_noise_scale_initial is None:
+            self._clip_noise_scale_initial = float(getattr(self.config, "clip_noise_scale", 0.2))
+
+        initial = float(self._clip_noise_scale_initial)
+        final = float(getattr(self.config, "clip_noise_final_scale", initial))
+        start = float(getattr(self.config, "clip_noise_anneal_start", 0.0))
+        end = float(getattr(self.config, "clip_noise_anneal_end", 1.0))
+        power = float(getattr(self.config, "clip_noise_anneal_power", 1.0))
+
+        total_offspring = float(getattr(self.config, "total_offspring", 0) or 0)
+        progress = 0.0
+        if total_offspring > 0:
+            progress = self.total_offspring / total_offspring
+        progress = max(0.0, min(progress, 1.0))
+
+        start = max(0.0, start)
+        end = max(start, end)
+        if end == start:
+            return final if progress >= end else initial
+
+        span = end - start
+        t = (progress - start) / span
+        t = max(0.0, min(t, 1.0))
+
+        if power != 1.0:
+            power = max(power, 1e-8)
+            t = t ** power
+
+        return initial + (final - initial) * t
+
+    def _update_clip_noise_schedule(self) -> None:
+        if not self.clip_mode:
+            return
+        if not getattr(self.config, "clip_noise_anneal", False):
+            return
+        if not self._clip_variant_objectives:
+            return
+
+        target_scale = self._compute_annealed_noise_scale()
+        if not math.isfinite(target_scale):
+            return
+
+        if (
+            self._clip_noise_scale_current is None
+            or not math.isclose(
+                float(self._clip_noise_scale_current),
+                float(target_scale),
+                rel_tol=1e-3,
+                abs_tol=1e-3,
+            )
+        ):
+            logging.debug(
+                "Updating CLIP noise scale from %.4f to %.4f",
+                float(self._clip_noise_scale_current or target_scale),
+                float(target_scale),
+            )
+            self._refresh_clip_noise_embeddings(target_scale)
+
+    def batch_start(self):
+        super().batch_start()
+        self._update_clip_noise_schedule()
+
+    def _init_clip_placeholder_target(self) -> None:
+        height = getattr(self.config, "res_h", 33)
+        width = getattr(self.config, "res_w", 33)
+        placeholder = torch.zeros(
+            (self.config.initial_batch_size, 3, height, width),
+            device=self.config.device,
+            dtype=torch.float32,
+        )
+        self.target = placeholder
+
     def _prepare_norm_stats(self) -> None:
         self._norm_stats: Dict[str, Tuple[torch.Tensor, torch.Tensor]] = {}
         self._norm_eps = torch.tensor(1e-8, device=self.config.device, dtype=torch.float32)
@@ -498,7 +690,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 if steps > 0:
                     after_result = self.measure_fitness(new_children, None)
                     after_fit, _, _ = after_result
-                    print("SGD improvement:", (after_fit.mean() - before_fit.mean()).item())
+                    print(f"SGD improvement | mean:{(after_fit.mean() - before_fit.mean()).item():.4f} ; max:{(after_fit - before_fit).max().item():.4f}")
                 else:
                     after_result = baseline if baseline is not None else (before_fit, None, None)
 
