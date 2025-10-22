@@ -495,7 +495,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             fit_children = torch.rand((total, len(self.fns)), device=self.config.device, requires_grad=False)
             return fit_children, fit_children.clone()
 
-        pbar = tqdm(total=num_batches, desc="Measuring fitness") if self._show_progress else None
+        pbar = None
+        # pbar = tqdm(total=num_batches, desc="Measuring fitness") if self._show_progress else None
         for batch_start in range(0, total, batch_size):
             batch_end = min(batch_start + batch_size, total)
             batch_slice = slice(batch_start, batch_end)
