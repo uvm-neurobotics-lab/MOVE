@@ -624,7 +624,7 @@ class CPPN(nn.Module):
         self.connections[new_cx_1_key] = new_cx_1
 
         new_cx_2_key = f"{new_node.id},{old_to}"
-        new_cx_2 = Connection(old_weight)
+        new_cx_2 = Connection(old_weight, device=self.device)
         assert new_cx_2_key not in self.connections.keys()
         self.connections[new_cx_2_key] = new_cx_2
 
@@ -831,7 +831,7 @@ class CPPN(nn.Module):
             child.nodes[node.id] = Node(type(node.activation), node.id, node.bias.item(), device=self.device)
         
         for conn_key, conn in self.connections.items():
-            child.connections[conn_key] = Connection(conn.weight.detach().clone())
+            child.connections[conn_key] = Connection(conn.weight.detach().clone(), device=self.device)
         
         child.update_layers() # TODO: TESTING WITHOUT THIS
         
@@ -904,7 +904,7 @@ class CPPN(nn.Module):
                 cx_key = matching2[match_index]
                 copy_cx = other.connections[cx_key]
             
-            child.connections[cx_key] = Connection(copy_cx.weight.detach().clone(), copy_cx.enabled)
+            child.connections[cx_key] = Connection(copy_cx.weight.detach().clone(), copy_cx.enabled, device=self.device)
             
             # Disable the connection randomly if either parent has it disabled
             self_enabled = self.connections[cx_key].enabled

@@ -242,7 +242,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             # child.reset(self.config)
 
             # TODO lineage
-            return child
+            return child.to(self.config.device)
         else:
             # asexual reproduction, child is mutated clone of parent
             child = parent.clone(self.config, new_id=True)
@@ -672,6 +672,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             new_children = []
             for i, cell_i in enumerate(batch_cell_ids):
                 p = parents[cell_i]
+                if p is not None:
+                    p = p.to(self.config.device)
                 new_children.append((i, cell_i, p))
 
         # mutation
