@@ -24,7 +24,7 @@ import torch
 
 from .clip_model import embed_text
 
-DEFAULT_STOP_WORDS = frozenset({"a", "an", "the", "of", "and", "or"})
+DEFAULT_STOP_WORDS = frozenset({"a", "an", "the", "of", "and", "or", "with", "that", "on", "in", "for", "to"})
 
 
 @dataclass(frozen=True)
