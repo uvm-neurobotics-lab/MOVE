@@ -45,7 +45,7 @@ PyTorch, TorchVision, LPIPS, and other dependencies are pinned inside
 
 2. **Run MOVE with the default configuration**
    ```bash
-   python -m move --config default.json
+   python -m MOVE --config default.json
    ```
 
    Output is written to `output/default/<run-id>/` with intermediate checkpoints
@@ -60,7 +60,7 @@ PyTorch, TorchVision, LPIPS, and other dependencies are pinned inside
 4. **Run CLIP-guided text objectives** with the handy starter config:
 
    ```bash
-   python -m move --config clip-test.json
+   python -m MOVE --config clip-test.json
    ```
 
    CLIP embeddings and partial prompts are generated automatically; results are
@@ -69,7 +69,7 @@ PyTorch, TorchVision, LPIPS, and other dependencies are pinned inside
 At any time you can inspect the available options:
 
 ```bash
-python -m move --help
+python -m MOVE --help
 ```
 
 ---
