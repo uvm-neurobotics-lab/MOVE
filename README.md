@@ -18,11 +18,11 @@ Create a conda environment using environment.yml:
 
 
 ### Run with custom configuration
-```ptyhon move.py -c <path-to-config.json>```
+```ptyhon -m MOVE -c <path-to-config.json>```
 
 
 ### Run with command line args
-```python move.py <args>```
+```python -m MOVE <args>```
 
 
 ```
