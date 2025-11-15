@@ -8,7 +8,7 @@ from contextlib import contextmanager, nullcontext
 
 def show_move_map_images(move):
     pop = move.map.get_population()
-    imgs = [g(move.inputs, channel_first=False).detach().cpu() for g in pop]
+    imgs = [g(move.inputs.cpu(), channel_first=False).detach().cpu() for g in pop]
     image_grid(
         imgs,
         cols=10,

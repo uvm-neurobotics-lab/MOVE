@@ -23,7 +23,7 @@ from .stopping import *
 import logging
 from .util import get_dynamic_mut_rate
 from .fitness import fitness_functions as ff
-from torchvision.transforms import Resize
+# from torchvision.transforms import Resize
 from .cppn.visualize import visualize_network
 
 from .cppn.fourier_features import add_fourier_features
@@ -37,8 +37,8 @@ class CPPNEvolutionaryAlgorithm(object):
             torch.autograd.set_grad_enabled(True)
         else:
             torch.autograd.set_grad_enabled(False)
-        if self.config.autoencoder_frequency > 0:
-            from evolution_torch.autoencoder import initialize_encoders, AutoEncoder
+        # if self.config.autoencoder_frequency > 0:
+            # from evolution_torch.autoencoder import initialize_encoders, AutoEncoder
         
         if not hasattr(self, "inputs"):
             self.inputs = None # default to coord inputs in CPPN class
@@ -241,7 +241,7 @@ class CPPNEvolutionaryAlgorithm(object):
                 
             self.activate_population(self.population)
             
-            self.update_fitnesses_and_novelty()
+            # self.update_fitnesses_and_novelty()
             self.population:list[CPPN] = sorted(self.population, key=lambda x: x.fitness.item(), reverse=True) # sort by fitness
             self.solution = self.population[0].clone(self.config, cpu=True) 
 
@@ -340,8 +340,8 @@ class CPPNEvolutionaryAlgorithm(object):
             self.print_fitnesses()
             
         # update the autoencoder used for novelty
-        if self.config.autoencoder_frequency > 0 and self.current_batch % self.config.autoencoder_frequency == 0:
-            AutoEncoder.instance.update_novelty_network(self.population) 
+        # if self.config.autoencoder_frequency > 0 and self.current_batch % self.config.autoencoder_frequency == 0:
+            # AutoEncoder.instance.update_novelty_network(self.population) 
             
     def run_one_batch(self):
         """Run one generation of the algorithm"""
