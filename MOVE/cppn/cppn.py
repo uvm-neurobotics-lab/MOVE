@@ -936,8 +936,11 @@ class CPPN(nn.Module):
 
     def vis(self, x, fname='cppn_graph'):
         """Visualize the CPPN."""
-        make_dot(self.forward(x), show_attrs=True, show_saved=True, params=dict(self.named_parameters())).render(fname, format="pdf")
-        
+        try:
+            make_dot(self.forward(x), show_attrs=True, show_saved=True, params=dict(self.named_parameters())).render(fname, format="pdf")
+        except Exception as e:
+            print("Error visualizing CPPN:", e)
+
     @staticmethod
     def create_from_json(json_dict, config=None, CPPNClass=None, ConfigClass=None):
         """Constructs a CPPN from a json dict or string."""

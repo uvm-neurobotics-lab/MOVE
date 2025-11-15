@@ -241,7 +241,7 @@ class CPPNEvolutionaryAlgorithm(object):
                 
             self.activate_population(self.population)
             
-            self.update_fitnesses_and_novelty()
+            # self.update_fitnesses_and_novelty()
             self.population:list[CPPN] = sorted(self.population, key=lambda x: x.fitness.item(), reverse=True) # sort by fitness
             self.solution = self.population[0].clone(self.config, cpu=True) 
 
