@@ -418,8 +418,8 @@ class CPPNEvolutionaryAlgorithm(object):
                 # pbar seems broken, print progress manually
                 # TODO: clean up
                 pct = '('+f"{self.stop_condition.curr / self.config.stop_condition_value * 100:.1f}%"+")" if self.stop_condition is not None else ''
-                run_info = f"Run {self.run_number}, {self.stop_condition.curr}/{self.stop_condition.value} {str(self.stop_condition.__class__.__name__).replace('StopAfter','')} {pct}" if self.stop_condition is not None else f"Run {self.run_number}"
-                run_info+= f" Top Fit: {self.solution_fitness:.4f}, #: {self.total_offspring}"
+                run_info  = f"Run {self.run_number}, {self.stop_condition.curr}/{self.stop_condition.value} {str(self.stop_condition.__class__.__name__).replace('StopAfter','')} {pct}" if self.stop_condition is not None else f"Run {self.run_number}"
+                run_info += f" N: {self.total_offspring} | Elite Fit: {self.solution_fitness:.4f} params: {b.n_parameters if b is not None else 'N/A'} |"
                 tqdm.write(run_info)
                 
                 stop_reached = self.stop_condition(self)

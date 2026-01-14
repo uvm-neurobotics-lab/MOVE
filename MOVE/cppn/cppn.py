@@ -205,6 +205,17 @@ class CPPN(nn.Module):
     def hidden_nodes(self):
         return [n for n in self.nodes.values() if n.id not in self.input_node_ids and n.id not in self.output_node_ids]
     
+    @property
+    def n_parameters(self):
+        total = 0
+        for node in self.nodes.values():
+            if isinstance(node.bias, nn.Parameter):
+                total += node.bias.numel()
+        for cx in self.connections.values():
+            if isinstance(cx.weight, nn.Parameter):
+                total += cx.weight.numel()
+        return total
+    
     def __init__(self, config:CPPNConfig, do_init=True):
         super().__init__()
         self.nodes = nn.ModuleDict()  # key: node_id (string)
