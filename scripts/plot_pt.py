@@ -9,26 +9,31 @@ warnings.filterwarnings("ignore", "use_inf_as_na option is deprecated")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('path', type=str, help="Path to results directory")
+    parser.add_argument('path', type=str, help="Path to results pt file")
     parser.add_argument('--agg', '-a', type=str, default=None, help="Aggregation function")
     parser.add_argument('--agg-value', '-v', type=int, nargs='*', default=None, help="Aggregation function value")
-    parser.add_argument('--agg-dim', '-d', type=int, nargs='*', default=[0], help="Aggregation function dimension")
+    parser.add_argument('--agg-dim', '-ad', type=int, nargs='*', default=[0], help="Aggregation function dimension")
+    parser.add_argument('--dim', '-d', type=int, default=None, help="Dimension to plot")
     parser.add_argument('--fitness', '-f', action='store_true', help="Plot fitness")
     parser.add_argument('--replacements', '-r', action='store_true', help="Plot replacements")
     parser.add_argument('--batch', '-b', type=int, default=None, help="Cut off batch")
+    parser.add_argument('--save-path', '-s', type=str, default=None, help="Path to save the plot")
     
     
     args = parser.parse_args()
     
     if len(args.agg_dim) == 1:
         args.agg_dim = args.agg_dim[0]
-    if len(args.agg_value) == 1:
+    if args.agg_value and len(args.agg_value) == 1:
         args.agg_value = args.agg_value[0]
     
     loaded = torch.load(args.path).to(torch.float32)
     
     if args.batch is not None:
         loaded = loaded[...,:args.batch]
+    
+    if args.dim is not None:
+        loaded = loaded.select(args.dim, 0)
 
     if args.fitness:
         # load csv for names
@@ -88,5 +93,9 @@ if __name__ == "__main__":
         for i, l in enumerate(labels):
             labels[i] = names[i]
         a.legend(handles, labels)
+    
+    if args.save_path is not None:
+        plt.savefig(args.save_path)
+
     plt.show()
     plt.close()
