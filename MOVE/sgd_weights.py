@@ -111,6 +111,9 @@ def prep_images(imgs: torch.Tensor, config, *, copy: bool = False) -> torch.Tens
 
     if is_canonical_image_batch(imgs):
         result = imgs.clone() if copy else imgs
+        # Apply channels_last memory format for better GPU performance
+        if getattr(config, "use_channels_last", True) and result.device.type == 'cuda':
+            result = result.contiguous(memory_format=torch.channels_last)
         return result.contiguous()
 
     working = imgs.clone() if copy else imgs
@@ -121,6 +124,11 @@ def prep_images(imgs: torch.Tensor, config, *, copy: bool = False) -> torch.Tens
     working = torch.clamp(working, 0.0, 1.0)
     if not torch.isfinite(working).all():
         raise ValueError("Non-finite values detected after preprocessing")
+    
+    # Apply channels_last memory format for better GPU performance
+    if getattr(config, "use_channels_last", True) and working.device.type == 'cuda':
+        working = working.contiguous(memory_format=torch.channels_last)
+    
     return working.contiguous()
 
 
@@ -131,6 +139,9 @@ def _prepare_target_cache(target: torch.Tensor, config) -> torch.Tensor:
     cached = _TARGET_PREP_CACHE.get(cache_key)
     if cached is None or cached.shape != target.shape:
         cached = prep_images(target, config, copy=True).detach()
+        # Use pinned memory for faster CPU-GPU transfers if enabled
+        if getattr(config, "use_pinned_memory", True) and cached.device.type == 'cpu':
+            cached = cached.pin_memory()
         _TARGET_PREP_CACHE[cache_key] = cached
     return cached
 
@@ -159,6 +170,86 @@ def _render_population(
             )
         )
     return torch.stack(outputs)
+
+
+def _evaluate_function_masked(
+    fn,
+    fn_name: str,
+    imgs: torch.Tensor,
+    target: torch.Tensor,
+    mask_row: Optional[torch.Tensor],
+    *,
+    use_cuda_amp: bool,
+    amp_whitelist: Set[str],
+    normalizer,
+    norm,
+    config,
+) -> torch.Tensor:
+    """Evaluate ``fn`` on ``imgs`` while respecting an optional mask."""
+
+    active_indices: Optional[torch.Tensor] = None
+    if mask_row is not None:
+        if mask_row.dtype != torch.bool:
+            mask_row = mask_row.to(dtype=torch.bool)
+        active_indices = mask_row.nonzero(as_tuple=False).flatten()
+        if active_indices.numel() == 0:
+            return imgs.new_zeros(imgs.shape[0], dtype=torch.float32)
+        if active_indices.numel() == imgs.shape[0]:
+            active_indices = None
+
+    if active_indices is not None:
+        fn_imgs = imgs.index_select(0, active_indices)
+        fn_target = target.index_select(0, active_indices)
+    else:
+        fn_imgs = imgs
+        fn_target = target
+
+    def _compute(autocast_enabled: bool) -> torch.Tensor:
+        amp_ctx = (
+            torch.cuda.amp.autocast(dtype=torch.float16)
+            if autocast_enabled
+            else nullcontext()
+        )
+        with amp_ctx:
+            result = fn(fn_imgs, fn_target)
+        if result.dim() == 0:
+            result = result.unsqueeze(0)
+        return result
+
+    autocast_enabled = use_cuda_amp and fn_name in amp_whitelist
+    fitness = _compute(autocast_enabled)
+    if not torch.isfinite(fitness).all():
+        fitness = _compute(False)
+        if fitness.dim() == 0:
+            fitness = fitness.unsqueeze(0)
+
+    fitness = fitness.to(device=imgs.device, dtype=torch.float32, non_blocking=True)
+
+    if active_indices is not None:
+        norm_input = fitness
+    else:
+        norm_input = fitness
+
+    if normalizer is not None:
+        normed = normalizer(fn, norm_input)
+    else:
+        normed = norm_tensor(norm_input, norm, fn_name, clamp=True, warn=False)
+
+    if not torch.isfinite(normed).all():
+        logging.warning(
+            "Fitness %s produced non-finite values during SGD; sanitizing to zeros.",
+            fn_name or getattr(fn, "__class__", type(fn)).__name__,
+        )
+        finite_mask = torch.isfinite(normed)
+        normed = torch.where(finite_mask, normed, torch.zeros_like(normed))
+
+    normed = normed.to(dtype=torch.float32)
+    if active_indices is None:
+        return normed
+
+    full = imgs.new_zeros(imgs.shape[0], dtype=torch.float32)
+    full.index_copy_(0, active_indices, normed)
+    return full
 
 
 def sgd_weights(
@@ -212,7 +303,33 @@ def sgd_weights(
         logging.debug("No fitness functions or trainable parameters available; skipping SGD step.")
         return 0
 
-    optimizer = torch.optim.AdamW(parameter_groups, lr=lr, weight_decay=config.sgd_l2_reg)
+    has_cuda_params = any(
+        isinstance(group.get("params"), list) and any(param.is_cuda for param in group["params"])
+        for group in parameter_groups
+    )
+    has_cpu_params = any(
+        isinstance(group.get("params"), list) and any(not param.is_cuda for param in group["params"])
+        for group in parameter_groups
+    )
+
+    fused_requested = getattr(config, "use_fused_optimizer", True)
+    use_fused = (
+        fused_requested
+        and config.device.type == "cuda"
+        and has_cuda_params
+        and not has_cpu_params
+    )
+    if fused_requested and not use_fused:
+        reason = "parameters remain on CPU" if has_cpu_params else "no CUDA parameters available"
+        logging.debug("Disabling fused AdamW for SGD because %s.", reason)
+
+    # Use fused AdamW on CUDA
+    try:
+        optimizer = torch.optim.AdamW(parameter_groups, lr=lr, weight_decay=config.sgd_l2_reg, fused=use_fused)
+    except (TypeError, RuntimeError):
+        # Fallback for older PyTorch versions or CPU
+        optimizer = torch.optim.AdamW(parameter_groups, lr=lr, weight_decay=config.sgd_l2_reg)
+    
     param_snapshots: List[List[torch.Tensor]] = [
         [param.detach().clone() for param in group["params"]]
         for group in parameter_groups
@@ -224,7 +341,7 @@ def sgd_weights(
         device=config.device,
     )
 
-    progress = trange(sgd_steps, disable=skip_pbar or sgd_steps <= 5)
+    progress = trange(sgd_steps, disable=skip_pbar or sgd_steps <= 5, position=1, leave=True, desc=f"{current_gen}: GD")
     stop_mask = torch.zeros(len(genomes), dtype=torch.bool, device=config.device)
     prepared_target = _prepare_target_cache(target, config)
 
@@ -236,19 +353,10 @@ def sgd_weights(
     device_type = torch.device(config.device).type if config.device is not None else "cpu"
 
     # Determine whether any parameter lives on CUDA; AMP/GradScaler only works there.
-    has_cuda_params = any(
-        isinstance(group.get("params"), list) and any(param.is_cuda for param in group["params"])
-        for group in parameter_groups
-    )
-    has_cpu_params = any(
-        isinstance(group.get("params"), list) and any(not param.is_cuda for param in group["params"])
-        for group in parameter_groups
-    )
-
     use_cuda_amp = use_amp and device_type == "cuda" and has_cuda_params and not has_cpu_params
 
     if use_amp and device_type == "cuda" and has_cpu_params:
-        logging.debug(
+        logging.warning(
             "Disabling CUDA AMP for SGD step because some parameters remain on CPU; move genomes to CUDA to re-enable."
         )
 
@@ -256,6 +364,16 @@ def sgd_weights(
     scaler = torch.cuda.amp.GradScaler() if use_cuda_amp else None
 
     steps_executed = 0
+
+    # Pre-allocate tensors for reuse across SGD steps
+    max_active = len(genomes)
+    per_genome_loss_buffer = torch.zeros(max_active, device=config.device, dtype=torch.float32)
+    loss_accum_buffer = torch.zeros(1, device=config.device, dtype=torch.float32)
+    
+    # Cache frequently accessed config values (avoid repeated getattr calls in hot loop)
+    clip_microbatch_size = int(getattr(config, "clip_microbatch_size", 0))
+    sgd_clamp_grad = getattr(config, "sgd_clamp_grad", None)
+    max_weight = getattr(config, "max_weight", None)
 
     for step_idx in progress:
         active_indices = (~stop_mask).nonzero(as_tuple=True)[0]
@@ -275,9 +393,12 @@ def sgd_weights(
         optimizer.zero_grad(set_to_none=True)
 
         total_active = len(active_genomes)
-        per_genome_loss = torch.zeros(total_active, device=config.device, dtype=torch.float32)
-        loss_accum = torch.zeros(1, device=config.device, dtype=torch.float32)
-        microbatch = int(getattr(config, "clip_microbatch_size", 0) or total_active)
+        # Reuse pre-allocated buffers and zero them instead of recreating
+        per_genome_loss = per_genome_loss_buffer[:total_active]
+        per_genome_loss.zero_()
+        loss_accum = loss_accum_buffer
+        loss_accum.zero_()
+        microbatch = clip_microbatch_size or total_active
 
         for offset in range(0, total_active, microbatch):
             chunk_slice = slice(offset, min(offset + microbatch, total_active))
@@ -296,45 +417,55 @@ def sgd_weights(
             imgs = prep_images(imgs, config)
             chunk_target = chunk_target.contiguous()
 
-            components: List[torch.Tensor] = []
+            normed = imgs.new_zeros((imgs.shape[0], len(fns)), dtype=torch.float32)
             with feature_cache_scope():
-                for fn in fns:
+                for fn_idx, fn in enumerate(fns):
                     fn_name = getattr(fn, "__name__", "")
-                    amp_ctx = (
-                        torch.cuda.amp.autocast(dtype=torch.float16)
-                        if use_cuda_amp and fn_name in amp_whitelist
-                        else nullcontext()
+                    mask_row = chunk_mask[fn_idx] if chunk_mask is not None else None
+                    normed_fit = _evaluate_function_masked(
+                        fn,
+                        fn_name,
+                        imgs,
+                        chunk_target,
+                        mask_row,
+                        use_cuda_amp=use_cuda_amp,
+                        amp_whitelist=amp_whitelist,
+                        normalizer=normalizer,
+                        norm=norm,
+                        config=config,
                     )
-                    with amp_ctx:
-                        fitness = fn(imgs, chunk_target)
-                    if fitness.dim() == 0:
-                        fitness = fitness.unsqueeze(0)
-                    if not torch.isfinite(fitness).all():
-                        disable_ctx = (
-                            torch.cuda.amp.autocast(enabled=False)
-                            if use_cuda_amp and fn_name in amp_whitelist
-                            else nullcontext()
-                        )
-                        with disable_ctx:
-                            fitness = fn(imgs, chunk_target)
-                            if fitness.dim() == 0:
-                                fitness = fitness.unsqueeze(0)
-                    fitness = fitness.to(device=imgs.device, dtype=torch.float32, non_blocking=True)
-                    if normalizer is not None:
-                        normed_fit = normalizer(fn, fitness)
-                    else:
-                        normed_fit = norm_tensor(fitness, norm, fn.__name__, clamp=True, warn=False)
-                    components.append(normed_fit.to(dtype=torch.float32))
+                    normed[:, fn_idx] = normed_fit
 
-            if components:
-                normed = torch.stack(components, dim=1)
-            else:
-                normed = torch.empty((imgs.shape[0], 0), device=imgs.device)
-
-            if chunk_mask is not None:
-                normed = normed * chunk_mask.T
+            if not torch.isfinite(normed).all():
+                bad_rows = torch.isfinite(normed).all(dim=1)
+                bad_rows = ~bad_rows
+                bad_indices = chunk_indices[bad_rows]
+                if bad_indices.numel() > 0:
+                    logging.warning(
+                        "Sanitizing non-finite fitness matrix entries for genomes %s during SGD.",
+                        [int(idx) for idx in bad_indices.tolist()],
+                    )
+                normed = torch.where(
+                    torch.isfinite(normed),
+                    normed,
+                    torch.zeros_like(normed),
+                )
 
             loss_per_example = (1.0 - normed).mean(dim=1)
+            if not torch.isfinite(loss_per_example).all():
+                bad_mask = ~torch.isfinite(loss_per_example)
+                bad_indices = chunk_indices[bad_mask]
+                if bad_indices.numel() > 0:
+                    logging.warning(
+                        "Replacing non-finite per-example losses with 1.0 for genomes %s during SGD.",
+                        [int(idx) for idx in bad_indices.tolist()],
+                    )
+                    invalid_indices.update(int(idx) for idx in bad_indices.tolist())
+                loss_per_example = torch.where(
+                    bad_mask,
+                    torch.ones_like(loss_per_example),
+                    loss_per_example,
+                )
             loss_mean = loss_per_example.mean().to(dtype=torch.float32)
 
             record_tracker[0] += len(chunk_genomes)
@@ -349,6 +480,8 @@ def sgd_weights(
 
             record_tracker[1] += len(chunk_genomes)
 
+            # record_passes is updated in-place for caller to consume
+
             per_genome_loss[chunk_slice] = loss_per_example.detach()
             loss_accum += loss_mean.detach() * chunk_weight
 
@@ -359,13 +492,29 @@ def sgd_weights(
 
         invalid_indices: Set[int] = set()
 
-        if getattr(config, "sgd_clamp_grad", None):
-            # If using AMP, unscale gradients before clipping
-            if scaler is not None:
-                scaler.unscale_(optimizer)
+        if scaler is not None:
+            scaler.unscale_(optimizer)
+
+        if sgd_clamp_grad:
             torch.nn.utils.clip_grad_norm_(
                 [param for group in parameter_groups for param in group["params"]],
-                config.sgd_clamp_grad,
+                sgd_clamp_grad,
+            )
+
+        sanitized_grad_genomes: Set[int] = set()
+        for group_idx, group in enumerate(parameter_groups):
+            for param in group["params"]:
+                grad = param.grad
+                if grad is None:
+                    continue
+                if not torch.isfinite(grad).all():
+                    sanitized_grad_genomes.add(group_to_genome[group_idx])
+                    grad.nan_to_num_(nan=0.0, posinf=0.0, neginf=0.0)
+
+        if sanitized_grad_genomes:
+            logging.debug(
+                "Sanitized non-finite gradients for genomes %s during SGD.",
+                sorted(int(idx) for idx in sanitized_grad_genomes),
             )
 
         for group_idx, group in enumerate(parameter_groups):
@@ -397,6 +546,19 @@ def sgd_weights(
             params = group["params"]
             has_nonfinite = any(not torch.isfinite(param).all() for param in params)
             if has_nonfinite:
+                sanitized = False
+                for param in params:
+                    if not torch.isfinite(param).all():
+                        param.data.nan_to_num_(nan=0.0, posinf=0.0, neginf=0.0)
+                        sanitized = True
+                if sanitized and all(torch.isfinite(param).all() for param in params):
+                    logging.debug(
+                        "Sanitized non-finite parameter data for genome %s during SGD step.",
+                        int(genome_idx),
+                    )
+                    param_snapshots[group_idx] = [param.detach().clone() for param in params]
+                    continue
+
                 invalid_indices.add(genome_idx)
                 for param, backup in zip(params, param_snapshots[group_idx]):
                     param.data.copy_(backup)
@@ -412,10 +574,10 @@ def sgd_weights(
                 sorted(int(idx) for idx in invalid_indices),
             )
 
-        if getattr(config, "max_weight", None):
+        if max_weight:
             for group in parameter_groups:
                 for param in group["params"]:
-                    param.data.clamp_(-config.max_weight, config.max_weight)
+                    param.data.clamp_(-max_weight, max_weight)
 
         stop_updates = stopping.mask_stop(per_genome_loss, indices=active_indices)
         stop_mask[active_indices] |= stop_updates
@@ -428,6 +590,7 @@ def sgd_weights(
             progress.set_postfix_str(
                 f"loss={loss_value.item():.4f}, {n_params}p, {len(active_genomes)}/{len(genomes)} gs"
             )
+    progress.close()
 
     return steps_executed
 

@@ -127,11 +127,16 @@ class Record():
 
 
 
-    def update_counts(self, index, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes, n_step_passes):
+    def update_counts(self, index, n_step_fwds, n_step_fwds_incl_sgd, n_step_evals, n_step_evals_incl_sgd, n_pruned, n_pruned_nodes, n_step_passes, config=None):
         # check to ensure we don't overflow
         if index >= self.evals_by_batch.shape[0]:
-            # expand
-            self.expand_arrays((index - self.evals_by_batch.shape[0] + 1)*10, config={'record_frequency_batch':1})
+            # expand - use simple object if config not provided
+            if config is None:
+                class SimpleConfig:
+                    record_frequency_batch = 1
+                    device = 'cpu'
+                config = SimpleConfig()
+            self.expand_arrays((index - self.evals_by_batch.shape[0] + 1)*10, config=config)
 
 
         self.n_fwds += n_step_fwds
@@ -217,7 +222,7 @@ class Record():
                 repl_src = all_replacements.detach().to(self.replacements_by_batch.dtype)
                 self.replacements_by_batch[:, :, index].copy_(repl_src, non_blocking=repl_src.is_cuda)
             
-        print("Updated index", index)
+        logging.debug("Updated record index %s", index)
     
 
     def stop_update_thread(self):

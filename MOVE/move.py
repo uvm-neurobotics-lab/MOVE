@@ -125,6 +125,53 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         if self.config.grad_every != 1 and self.config.batch_size < self.config.num_cells and self.config.sgd_steps > 0:
             print("\n\nWARNING: grad_every != 1 with batch_size < num_cells may cause some cells to never be trained with SGD\n\n")
 
+        # Enable torch.compile for fitness functions in PyTorch 2.0+ (20-40% speedup)
+        # Note: Disabled for CLIP objectives due to CUDA graph conflicts with tensor reuse
+        if getattr(self.config, "use_torch_compile", True) and hasattr(torch, "compile"):
+            try:
+                compiled_fns = []
+                skip_compile = {
+                    "lpips",
+                    "dists",
+                    "style",
+                    "vif",
+                    "dss",
+                    "ssim",
+                    "msssim",
+                    "haarpsi",
+                }
+                compile_allowlist = {
+                    str(name).lower()
+                    for name in getattr(self.config, "torch_compile_allowlist", ["mse"])
+                }
+
+                for fn in self.fns:
+                    fn_name = getattr(fn, "__name__", str(fn))
+                    fn_name_lower = fn_name.lower()
+                    # Skip compilation for CLIP objectives (causes CUDA graph errors)
+                    if (
+                        "clip" in fn_name_lower
+                        or "Clip" in str(type(fn))
+                        or fn_name_lower in skip_compile
+                        or fn_name_lower not in compile_allowlist
+                    ):
+                        compiled_fns.append(fn)
+                        logging.info(f"Skipping compilation for objective: {fn_name}")
+                        continue
+                    
+                    if hasattr(fn, "__call__") and not hasattr(fn, "_is_compiled"):
+                        # Use 'default' mode instead of 'reduce-overhead' to avoid CUDA graph issues
+                        compiled_fn = torch.compile(fn, mode="default")
+                        compiled_fn._is_compiled = True
+                        compiled_fns.append(compiled_fn)
+                        logging.info(f"Compiled fitness function: {fn_name}")
+                    else:
+                        compiled_fns.append(fn)
+                self.fns = compiled_fns
+                self.config.objective_functions = self.fns
+            except Exception as e:
+                logging.warning(f"torch.compile failed, falling back to eager mode: {e}")
+
         print("Initialized MOVE on device:", self.config.device)
         
                             
@@ -440,7 +487,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         try:
             if resume is not None:
                 self.current_batch = self.record.load_checkpoint(resume, self.checkpoints_dir, self.map, self.config)
-                print(self.map.get_population())
+                logging.info(f"Resumed from checkpoint '{resume}' at batch {self.current_batch}, population: {self.map.get_population()}")
             super().evolve(run_number, show_output, initial_population)
         except KeyboardInterrupt:
             pass # allow user to stop early
@@ -466,7 +513,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             # child.reset(self.config)
 
             # TODO lineage
-            return child
+            return child.to(self.config.device)
         else:
             # asexual reproduction, child is mutated clone of parent
             child = parent.clone(self.config, new_id=True)
@@ -486,19 +533,24 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         adjust the target to match
         """
         if self.target.shape[0]>count :
-            print(f"WARNING: target batch size is larger than population size, truncating target from {self.target.shape[0]} to {count}")
-            print("Population size:", self.config.num_cells)
-            print("Total offspring:", self.total_offspring)
+            logging.warning(
+                "Target batch size %s larger than population size %s; truncating (total offspring %s)",
+                self.target.shape[0],
+                count,
+                self.total_offspring,
+            )
             self.target = self.target[:count]
         elif self.target.shape[0]<count:
-            print(f"WARNING: target batch size is smaller than population size, repeating target from {self.target.shape[0]} to {count}")
-            print("Population size:", self.config.num_cells)
-            print("Total offspring:", self.total_offspring)
+            logging.warning(
+                "Target batch size %s smaller than population size %s; repeating (total offspring %s)",
+                self.target.shape[0],
+                count,
+                self.total_offspring,
+            )
             self.target = self.target.repeat(count//self.target.shape[0], *([1]*len(self.target.shape[1:])))
     
 
-    @torch.no_grad()
-    @torch.no_grad()
+    @torch.no_grad()  # Use no_grad instead of inference_mode to allow tensor reuse in SGD
     def measure_fitness(self, genomes, imgs, skip_genotype=False):
         total = len(genomes)
         if total == 0:
@@ -686,7 +738,6 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                     c.add_connection(self.config)
                 after = len(c.connections)
                 n_bloat[child_i] = after - before
-                # print(f"{c_i} Bloat {this_bloat} connections")
         return n_bloat
     
 
@@ -726,9 +777,17 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 if steps > 0:
                     after_result = self.measure_fitness(new_children, None)
                     after_fit, _, _ = after_result
-                    print(f"SGD improvement | mean:{(after_fit.mean() - before_fit.mean()).item():.4f} ; max:{(after_fit - before_fit).max().item():.4f}")
+                    mean_delta = (after_fit.mean() - before_fit.mean()).item()
+                    max_delta = (after_fit - before_fit).max().item()
+                    self._update_progress_stat(
+                        "sgdΔ",
+                        f"μ:{mean_delta:.4f} max:{max_delta:.4f}",
+                    )
                 else:
+                    self._update_progress_stat("sgdΔ", None)
                     after_result = baseline if baseline is not None else (before_fit, None, None)
+        else:
+            self._update_progress_stat("sgdΔ", None)
 
         if return_fitness:
             return steps, n_passes, after_result
@@ -868,8 +927,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             if not self.allow_multiple_placements:
                 assert torch.sum(replaces) <= 1
                 
-        print("\n", torch.sum(all_replacements).item(), "replacements")
-        
+        total_replacements = int(torch.sum(all_replacements).item())
+        self._update_progress_stat("repl", str(total_replacements))
+
         return all_replacements
     
     

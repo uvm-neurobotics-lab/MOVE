@@ -186,6 +186,12 @@ class MOVEConfig(CPPNConfig):
         self.low_mem = False # don't record as much data to save memory
         self.thread_count = 1 # don't use multiple threads
         
+        # Performance optimizations
+        self.use_channels_last = True # Use channels_last memory format 
+        self.use_torch_compile = True # Enable torch.compile for PyTorch 2.0+ 
+        self.use_fused_optimizer = True # Use fused AdamW optimizer on CUDA
+        self.use_pinned_memory = True # Use pinned memory for faster CPU-GPU
+        
         self.norm_df_path = 'data/target_fitness_fn_ranges.csv'
         
         self.record_frequency_batch = 1 # record every batch
@@ -241,6 +247,26 @@ class MOVEConfig(CPPNConfig):
         super().setup()
         target_path_to_tensor(self)
         self.device = torch.device(self.device)
+        
+        # Enable cuDNN benchmarking for consistent input sizes
+        if self.device.type == 'cuda':
+            torch.backends.cudnn.benchmark = True
+            logging.info("Enabled cuDNN benchmark mode for faster CUDA operations")
+            
+            # Enable TF32 for Ampere+ GPUs (A100, RTX 3090, etc.)
+            if hasattr(torch.backends.cuda, 'matmul'):
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+                logging.info("Enabled TF32 for faster matrix operations on Ampere+ GPUs")
+            
+            # Set float32 matmul precision for better performance
+            if hasattr(torch, 'set_float32_matmul_precision'):
+                try:
+                    torch.set_float32_matmul_precision('high')  # Use TF32 when available
+                    logging.info("Set float32 matmul precision to 'high' for better performance")
+                except Exception:
+                    pass
+        
         for i in range(len(self.activations)):
             if isinstance(self.activations[i], str):
                 self.activations[i] = name_to_fn[self.activations[i]]
