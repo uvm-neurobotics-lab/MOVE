@@ -51,9 +51,8 @@ nvidia-smi
 
 CMDS=()
 
-CMDS+=("time python -O move.py -r ${FILE}")
+CMDS+=("time python -O -m MOVE -r ${FILE}")
 
-mkdir -p ${OUTDIR}
 NOW="$(date +"%D %T")"
 echo "START $SLURM_JOB_ID : $NOW : run $EXPERIMENT_FILE : $CMDS" >> ../results/record.out
 echo "$SLURM_JOB_ID : $NOW : run $EXPERIMENT_FILE : $CMDS" >> ../results/ongoing.out

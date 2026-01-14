@@ -73,7 +73,7 @@ then
   echo "Running $JOBS jobs"
   for i in $(seq 2 $JOBS)
   do
-    CMDS+=("time python -O move.py -c ${EXPERIMENT_FILE} -o ${OUTDIR} &")
+    CMDS+=("time python -O -m MOVE -c ${EXPERIMENT_FILE} -o ${OUTDIR} &")
   done
 
 fi
