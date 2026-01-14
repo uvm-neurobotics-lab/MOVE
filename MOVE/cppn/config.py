@@ -50,9 +50,9 @@ class CPPNConfig:
         # self.normalize_outputs = False # None, "picbreeder", "sigmoid", 'min_max', 'abs_tanh'
         self.node_agg = 'sum'
         
-        self.max_connections = 400
+        self.max_connections = None
         
-        self.max_nodes = 10
+        self.max_nodes = None
         
         self.output_blur = 0.0 # don't blur
         
