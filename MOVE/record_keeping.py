@@ -12,6 +12,7 @@ import time
 from .cppn.util import *
 from .cppn import CPPN
 
+import time
 import threading
 import queue
 
@@ -226,6 +227,7 @@ class Record():
 
 
     def save(self, run_dir, plot=True):
+        start_time = time.time()
         logging.info("Saving record")
         torch.save(self.agg_fitness_by_batch, os.path.join(run_dir, "agg_fitness_by_batch.pt"))
         
@@ -264,6 +266,8 @@ class Record():
             torch.save(self.cx_by_batch, os.path.join(run_dir, "cx_by_batch.pt"))
             torch.save(self.nodes_by_batch, os.path.join(run_dir, "nodes_by_batch.pt"))
             torch.save(self.time_elapsed, os.path.join(run_dir, "time_elapsed_by_batch.pt"))
+        
+        print(f"Record saved in {time.time() - start_time:.3f} seconds")
             
 
     def load(self, run_dir):
@@ -392,9 +396,9 @@ class Record():
                 json.dump(genomes, f)
     
 
-    def save_checkpoint(self, run_dir, checkpoint_dir, map, config, current_batch, save_data=False):
+    def save_checkpoint(self, run_dir, checkpoint_dir, map, config, current_batch, save_data=True):
         if save_data:
-            self.save(run_dir)
+            self.save(run_dir, plot=False)
         checkpoint_name = os.path.join(checkpoint_dir, f"{current_batch:04d}.json.gz")
         self.save_map(None, map, config,None, compress=True, save_path=checkpoint_name)
     
