@@ -26,11 +26,15 @@ def patch_missing_config(run_dir):
 
 
 
-def submit_run_resume(run_path):
-    patch_missing_config(run_path)
+import os
+def submit_run_resume(run_path, dry=False):
     submit_cmd = f"sbatch scripts/resume-move-experiment.sh {run_path}"
+    if not dry:
+        patch_missing_config(run_path)
+        os.system(submit_cmd)
+    else:
+        print("(Dry run) Would submit:", end="\t")
     print(submit_cmd)
-    # os.system(submit_cmd)
     
 
 if __name__ == "__main__":
@@ -43,6 +47,9 @@ if __name__ == "__main__":
     
     conds_dir = os.path.join(args.out_dir, "conditions")
 
+
+
+    to_resume = []
     for out_cond_dir in os.listdir(conds_dir):
         out_cond_dir = os.path.join(conds_dir, out_cond_dir)
         if not os.path.isdir(out_cond_dir):
@@ -59,12 +66,21 @@ if __name__ == "__main__":
                 else:
                     print(f"Empty run: {run}")
                 continue
-            if not 'fitness_by_batch.pt' in run_files:
-                print(f"Missing fitness_by_batch.pt in run: {run}")
-                submit_run_resume(os.path.join(out_cond_dir, run))
+            if 'in_progress.txt' in run_files:
+                to_resume.append(os.path.join(out_cond_dir, run))
             else:
                 print(f"Already finished run: {run}")
 
     
+
+    print(f"Found {len(to_resume)} runs...")
+    confirm = input("Submit missing runs? (y/n): ")
+    dry = True
+    if confirm.lower().strip().startswith("y"):
+        dry = False
+    
+    for out_cond_dir, run in [(os.path.dirname(run_path), os.path.basename(run_path)) for run_path in to_resume]:
+        submit_run_resume(os.path.join(out_cond_dir, run), dry=dry)
+
     
     
