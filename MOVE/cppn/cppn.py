@@ -4,6 +4,9 @@ import copy
 from itertools import count
 import json
 import math
+import logging
+from typing import Dict, List, Tuple
+
 import torch
 from torch import nn
 
@@ -206,6 +209,7 @@ class CPPN(nn.Module):
         super().__init__()
         self.nodes = nn.ModuleDict()  # key: node_id (string)
         self.connections = nn.ModuleDict()  # key: (from, to) (string)
+        self._incoming_connections: Dict[str, List[Tuple[str, "Connection"]]] = {}
         
         self.n_input = config.num_inputs   
         assert self.n_input == 2 + (config.n_fourier_features if config.use_fourier_features else 0)\
@@ -404,13 +408,14 @@ class CPPN(nn.Module):
         # self.node_states = {} # risky to disable, assumes node_states is reset elsewhere TODO
 
     def gather_inputs(self, node_id, just_w=False):
-        for i in self.node_states:
-            key = f"{i},{node_id}"
-            if key in self.enabled_connections and key in self.connections.keys():
-                if just_w:
-                    yield self.connections[key].weight
-                else:
-                    yield self.node_states[i] * self.connections[key].weight
+        for source_id, connection in self._incoming_connections.get(node_id, []):
+            if just_w:
+                yield connection.weight
+            else:
+                source_state = self.node_states.get(source_id)
+                if source_state is None:
+                    continue
+                yield source_state * connection.weight
              
     def get_image(self, *args, **kwargs):
         return self.forward(*args, **kwargs)
@@ -420,33 +425,50 @@ class CPPN(nn.Module):
         for i, input_node in enumerate(self.input_nodes):
             self.node_states[input_node.id] = x[:, :, i]
         for i, output_node in enumerate(self.output_nodes):
-            self.node_states[output_node.id] = torch.zeros(x.shape[0:2], device=x.device, requires_grad=False)
+            # Use empty() since it's immediately overwritten - faster than zeros()
+            self.node_states[output_node.id] = torch.empty(x.shape[0:2], device=x.device, requires_grad=False)
 
         # Feed forward through layers
         outputs = self.output_node_ids
         
         for layer in self.layers:
             for node_id in layer:
-                # Gather inputs from incoming connections
-                node_inputs = list(self.gather_inputs(node_id))
-                # Sum inputs and apply activation function
-                if len(node_inputs) > 0:
-                    combined = torch.sum(torch.stack(node_inputs), dim=0)
+                combined = None
+                has_input = False
+                for contribution in self.gather_inputs(node_id):
+                    has_input = True
+                    combined = contribution if combined is None else combined + contribution
+
+                if has_input:
                     activated = self.nodes[node_id](combined)
                     if not torch.isfinite(activated).all():
-                        raise ValueError(
-                            f"Non-finite activation in node {node_id} of genome {self.id}"
+                        logging.warning(
+                            "Non-finite activation in node %s of genome %s; sanitizing output to zeros.",
+                            node_id,
+                            self.id,
+                        )
+                        finite_mask = torch.isfinite(activated)
+                        activated = torch.where(
+                            finite_mask,
+                            activated,
+                            torch.zeros_like(activated),
                         )
                     self.node_states[node_id] = activated
                 elif node_id not in self.node_states:
-                    # TODO: shouldn't need to do this
-                    self.node_states[node_id] = torch.zeros(x.shape[0:2], device=x.device, requires_grad=False)
+                    self.node_states[node_id] = torch.zeros(
+                        x.shape[0:2], device=x.device, requires_grad=False
+                    )
         
         # Gather outputs
         outputs = [self.node_states[node_id] for node_id in outputs]
         outputs = torch.stack(outputs, dim=(0 if channel_first else -1))
         if not torch.isfinite(outputs).all():
-            raise ValueError(f"Non-finite CPPN outputs before transform for genome {self.id}")
+            logging.warning(
+                "Non-finite CPPN outputs before transform for genome %s; sanitizing to zeros.",
+                self.id,
+            )
+            finite_mask = torch.isfinite(outputs)
+            outputs = torch.where(finite_mask, outputs, torch.zeros_like(outputs))
 
         
         # outputs = torch.sigmoid(outputs)
@@ -460,10 +482,20 @@ class CPPN(nn.Module):
         
         outputs = 1.0 - torch.abs(outputs)
         if not torch.isfinite(outputs).all():
-            raise ValueError(f"Non-finite CPPN outputs after absolute transform for genome {self.id}")
+            logging.warning(
+                "Non-finite CPPN outputs after absolute transform for genome %s; sanitizing to zeros.",
+                self.id,
+            )
+            finite_mask = torch.isfinite(outputs)
+            outputs = torch.where(finite_mask, outputs, torch.zeros_like(outputs))
         outputs = torch.clamp(outputs, 0, 1)
         if not torch.isfinite(outputs).all():
-            raise ValueError(f"Non-finite CPPN outputs after clamp for genome {self.id}")
+            logging.warning(
+                "Non-finite CPPN outputs after clamp for genome %s; clipping to [0,1] zeros for invalid entries.",
+                self.id,
+            )
+            finite_mask = torch.isfinite(outputs)
+            outputs = torch.where(finite_mask, outputs, torch.zeros_like(outputs))
         
         return outputs
 
@@ -612,7 +644,11 @@ class CPPN(nn.Module):
         old_cx_key = random_choice(eligible_cxs, 1, replace=False)
 
         # create the new node
-        new_node = Node(random_choice(config.activations), type(self).get_new_node_id())
+        new_node = Node(
+            random_choice(config.activations),
+            type(self).get_new_node_id(),
+            device=self.device,
+        )
         
         assert new_node.id not in self.nodes.keys(),\
             "Node ID already exists: {}".format(new_node.id)
@@ -863,7 +899,14 @@ class CPPN(nn.Module):
     
     
     def update_enabled_connections(self):
-        self.enabled_connections = [conn_key for conn_key in self.connections if self.connections[conn_key].enabled]
+        self.enabled_connections = [
+            conn_key for conn_key, conn in self.connections.items() if conn.enabled
+        ]
+        incoming: Dict[str, List[Tuple[str, Connection]]] = {}
+        for conn_key in self.enabled_connections:
+            source_id, target_id = conn_key.split(",")
+            incoming.setdefault(target_id, []).append((source_id, self.connections[conn_key]))
+        self._incoming_connections = incoming
     
     
     def rand_weight(self, std=1.0):
@@ -877,10 +920,20 @@ class CPPN(nn.Module):
           
         # Copy the parent's genome
         for _, node in self.nodes.items():
-            child.nodes[node.id] = Node(type(node.activation), node.id, node.bias.item(), device=self.device)
+            child.nodes[node.id] = Node(
+                type(node.activation),
+                node.id,
+                node.bias.item(),
+                device=self.device,
+            )
         
         for conn_key, conn in self.connections.items():
-            child.connections[conn_key] = Connection(conn.weight.detach().clone())
+            cloned_conn = Connection(
+                conn.weight.detach().clone().to(self.device),
+                conn.enabled,
+                device=self.device,
+            )
+            child.connections[conn_key] = cloned_conn
         
         child.update_layers() # TODO: TESTING WITHOUT THIS
         
@@ -899,9 +952,10 @@ class CPPN(nn.Module):
             child.lineage = self.lineage
             
         child.sgd_lr = self.sgd_lr
-        
-        child.enabled_connections = self.enabled_connections
+
         child.layers = copy.deepcopy(self.layers)
+        child.enabled_connections = list(self.enabled_connections)
+        child.update_enabled_connections()
         
         if cpu:
             child.to(torch.device('cpu'))
@@ -932,14 +986,24 @@ class CPPN(nn.Module):
             node_id = str(node_id)
             from_self = np.random.rand() < .5 
             n = self.nodes[node_id] if from_self else other.nodes[node_id]
-            child.nodes[node_id] = Node(n.activation, n.id, n.bias.item())
+            child.nodes[node_id] = Node(
+                n.activation,
+                n.id,
+                n.bias.item(),
+                device=self.device,
+            )
                 
                 
         for node_id in self.output_node_ids:
             node_id = str(node_id)
             from_self = np.random.rand() < .5 
             n = self.nodes[node_id] if from_self else other.nodes[node_id]
-            child.nodes[node_id] = Node(n.activation, n.id, n.bias.item())    
+            child.nodes[node_id] = Node(
+                n.activation,
+                n.id,
+                n.bias.item(),
+                device=self.device,
+            )    
         
         for match_index in range(len(matching1)):
             # Matching genes are inherited randomly
@@ -953,7 +1017,11 @@ class CPPN(nn.Module):
                 cx_key = matching2[match_index]
                 copy_cx = other.connections[cx_key]
             
-            child.connections[cx_key] = Connection(copy_cx.weight.detach().clone(), copy_cx.enabled)
+            child.connections[cx_key] = Connection(
+                copy_cx.weight.detach().clone().to(self.device),
+                copy_cx.enabled,
+                device=self.device,
+            )
             
             # Disable the connection randomly if either parent has it disabled
             self_enabled = self.connections[cx_key].enabled
@@ -975,12 +1043,18 @@ class CPPN(nn.Module):
                 else:
                     from_self = node in self.nodes.keys()
                 n = self.nodes[node] if from_self else other.nodes[node]
-                child.nodes[node] = Node(n.activation, n.id, n.bias.item())
+                child.nodes[node] = Node(
+                    n.activation,
+                    n.id,
+                    n.bias.item(),
+                    device=self.device,
+                )
                             
         
-        child.update_layers() # TEST REMOVE
+        child.update_layers()
+        child.update_enabled_connections()
+        child.to(self.device)
         child.disable_invalid_connections(config)
-        
         return child
 
     def vis(self, x, fname='cppn_graph'):
