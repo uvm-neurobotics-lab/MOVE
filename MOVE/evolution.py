@@ -3,20 +3,21 @@ import json
 import math
 import random
 import time
-from typing import Callable
+from typing import Callable, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 import __main__ as main
 if not hasattr(main, '__file__'):
     try:
-        from tqdm.notebook import trange
+        from tqdm.notebook import tqdm
     except ImportError:
-        from tqdm import trange
+        from tqdm import tqdm
 else:
-    from tqdm import trange
+    from tqdm import tqdm
 import pandas as pd
 import torch
 import os
+import importlib
 from .cppn.cppn import CPPN
 from .cppn.util import *
 from .stopping import *
@@ -25,8 +26,24 @@ from .util import get_dynamic_mut_rate
 from .fitness import fitness_functions as ff
 # from torchvision.transforms import Resize
 from .cppn.visualize import visualize_network
+from .cppn import graph_util as _graph_util
 
 from .cppn.fourier_features import add_fourier_features
+
+try:
+    _autoencoder_module = importlib.util.find_spec("evolution_torch.autoencoder")
+except ModuleNotFoundError:  # pragma: no cover - optional dependency missing
+    _autoencoder_module = None
+if _autoencoder_module is not None:
+    _loaded_autoencoder = importlib.import_module("evolution_torch.autoencoder")
+    initialize_encoders = getattr(_loaded_autoencoder, "initialize_encoders", None)
+    AutoEncoder = getattr(_loaded_autoencoder, "AutoEncoder", None)
+else:  # pragma: no cover - optional feature unavailable
+    initialize_encoders = None
+    AutoEncoder = None
+
+_graph_activate_population = getattr(_graph_util, "activate_population", None)
+_graph_activate_population_async = getattr(_graph_util, "activate_population_async", None)
 
 class CPPNEvolutionaryAlgorithm(object):
     def __init__(self, config, debug_output=False) -> None:
@@ -101,6 +118,17 @@ class CPPNEvolutionaryAlgorithm(object):
             self.total_batches = math.ceil(self.stop_condition.n_batches(self) * 1.5) # x1.5 to be safe
         print("Expecting up to", self.total_batches, "batches")
         print("Stop condition:", self.stop_condition.__class__.__name__ if self.stop_condition is not None else "None")
+
+        self._progress_stats: dict[str, str] = {}
+        self._base_progress_info: str = ""
+        self._main_progress_bar = None
+
+        total_batches = float(self.total_batches)
+        if not math.isfinite(total_batches) or total_batches <= 0:
+            total_batches = 1.0
+
+        self._progress_total = total_batches
+        self._progress_completed = float(self.current_batch)
         
         
         
@@ -119,6 +147,92 @@ class CPPNEvolutionaryAlgorithm(object):
         # save config to run dir
         with open(os.path.join(self.run_dir, "config.json"), "w") as f:
             json.dump(copy.deepcopy(self.config).to_json(), f, indent=4)
+
+    def _refresh_progress_postfix(self):
+        if self._main_progress_bar is None:
+            return
+
+        parts = []
+        if self._base_progress_info:
+            parts.append(self._base_progress_info)
+        if self._progress_stats:
+            extras = " ".join(f"{key}:{value}" for key, value in self._progress_stats.items())
+            parts.append(extras)
+
+        postfix = " | ".join(filter(None, parts))
+        self._main_progress_bar.set_postfix_str(postfix)
+
+    def _set_base_progress_info(self, info: str):
+        self._base_progress_info = info
+        self._refresh_progress_postfix()
+
+    def _update_progress_stat(self, key: str, value: Optional[str]):
+        if value is None:
+            self._progress_stats.pop(key, None)
+        else:
+            self._progress_stats[key] = value
+        self._refresh_progress_postfix()
+
+    def _advance_progress_to(self, absolute_value: float):
+        if self._main_progress_bar is None:
+            return
+
+        target = min(self._progress_total, float(absolute_value))
+        if target <= self._progress_completed or not math.isfinite(target):
+            self._main_progress_bar.refresh()
+            return
+
+        delta = target - self._progress_completed
+        self._progress_completed = target
+        self._main_progress_bar.update(delta)
+
+    def _stop_progress_snapshot(self) -> Optional[tuple[float, float]]:
+        stop = self.stop_condition
+        if stop is None:
+            return None
+
+        try:
+            units = stop.progress(self)
+        except AttributeError:
+            return None
+
+        if not units:
+            return None
+
+        try:
+            current_units, total_units = units
+        except (TypeError, ValueError):
+            return None
+
+        if total_units is None:
+            return None
+
+        total = float(total_units)
+        if total <= 0 or not math.isfinite(total):
+            return None
+
+        current = float(current_units)
+        return current, total
+
+    def _configure_progress_scale(self):
+        self._progress_total = float(self.total_batches)
+        if not math.isfinite(self._progress_total) or self._progress_total <= 0:
+            self._progress_total = 1.0
+        self._progress_completed = 0.0
+
+    def _progress_from_stop_condition(self) -> Optional[float]:
+        snapshot = self._stop_progress_snapshot()
+        if snapshot is None:
+            return None
+
+        current, total = snapshot
+
+        if not math.isclose(total, self._progress_total):
+            self._progress_total = total
+            if self._main_progress_bar is not None:
+                self._main_progress_bar.total = total
+
+        return max(0.0, current)
 
     def init_inputs(self):
         res_h, res_w = self.config.res_h, self.config.res_w
@@ -206,14 +320,24 @@ class CPPNEvolutionaryAlgorithm(object):
 
     def activate_population(self, genomes):
         if self.config.activation_mode == 'population':
-            outputs = activate_population(genomes, self.config, self.inputs)
+            if _graph_activate_population is None:
+                raise RuntimeError(
+                    "activation_mode 'population' requires graph_util.activate_population, which is unavailable"
+                )
+            outputs = _graph_activate_population(genomes, self.config, self.inputs)
         else:
             if self.config.thread_count > 1:
-                outputs = activate_population_async(genomes,
-                                                 self.in_queue,
-                                                 self.out_queue,
-                                                 self.target,
-                                                 self.config)
+                if _graph_activate_population_async is None:
+                    raise NotImplementedError(
+                        "Multiprocessing activation requires graph_util.activate_population_async"
+                    )
+                outputs = _graph_activate_population_async(
+                    genomes,
+                    self.in_queue,
+                    self.out_queue,
+                    self.target,
+                    self.config,
+                )
             else:
                 outputs = torch.stack([g(self.inputs) for g in genomes])
             outputs = outputs.clamp_(0.0,1.0)
@@ -237,7 +361,12 @@ class CPPNEvolutionaryAlgorithm(object):
         if initial_population:
             # update novelty encoder 
             if self.config.get("novelty_mode", None) == "encoder":  
-                initialize_encoders(self.config, self.target)  
+                if initialize_encoders is not None:
+                    initialize_encoders(self.config, self.target)
+                else:
+                    logging.warning(
+                        "novelty_mode 'encoder' set but evolution_torch.autoencoder is unavailable"
+                    )  
                 
             self.activate_population(self.population)
             
@@ -247,38 +376,91 @@ class CPPNEvolutionaryAlgorithm(object):
 
         try:
             # Run algorithm
-            if self.config.stop_condition is None:
-                pbar = trange(self.config.total_offspring, desc=f"Run {self.run_number}") # default progress
-            else:
-                pbar = trange(self.config.stop_condition_value, desc=f"Run {self.run_number}, {self.config.stop_condition}")
-        
+            desc = f"Run {self.run_number}"
+            if self.config.stop_condition is not None:
+                desc = f"Run {self.run_number}, {self.config.stop_condition}"
+
+            self._configure_progress_scale()
+            pbar = tqdm(
+                total=self._progress_total,
+                desc=desc,
+                position=0,
+                initial=self._progress_completed,
+                dynamic_ncols=True,
+                leave=True,
+                mininterval=0.1,
+                disable=False,
+            )
+            self._main_progress_bar = pbar
+            self._last_progress = 0.0  # Track last progress value for delta calculation
+            if self.config.stop_condition is not None:
+                self._update_progress_stat("passes", "0")
+
             while self.total_offspring < self.config.total_offspring:
                 self.batch_start()
                 self.run_one_batch()
                 self.batch_end()
                 b = self.get_best()
                 if b is not None:
-                    pbar.set_postfix_str(f"bf: {self.agg_fitnesses[b.id]:.4f} (id:{b.id}) af:{np.mean(list(self.agg_fitnesses.values())):.4f} n:{self.avg_nodes:.2f} cx:{self.avg_enabled_connections:.2f} u:{self.n_unique} ")
+                    base_info = (
+                        f"bf:{self.agg_fitnesses[b.id]:.4f} (id:{b.id}) "
+                        f"af:{np.mean(list(self.agg_fitnesses.values())):.4f} "
+                        f"n:{self.avg_nodes:.2f} cx:{self.avg_enabled_connections:.2f} u:{self.n_unique}"
+                    )
                 else:
-                    pbar.set_postfix_str(f"d:{self.diversity:.4f}")
+                    base_info = f"d:{self.diversity:.4f}"
+
+                self._set_base_progress_info(base_info)
+                batch_index = self.current_batch + 1
+                self._update_progress_stat("batch", f"{batch_index}/{self.total_batches}")
+                pbar.set_description(f"Run {self.run_number} ({batch_index}/{self.total_batches})")
                 
-                if self.stop_condition(self):
-                    print(f"Stop condition: {self.stop_condition.__class__.__name__ if self.stop_condition is not None else 'None'} met")
+                # pbar seems broken, print progress manually
+                # TODO: clean up
+                pct = '('+f"{self.stop_condition.curr / self.config.stop_condition_value * 100:.1f}%"+")" if self.stop_condition is not None else ''
+                run_info = f"Run {self.run_number}, {self.stop_condition.curr}/{self.stop_condition.value} {str(self.stop_condition.__class__.__name__).replace('StopAfter','')} {pct}" if self.stop_condition is not None else f"Run {self.run_number}"
+                run_info+= f" Top Fit: {self.solution_fitness:.4f}, #: {self.total_offspring}"
+                tqdm.write(run_info)
+                
+                stop_reached = self.stop_condition(self)
+                
+                # Calculate batch-based progress and update bar
+                batch_based_progress = min(self._progress_total, batch_index * (self._progress_total / (self.total_batches or 1.0)))
+                delta = batch_based_progress - self._last_progress
+                pbar.update(delta)
+                self._last_progress = batch_based_progress
+
+                if self.config.stop_condition is not None:
+                    curr_value = getattr(self.stop_condition, "curr", None)
+                    if isinstance(curr_value, (int, float)) and math.isfinite(curr_value):
+                        total = getattr(self.config, "stop_condition_value", None)
+                        if isinstance(total, (int, float)) and math.isfinite(total):
+                            self._update_progress_stat("passes", f"{int(curr_value):,}/{int(total):,}")
+                        else:
+                            self._update_progress_stat("passes", f"{curr_value}")
+                    else:
+                        self._update_progress_stat("passes", None)
+
+                if stop_reached:
+                    logging.info(
+                        "Stop condition %s met",
+                        self.stop_condition.__class__.__name__ if self.stop_condition is not None else "None",
+                    )
                     break
-                
+
                 self.current_batch += 1
-                
-                if self.config.stop_condition is None:
-                    pbar.n = self.total_offspring # default progress
-                else:
-                    pbar.n = self.stop_condition.curr
-                pbar.refresh()
             
         except KeyboardInterrupt:
             self.on_end()
-            raise KeyboardInterrupt()  
-        
+            if self._main_progress_bar is not None:
+                self._main_progress_bar.close()
+            self._main_progress_bar = None
+            raise KeyboardInterrupt()
+
         self.on_end()
+        if self._main_progress_bar is not None:
+            self._main_progress_bar.close()
+        self._main_progress_bar = None
 
     def on_end(self):
         self.end_time = time.time()     
@@ -342,6 +524,13 @@ class CPPNEvolutionaryAlgorithm(object):
         # update the autoencoder used for novelty
         # if self.config.autoencoder_frequency > 0 and self.current_batch % self.config.autoencoder_frequency == 0:
             # AutoEncoder.instance.update_novelty_network(self.population) 
+        if (
+            self.config.autoencoder_frequency > 0
+            and self.current_batch % self.config.autoencoder_frequency == 0
+            and AutoEncoder is not None
+            and getattr(AutoEncoder, "instance", None) is not None
+        ):
+            AutoEncoder.instance.update_novelty_network(self.population)
             
     def run_one_batch(self):
         """Run one generation of the algorithm"""
