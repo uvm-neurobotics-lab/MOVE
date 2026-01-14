@@ -960,6 +960,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             new_children = []
             for i, cell_i in enumerate(batch_cell_ids):
                 p = parents[cell_i]
+                if p is not None:
+                    p = p.to(self.config.device)
                 new_children.append((i, cell_i, p))
 
         # mutation

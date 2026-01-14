@@ -673,7 +673,7 @@ class CPPN(nn.Module):
         self.connections[new_cx_1_key] = new_cx_1
 
         new_cx_2_key = f"{new_node.id},{old_to}"
-        new_cx_2 = Connection(old_weight)
+        new_cx_2 = Connection(old_weight, device=self.device)
         assert new_cx_2_key not in self.connections.keys()
         self.connections[new_cx_2_key] = new_cx_2
 
