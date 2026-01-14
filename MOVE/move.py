@@ -8,7 +8,7 @@ import logging
 import math
 from typing import Dict, Tuple
 from contextlib import nullcontext
-
+from datetime import datetime
 import numpy as np
 
 from tqdm import tqdm
@@ -83,7 +83,12 @@ class MOVE(CPPNEvolutionaryAlgorithm):
 
         self.init_inputs()
         
-        self.init_target()        
+        self.init_target()     
+
+        # touch in_progress file
+        with open(os.path.join(self.run_dir, "in_progress.txt"), "w") as f:
+            current_datetime = datetime.now()
+            f.write(f"Run started at {current_datetime.isoformat()}\n")
         
         if self.config.with_grad:
             self.init_sgd()
@@ -218,8 +223,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 self.current_batch = self.record.load_checkpoint(resume, self.checkpoints_dir, self.map, self.config)
                 print(self.map.get_population())
             super().evolve(run_number, show_output, initial_population)
+            # remove in_progress file after finishing
+            self.remove_in_progress_file() 
         except KeyboardInterrupt:
-            pass # allow user to stop early
+            pass # allow user to stop early, don't remove in_progress file
         
         
     @torch.no_grad()
@@ -649,7 +656,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
     def save_checkpoint(self):
         print("Saving checkpoint")
         self.record.save_checkpoint(self.run_dir, self.checkpoints_dir, self.map, self.config, self.current_batch,
-                                    save_data=False)
+                                    save_data=True)
         self.save_move_info()
         
 
@@ -737,7 +744,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         if self.current_batch in [0, ] or (self.current_batch+1)%10 == 0:
             b = self.get_best()
             if b is not None:
-                b.save(os.path.join(self.genomes_dir, f"batch_{self.current_batch:04d}.json"), self.config)
+                b.save(os.path.join(self.genomes_dir, f"batch_{self.current_batch:04d}_elite.json"), self.config)
         if self.config.checkpoint_frequency > 0 and self.current_batch % self.config.checkpoint_frequency == 0:
             self.save_checkpoint()
     
@@ -775,6 +782,12 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         json.dump(lineages, open(os.path.join(self.run_dir, "lineages.json"), "w"), indent=4)
         
         self.save_checkpoint()
+
+    
+    def remove_in_progress_file(self):
+        in_progress_path = os.path.join(self.run_dir, "in_progress.txt")
+        if os.path.exists(in_progress_path):
+            os.remove(in_progress_path)
         
     
     def record_keep(self, new_children, steps, n_pruned, n_pruned_nodes, all_replacements, n_passes):

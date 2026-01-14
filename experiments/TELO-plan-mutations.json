@@ -1,5 +1,5 @@
 {
-    "experiment_name": "telo-25-sgd-inter",
+    "experiment_name": "telo-25-topology-iters",
 
     "additional_controls":{
         "num_generations": 2000,
@@ -18,8 +18,11 @@
         "total_offspring": 10000000,
         "batch_size": 50,
         "initial_batch_size": 50,
-        "max_nodes": 256,
-        "max_connections": 1024
+        "max_nodes": 100,
+        "max_connections": 300,
+        "checkpoint_frequency": 5
+        
+        
     },
 
     "targets":[
@@ -52,19 +55,29 @@
     "mode": "grid",
 
     "variables":[
-       "sgd_steps",
-       "grad_every",
-        "evolve_only_after_sgd"
+       "topology_mutation_iters",
+       "sgd_steps"
     ],
 
 
     "levels":[
-        [100],
-        [50],
-        [true,false]
-
+        [0, 4, 16, 32],
+        [0, 100]
     ],
 
-    "name_template": "{sgd_steps:03d}_steps_every_{grad_every:03d}_evolve_{evolve_only_after_sgd}"
+    "additional_parameters": {
+        "sgd_steps": {
+            "prob_mutate_weight":{
+                "0" : 0.35,
+                "100" : 0
+            },
+            "weight_mutation_std":{
+                "0" : 1.0,
+                "100" : 0
+            }
+        }
+    },
+
+    "name_template": "{topology_mutation_iters:03d}_mutations_{sgd_steps:03d}_steps"
 
 }

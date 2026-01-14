@@ -94,7 +94,6 @@
     {
         "MOVE-Back-Start-Big-No-Grow": {
             "hidden_nodes_at_start": [64,64],
-            "init_connection_probability": 0.04,
             "n_fourier_features": 0,   
             "sgd_steps":100,
             "no_param_mutations": true,
