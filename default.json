@@ -34,7 +34,7 @@
         "MOVE-Back-Fast-Grow": {
             "hidden_nodes_at_start": 0,
             "n_fourier_features": 0,
-            "sgd_steps": 2,
+            "sgd_steps": 10,
             "no_param_mutations": true,
             "extra_bloat": 10,
             "topology_mutation_iters": 10,

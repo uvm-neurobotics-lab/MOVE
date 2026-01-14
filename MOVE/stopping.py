@@ -13,6 +13,9 @@ class StopCondition():
     
     def n_batches(self, alg) -> int:
         return 10_000 # impossible to guess
+
+    def progress(self, alg):
+        return None
     
     
 class StopAfterGenerations(StopCondition):
@@ -23,6 +26,11 @@ class StopAfterGenerations(StopCondition):
     def n_batches(self, alg) -> int:
         batches_per_gen = alg.config.pop_size / alg.config.batch_size
         return math.ceil(self.value * batches_per_gen)
+
+    def progress(self, alg):
+        if self.value is None:
+            return None
+        return float(alg.gen), float(self.value)
     
     
 class StopAfterBatches(StopCondition):
@@ -31,6 +39,11 @@ class StopAfterBatches(StopCondition):
         return self.curr >= self.value
     def n_batches(self, alg) -> int:
         return self.value
+
+    def progress(self, alg):
+        if self.value is None:
+            return None
+        return float(alg.current_batch), float(self.value)
 
 
 class StopAfterCPPNPasses(StopCondition):
@@ -55,6 +68,12 @@ class StopAfterCPPNPasses(StopCondition):
         else:
             num_passes_per_cppn = 1
         return math.ceil(self.value / (num_passes_per_cppn * alg.config.batch_size))
+
+    def progress(self, alg):
+        record = getattr(alg, "record", None)
+        if record is None or self.value is None:
+            return None
+        return float(record.n_cppn_passes), float(self.value)
 
 class StopAfterEvals(StopCondition):
     def __call__(self, alg) -> bool:
@@ -81,6 +100,12 @@ class StopAfterEvals(StopCondition):
         else:
             num_fwds_per_cppn = 1
         return math.ceil(self.value / (num_fwds_per_cppn * alg.config.batch_size))
+
+    def progress(self, alg):
+        record = getattr(alg, "record", None)
+        if record is None or self.value is None:
+            return None
+        return float(record.n_evals_incl_sgd), float(self.value)
     
 class StopAfterEvalsNoSGD(StopAfterEvals):
     def __call__(self, alg) -> bool:
@@ -90,6 +115,12 @@ class StopAfterEvalsNoSGD(StopAfterEvals):
     def n_batches(self, alg) -> int:
         # maximum number of batches is if there is one eval per cppn per batch
         return math.ceil(self.value / (alg.config.batch_size))
+
+    def progress(self, alg):
+        record = getattr(alg, "record", None)
+        if record is None or self.value is None:
+            return None
+        return float(record.n_evals), float(self.value)
     
     
 class StopAfterFwdCalls(StopCondition):
@@ -115,6 +146,12 @@ class StopAfterFwdCalls(StopCondition):
         
         else:
             return math.ceil(1.5*(1+math.ceil(self.value / (num_fwds_per_cppn * alg.config.batch_size))))
+
+    def progress(self, alg):
+        record = getattr(alg, "record", None)
+        if record is None or self.value is None:
+            return None
+        return float(record.n_fwds_incl_sgd), float(self.value)
     
         
         
@@ -128,6 +165,12 @@ class StopAfterFwdCallsNoSGD(StopCondition):
     def n_batches(self, alg) -> int:
         # maximum number of batches is if there is one eval per cppn per batch
         return math.ceil(self.value / (alg.batch_size))
+
+    def progress(self, alg):
+        record = getattr(alg, "record", None)
+        if record is None or self.value is None:
+            return None
+        return float(record.n_fwds), float(self.value)
     
     
 class StopAfterSeconds(StopCondition):
@@ -141,6 +184,12 @@ class StopAfterSeconds(StopCondition):
         return self.curr >= self.seconds
     def n_batches(self, alg) -> int:
         return 10_000 # impossible to guess
+
+    def progress(self, alg):
+        if self.seconds is None or self.seconds <= 0:
+            return None
+        elapsed = time.time() - self.start_time
+        return float(elapsed), float(self.seconds)
     
     
 class StopAfterMeanFitness(StopCondition):
@@ -153,6 +202,13 @@ class StopAfterMeanFitness(StopCondition):
         return self.curr >= self.value
     def n_batches(self, alg) -> int:
         return 10_000 # impossible to guess
+
+    def progress(self, alg):
+        target = getattr(self, "mean_fit", None)
+        if target is None or not math.isfinite(target):
+            return None
+        current = float(getattr(alg, "solution_fitness", 0.0))
+        return current, float(target)
     
 
 class StopAfterMaxStagnation(StopCondition):
@@ -183,6 +239,12 @@ class StopAfterMaxStagnation(StopCondition):
             return self.curr >= self.patience
     def n_batches(self, alg) -> int:
         return 10_000 # impossible to guess
+
+    def progress(self, alg):
+        patience = getattr(self, "patience", None)
+        if patience is None:
+            return None
+        return float(self.curr), float(patience)
     
 
 class StopAfterMinStagnation(StopCondition):
@@ -190,6 +252,12 @@ class StopAfterMinStagnation(StopCondition):
         return min(stag)
     def n_batches(self, alg) -> int:
         return 10_000 # impossible to guess
+
+    def progress(self, alg):
+        patience = getattr(self, "patience", None)
+        if patience is None:
+            return None
+        return float(self.curr), float(patience)
     
     
 

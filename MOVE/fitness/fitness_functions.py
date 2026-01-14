@@ -185,18 +185,24 @@ def dists(candidates, target):
    if "DISTS_INSTANCE" in globals().keys() and candidates.device in globals()["DISTS_INSTANCE"].keys():
       dists_instance = globals()["DISTS_INSTANCE"][candidates.device]
    else:
-      print("Creating DISTS instance")
+    #   print("Creating DISTS instance")
       # dists_instance = piq_dists(reduction='none').eval().to(candidates.device)
       dists_instance = DISTS(FEATURE_EXTRACTOR).eval().to(candidates.device)
       if "DISTS_INSTANCE" not in globals().keys():
          globals()["DISTS_INSTANCE"] = {}
       globals()["DISTS_INSTANCE"][candidates.device] = dists_instance
    assert_images(candidates, target)
+   
+   # Ensure inputs are float32 to match model weights
+   # AMP may convert inputs to float16, but we need float32 for the shared VGG backbone
+   candidates_fp32 = candidates.float() if candidates.dtype != torch.float32 else candidates
+   target_fp32 = target.float() if target.dtype != torch.float32 else target
+   
    # loss = dists_instance(candidates, target)
    # value = torch.tensor([1.0]*len(candidates)).to(loss) - loss
    # return torch.sub(1.0, dists_instance(candidates, target))
    
-   val = dists_instance(candidates, target, require_grad=True, batch_average=False)
+   val = dists_instance(candidates_fp32, target_fp32, require_grad=True, batch_average=False)
    if len(candidates) == 1:
       val = val.unsqueeze(0) # batch
    return torch.sub(1.0, val)
@@ -206,14 +212,20 @@ def lpips(candidates, target):
    if "LPIPS_INSTANCE" in globals().keys() and candidates.device in globals()["LPIPS_INSTANCE"].keys():
       lpips_instance = globals()["LPIPS_INSTANCE"][candidates.device]
    else:
-      print("Creating LPIPS instance")
+    #   print("Creating LPIPS instance")
       # lpips_instance = piq_lpips(reduction='none').eval()
       lpips_instance = LPIPS(FEATURE_EXTRACTOR, reduction='none').eval().to(candidates.device)
       if "LPIPS_INSTANCE" not in globals().keys():
          globals()["LPIPS_INSTANCE"] = {}
       globals()["LPIPS_INSTANCE"][candidates.device] = lpips_instance
    assert_images(candidates, target)
-   value = torch.sub(1.0, lpips_instance(candidates, target))
+   
+   # Ensure inputs are float32 to match model weights
+   # AMP may convert inputs to float16, but we need float32 for the shared VGG backbone
+   candidates_fp32 = candidates.float() if candidates.dtype != torch.float32 else candidates
+   target_fp32 = target.float() if target.dtype != torch.float32 else target
+   
+   value = torch.sub(1.0, lpips_instance(candidates_fp32, target_fp32))
    return value
 
 
