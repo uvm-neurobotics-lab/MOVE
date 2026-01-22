@@ -37,6 +37,9 @@ class MOVEConfig(CPPNConfig):
         self.clip_noise_anneal_end = 1.0
         self.clip_noise_anneal_power = 1.0
         self.clip_include_partials = True
+        # Alias / clarity flag: when True, skip token-level (partial prompt) objectives.
+        # This keeps CLIP objectives aligned to full prompt strings only.
+        self.clip_disable_partials = False
         self.clip_partial_min_length = 3
         self.clip_partial_stopwords = list(DEFAULT_STOP_WORDS)
         self.clip_max_partial_prompts = 8
@@ -183,14 +186,14 @@ class MOVEConfig(CPPNConfig):
         self.topology_mutation_iters = 1
         self.connection_bloat = 0 # don't bloat extra connections
         
-        self.low_mem = False # don't record as much data to save memory
+        self.low_mem      = False # don't record as much data to save memory
         self.thread_count = 1 # don't use multiple threads
         
         # Performance optimizations
-        self.use_channels_last = True # Use channels_last memory format 
-        self.use_torch_compile = True # Enable torch.compile for PyTorch 2.0+ 
+        self.use_channels_last   = True # Use channels_last memory format 
+        self.use_torch_compile   = True # Enable torch.compile for PyTorch 2.0+ 
         self.use_fused_optimizer = True # Use fused AdamW optimizer on CUDA
-        self.use_pinned_memory = True # Use pinned memory for faster CPU-GPU
+        self.use_pinned_memory   = True # Use pinned memory for faster CPU-GPU
         
         self.norm_df_path = 'data/target_fitness_fn_ranges.csv'
         
@@ -396,6 +399,30 @@ def target_path_to_tensor(config):
 
     if raw_target is None or (isinstance(raw_target, str) and raw_target.strip() == "default"):
         return config.target
+
+    # Support specifying multiple CLIP prompts as a list/tuple of strings.
+    # In this case we enter CLIP mode and skip image target setup entirely.
+    if isinstance(raw_target, (list, tuple)):
+        prompts = []
+        for item in raw_target:
+            if item is None:
+                continue
+            if not isinstance(item, str):
+                raise ValueError(
+                    "Unsupported target list specification; expected a list of prompt strings"
+                )
+            text = item.strip()
+            if not text:
+                continue
+            prompts.append(text)
+
+        if not prompts:
+            raise ValueError("Target list is empty; provide at least one prompt string")
+
+        config.clip_text_target = prompts
+        config.target = None
+        config.target_path = None
+        return None
 
     pilmode = "RGB" if len(config.color_mode) == 3 else "L"
 

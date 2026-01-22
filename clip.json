@@ -1,0 +1,60 @@
+{
+  "name": "clip",
+  "controls": {
+    "alg": "move",
+    "output_dir": "tmp_results/clip",
+    "target": ["a smiley face", "a smile", "an emoji", "an emoji with a smile", "a happy face", "a happy face emoji", "a yellow happy face emoji", "a yellow happy face", "yellow circle"],
+    "clip_disable_partials": true,
+    "clip_num_variants": 1,
+    "use_fused_optimizer": true,
+    "use_radial_distance":true,
+    "do_crossover":false,
+    "coord_range": [-1.0,1.0],
+    "clip_random_seed": 7,
+    "clip_microbatch_size": 8,
+    "hidden_nodes_at_start": 2,
+    "num_cells": 84,
+    "initial_batch_size": 84,
+    "batch_size": 84,
+    "allow_jumps": 16,
+    "soft_mask_sigma": 0.0,
+    "soft_mask_mu": 0.0,
+    "soft_mask_min": 0.0,
+    "move_fns_per_cell": 3,
+    "max_weight": 20.0,
+    "sgd_clamp_grad": 0.5,
+    "stop_condition": "passes",
+    "stop_condition_value": 2560000,
+    "sgd_early_stop": 20,
+    "grad_every": 1,
+    "sgd_steps": 100,
+    "n_fourier_features": 16,
+    "fourier_feature_scale": 1.0,
+    "use_fourier_features": true,
+    "weight_init_std": 1.0,
+    "sgd_learning_rate": 0.01,
+    "color_mode": "HSL",
+    "res_h": 224,
+    "res_w": 224,
+    "checkpoint_frequency": 1
+  },
+  "conditions": [
+    {
+      "clip": {
+
+        "clip_noise_scale": 0.1,
+        "clip_noise_anneal": false,
+        "clip_noise_final_scale": 0.0,
+        "clip_noise_anneal_start": 0.0,
+        "clip_noise_anneal_end": 0.1,
+        "clip_noise_anneal_power": 1.0,
+            
+        "clip_augmentations": 0,
+        "clip_aug_min_scale": 0.45,
+        "clip_aug_max_scale": 1.0,
+        "clip_aug_flip_prob": 0.5,
+        "clip_aug_jitter_std": 0.02
+      }
+    }
+  ]
+}

@@ -22,10 +22,11 @@ if __name__ == "__main__":
     
     if len(args.agg_dim) == 1:
         args.agg_dim = args.agg_dim[0]
-    if len(args.agg_value) == 1:
+    if args.agg_value!=None and len(args.agg_value) == 1:
         args.agg_value = args.agg_value[0]
     
     loaded = torch.load(args.path).to(torch.float32)
+    print("Loaded data with shape", loaded.shape)
     
     if args.batch is not None:
         loaded = loaded[...,:args.batch]

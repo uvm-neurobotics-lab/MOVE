@@ -158,6 +158,7 @@ Key configuration knobs:
 | `clip_noise_scale` | Magnitude of Gaussian noise applied to each variant. |
 | `clip_noise_anneal` & friends | Enables annealing the noise scale during the run (`clip_noise_final_scale`, `clip_noise_anneal_start`, `clip_noise_anneal_end`, `clip_noise_anneal_power`). |
 | `clip_include_partials` | Enable token-level objectives based on the prompt. |
+| `clip_disable_partials` | Force-disable token-level objectives (even if `clip_include_partials` is `True`). Useful when you provide a list of full prompts and want MOVE cells to combine only full-prompt objectives. |
 | `clip_partial_min_length` | Minimum character length for partial prompts. |
 | `clip_partial_stopwords` | Words to ignore when extracting partial prompts (defaults to a short English list). |
 | `clip_max_partial_prompts` | Hard cap on the number of partial prompts. |

@@ -189,15 +189,17 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         )
         from .clip.clip_model import embed_text
 
+        # Allow either a single prompt string (historical behaviour) or a list
+        # of prompt strings (each prompt contributes its own CLIP objectives).
+        prompts = text
+        if isinstance(text, (list, tuple)):
+            prompts_list = [str(t).strip() for t in text if t is not None and str(t).strip()]
+            if not prompts_list:
+                raise ValueError("clip_text_target list is empty")
+        else:
+            prompts_list = [str(text).strip()]
+
         variants = max(1, int(getattr(self.config, "clip_num_variants", 1)))
-        config = ClipSemanticConfig(
-            text=text,
-            num_variants=variants,
-            noise_scale=float(getattr(self.config, "clip_noise_scale", 0.2)),
-            seed=getattr(self.config, "clip_random_seed", None),
-            device=self.config.device,
-        )
-        embeddings = generate_clip_targets(config)
         microbatch = int(getattr(self.config, "clip_microbatch_size", 0) or 0)
         augmentations = None
         aug_views = int(getattr(self.config, "clip_augmentations", 4) or 0)
@@ -214,58 +216,88 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 jitter_std=jitter_std,
             )
 
-        objectives = build_clip_objectives(
-            embeddings,
-            prefix="clip",
-            microbatch_size=microbatch,
-            augmentations=augmentations,
-        )
-        self.clip_embeddings = embeddings
-        self._clip_variant_objectives = objectives[: len(embeddings)]
-        self._clip_noise_scale_initial = float(config.noise_scale)
-        self._clip_noise_scale_current = float(config.noise_scale)
-        self.config.clip_noise_scale = float(config.noise_scale)
+        objectives = []
+        all_embeddings = []
+        variant_objectives = []
+        partial_meta = []
 
-        if bool(getattr(self.config, "clip_include_partials", False)):
-            stop_words_cfg = getattr(self.config, "clip_partial_stopwords", None)
-            if stop_words_cfg is None:
-                stop_words_set = DEFAULT_STOP_WORDS
-            else:
-                if isinstance(stop_words_cfg, str):
-                    stop_words_iter = [stop_words_cfg]
-                else:
-                    stop_words_iter = stop_words_cfg
-                stop_words_set = {str(word).lower() for word in stop_words_iter}
-            min_length = max(1, int(getattr(self.config, "clip_partial_min_length", 3)))
-            max_partials = getattr(self.config, "clip_max_partial_prompts", None)
-            try:
-                max_partials_int = None if max_partials is None else max(0, int(max_partials))
-            except (TypeError, ValueError):
-                max_partials_int = None
-
-            partial_prompts = generate_partial_prompts(
-                text,
-                min_length=min_length,
-                stop_words=stop_words_set,
-                max_partial_prompts=max_partials_int,
+        for prompt_idx, prompt_text in enumerate(prompts_list):
+            config = ClipSemanticConfig(
+                text=prompt_text,
+                num_variants=variants,
+                noise_scale=float(getattr(self.config, "clip_noise_scale", 0.2)),
+                seed=getattr(self.config, "clip_random_seed", None),
+                device=self.config.device,
             )
-            self.clip_partial_prompts = partial_prompts
+            embeddings = generate_clip_targets(config)
+            all_embeddings.extend(embeddings)
 
-            for idx, prompt in enumerate(partial_prompts):
-                partial_embedding = embed_text(prompt, device=self.config.device).float()
-                normalized_embedding = F.normalize(partial_embedding, dim=0)
-                slug = re.sub(r"[^a-z0-9]+", "_", prompt.lower()).strip("_")
-                if not slug:
-                    slug = f"token_{idx:02d}"
-                identifier = f"clip_token_{idx:02d}_{slug}"
-                objectives.append(
-                    ClipSimilarityObjective(
-                        embedding=normalized_embedding,
-                        identifier=identifier,
-                        microbatch_size=microbatch,
-                    )
+            prefix = "clip" if len(prompts_list) == 1 else f"clip_p{prompt_idx:02d}"
+            these_objectives = build_clip_objectives(
+                embeddings,
+                prefix=prefix,
+                microbatch_size=microbatch,
+                augmentations=augmentations,
+            )
+            objectives.extend(these_objectives)
+            variant_objectives.extend(these_objectives[: len(embeddings)])
+
+            include_partials = bool(getattr(self.config, "clip_include_partials", False))
+            if bool(getattr(self.config, "clip_disable_partials", False)):
+                include_partials = False
+
+            if include_partials:
+                stop_words_cfg = getattr(self.config, "clip_partial_stopwords", None)
+                if stop_words_cfg is None:
+                    stop_words_set = DEFAULT_STOP_WORDS
+                else:
+                    if isinstance(stop_words_cfg, str):
+                        stop_words_iter = [stop_words_cfg]
+                    else:
+                        stop_words_iter = stop_words_cfg
+                    stop_words_set = {str(word).lower() for word in stop_words_iter}
+                min_length = max(1, int(getattr(self.config, "clip_partial_min_length", 3)))
+                max_partials = getattr(self.config, "clip_max_partial_prompts", None)
+                try:
+                    max_partials_int = None if max_partials is None else max(0, int(max_partials))
+                except (TypeError, ValueError):
+                    max_partials_int = None
+
+                partial_prompts = generate_partial_prompts(
+                    prompt_text,
+                    min_length=min_length,
+                    stop_words=stop_words_set,
+                    max_partial_prompts=max_partials_int,
                 )
+                partial_meta.append((prompt_idx, prompt_text, partial_prompts))
 
+                for idx, token_prompt in enumerate(partial_prompts):
+                    partial_embedding = embed_text(token_prompt, device=self.config.device).float()
+                    normalized_embedding = F.normalize(partial_embedding, dim=0)
+                    slug = re.sub(r"[^a-z0-9]+", "_", token_prompt.lower()).strip("_")
+                    if not slug:
+                        slug = f"token_{idx:02d}"
+                    token_prefix = "clip_token" if len(prompts_list) == 1 else f"clip_p{prompt_idx:02d}_token"
+                    identifier = f"{token_prefix}_{idx:02d}_{slug}"
+                    objectives.append(
+                        ClipSimilarityObjective(
+                            embedding=normalized_embedding,
+                            identifier=identifier,
+                            microbatch_size=microbatch,
+                        )
+                    )
+
+        self.clip_embeddings = all_embeddings
+        self._clip_variant_objectives = variant_objectives
+        self._clip_noise_scale_initial = float(getattr(self.config, "clip_noise_scale", 0.2))
+        self._clip_noise_scale_current = float(getattr(self.config, "clip_noise_scale", 0.2))
+        self.config.clip_noise_scale = float(getattr(self.config, "clip_noise_scale", 0.2))
+
+        # Keep the original prompt (or prompt list) for later noise scheduling refresh.
+        self.clip_text = text
+        # For backwards-compat keep storing partial prompts for the single-prompt case.
+        if len(prompts_list) == 1 and partial_meta:
+            self.clip_partial_prompts = partial_meta[0][2]
         else:
             self.clip_partial_prompts = []
 
@@ -937,7 +969,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
     def save_checkpoint(self):
         print("Saving checkpoint")
         self.record.save_checkpoint(self.run_dir, self.checkpoints_dir, self.map, self.config, self.current_batch,
-                                    save_data=False)
+                                    save_data=True)
         self.save_move_info()
         
 
