@@ -43,7 +43,7 @@ class MOVEConfig(CPPNConfig):
         self.clip_partial_min_length = 3
         self.clip_partial_stopwords = list(DEFAULT_STOP_WORDS)
         self.clip_max_partial_prompts = 8
-        self.clip_microbatch_size = 0
+        self.clip_microbatch_size = 8
         self.do_profile = False
         
         self.checkpoint_frequency = 0
@@ -194,6 +194,22 @@ class MOVEConfig(CPPNConfig):
         self.use_torch_compile   = True # Enable torch.compile for PyTorch 2.0+ 
         self.use_fused_optimizer = True # Use fused AdamW optimizer on CUDA
         self.use_pinned_memory   = True # Use pinned memory for faster CPU-GPU
+        self.use_amp             = True # Enable AMP for SGD/eval
+
+        # SGD performance
+        self.sgd_no_branch = True # Use branch-minimized fixed-step SGD loop
+        self.sgd_use_compiled_forward = False # Cache torch.compile'd CPPN forwards during SGD
+        self.sgd_compile_mode = "reduce-overhead" # torch.compile mode for SGD
+        self.sgd_compile_dynamic = True
+        self.sgd_compile_fullgraph = False
+        self.sgd_amp_whitelist = ["lpips", "dists"]
+        
+        self.sgd_profile = False # don't profile SGD steps by default
+        # self.sgd_profile = True
+        # self.sgd_profile_steps = 5
+        # self.sgd_profile_start_step = 1
+        # self.sgd_profile_record_shapes = True
+        # self.sgd_profile_with_flops= True
         
         self.norm_df_path = 'data/target_fitness_fn_ranges.csv'
         

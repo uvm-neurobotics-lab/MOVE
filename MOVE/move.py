@@ -1140,6 +1140,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
 def main():
     import threading
     import sys
+    from . import MOVEGPU
 
     threads = []
     ci = -1
@@ -1150,7 +1151,8 @@ def main():
             
             continue
         
-        alg = MOVE(cfg, debug_output=args.verbose)
+        # alg = MOVE(cfg, debug_output=args.verbose)
+        alg = MOVEGPU(cfg, debug_output=args.verbose)
         if cfg.do_profile:
             import cProfile
             prof_path = os.path.join(alg.config.output_dir, f"{cfg.run_id:04d}.prof")

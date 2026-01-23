@@ -90,7 +90,6 @@ class CPPNConfig:
         
         self.initial_mutations = 0 
 
-
         self.max_weight = None
         self.weight_init_std = 2.0
         self.weight_threshold = 0

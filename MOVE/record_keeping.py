@@ -335,7 +335,8 @@ class Record():
                 target_device = torch.device(config.device)
                 move_back = original_device != target_device
                 individual = individual.to(target_device)
-                img = individual(inputs, channel_first=True, act_mode="node").detach().cpu()
+                with torch.no_grad():
+                    img = individual(inputs, channel_first=True, act_mode="node").detach().cpu()
                 if img.shape[0]<3:
                     img = img.repeat(3, 1, 1)
 

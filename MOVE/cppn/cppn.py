@@ -445,25 +445,14 @@ class CPPN(nn.Module):
         for layer in self.layers:
             for node_id in layer:
                 combined = None
-                has_input = False
                 for contribution in self.gather_inputs(node_id):
-                    has_input = True
+                    if contribution is None:
+                        continue
                     combined = contribution if combined is None else combined + contribution
 
-                if has_input:
+                if combined is not None:
                     activated = self.nodes[node_id](combined)
-                    if not torch.isfinite(activated).all():
-                        logging.warning(
-                            "Non-finite activation in node %s of genome %s; sanitizing output to zeros.",
-                            node_id,
-                            self.id,
-                        )
-                        finite_mask = torch.isfinite(activated)
-                        activated = torch.where(
-                            finite_mask,
-                            activated,
-                            torch.zeros_like(activated),
-                        )
+                    activated = torch.nan_to_num(activated, nan=0.0, posinf=0.0, neginf=0.0)
                     self.node_states[node_id] = activated
                 elif node_id not in self.node_states:
                     self.node_states[node_id] = torch.zeros(
@@ -473,13 +462,7 @@ class CPPN(nn.Module):
         # Gather outputs
         outputs = [self.node_states[node_id] for node_id in outputs]
         outputs = torch.stack(outputs, dim=(0 if channel_first else -1))
-        if not torch.isfinite(outputs).all():
-            logging.warning(
-                "Non-finite CPPN outputs before transform for genome %s; sanitizing to zeros.",
-                self.id,
-            )
-            finite_mask = torch.isfinite(outputs)
-            outputs = torch.where(finite_mask, outputs, torch.zeros_like(outputs))
+        outputs = torch.nan_to_num(outputs, nan=0.0, posinf=0.0, neginf=0.0)
 
         
         # outputs = torch.sigmoid(outputs)
@@ -492,21 +475,10 @@ class CPPN(nn.Module):
         # outputs = torch.nn.functional.relu(outputs)
         
         outputs = 1.0 - torch.abs(outputs)
-        if not torch.isfinite(outputs).all():
-            logging.warning(
-                "Non-finite CPPN outputs after absolute transform for genome %s; sanitizing to zeros.",
-                self.id,
-            )
-            finite_mask = torch.isfinite(outputs)
-            outputs = torch.where(finite_mask, outputs, torch.zeros_like(outputs))
+        outputs = torch.nan_to_num(outputs, nan=0.0, posinf=0.0, neginf=0.0)
+        
         outputs = torch.clamp(outputs, 0, 1)
-        if not torch.isfinite(outputs).all():
-            logging.warning(
-                "Non-finite CPPN outputs after clamp for genome %s; clipping to [0,1] zeros for invalid entries.",
-                self.id,
-            )
-            finite_mask = torch.isfinite(outputs)
-            outputs = torch.where(finite_mask, outputs, torch.zeros_like(outputs))
+        outputs = torch.nan_to_num(outputs, nan=0.0, posinf=0.0, neginf=0.0)
         
         return outputs
 
