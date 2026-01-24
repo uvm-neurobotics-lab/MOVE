@@ -114,6 +114,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             self._init_clip_placeholder_target()
         elif self.config.target is not None:
             self.init_target()
+
+        self._target_base = self.target if hasattr(self, "target") else None
+        self._target_cache = {}
         
         if self.config.with_grad:
             self.init_sgd()
@@ -161,6 +164,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                     
                     if hasattr(fn, "__call__") and not hasattr(fn, "_is_compiled"):
                         # Use 'default' mode instead of 'reduce-overhead' to avoid CUDA graph issues
+                        logging.info(f"Compiling objective function: {fn_name}")
                         compiled_fn = torch.compile(fn, mode="default")
                         compiled_fn._is_compiled = True
                         compiled_fns.append(compiled_fn)
@@ -170,6 +174,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 self.fns = compiled_fns
                 self.config.objective_functions = self.fns
             except Exception as e:
+                if bool(getattr(self.config, "sgd_compile_strict", False)):
+                    raise RuntimeError(
+                        f"Objective torch.compile failed while strict compile is enabled: {e}"
+                    )
                 logging.warning(f"torch.compile failed, falling back to eager mode: {e}")
 
         print("Initialized MOVE on device:", self.config.device)
@@ -200,7 +208,11 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             prompts_list = [str(text).strip()]
 
         variants = max(1, int(getattr(self.config, "clip_num_variants", 1)))
-        microbatch = int(getattr(self.config, "clip_microbatch_size", 0) or 0)
+        microbatch = int(
+            getattr(self.config, "clip_embed_microbatch_size", 0)
+            or getattr(self.config, "clip_microbatch_size", 0)
+            or 0
+        )
         augmentations = None
         aug_views = int(getattr(self.config, "clip_augmentations", 4) or 0)
         if aug_views > 0:
@@ -465,18 +477,54 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         )
 
 
-    def _finalize_target(self, target: torch.Tensor, batch_imgs: torch.Tensor) -> torch.Tensor:
-        batch_size = batch_imgs.shape[0]
-        target = target[:batch_size]
-        if target.device != batch_imgs.device or target.dtype != batch_imgs.dtype:
-            target = target.to(device=batch_imgs.device, dtype=batch_imgs.dtype, non_blocking=True)
-        if target.shape[-2:] != batch_imgs.shape[-2:]:
+    def _canonicalize_candidates(self, batch_imgs: torch.Tensor) -> torch.Tensor:
+        if is_canonical_image_batch(batch_imgs):
+            return batch_imgs.contiguous()
+
+        candidates = ff._ensure_batched_rgb(batch_imgs).to(dtype=torch.float32)
+        if not torch.isfinite(candidates).all():
+            raise ValueError("Non-finite values detected in candidate images")
+        candidates = ff._resize_to_min(candidates)
+        if not torch.isfinite(candidates).all():
+            raise ValueError("Non-finite values detected after resizing candidate images")
+        candidates = torch.clamp(candidates, 0.0, 1.0)
+        if not torch.isfinite(candidates).all():
+            raise ValueError("Non-finite values detected after clamping candidate images")
+        return candidates.contiguous()
+
+
+    def _get_cached_target(
+        self,
+        base_target: torch.Tensor,
+        batch_size: int,
+        device: torch.device,
+        dtype: torch.dtype,
+        spatial: Tuple[int, int],
+    ) -> torch.Tensor:
+        base = self._target_base if self._target_base is not None else base_target
+        cache_key = (id(base), int(batch_size), spatial, dtype, device)
+        cached = self._target_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        target = base
+        if target.device != device or target.dtype != dtype:
+            target = target.to(device=device, dtype=dtype, non_blocking=True)
+        if target.shape[-2:] != spatial:
             target = F.interpolate(
                 target,
-                size=batch_imgs.shape[-2:],
+                size=spatial,
                 mode="bilinear",
                 align_corners=False,
             )
+
+        if target.shape[0] != batch_size:
+            if target.shape[0] > batch_size:
+                target = target[:batch_size]
+            else:
+                repeats = batch_size // target.shape[0]
+                target = target.repeat(repeats, *([1] * len(target.shape[1:])))
+
         if not is_canonical_image_batch(target):
             if not torch.isfinite(target).all():
                 raise ValueError("Non-finite values detected in target images")
@@ -485,11 +533,26 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 raise ValueError("Non-finite values detected after clamping target images")
         else:
             target = target.contiguous()
+
         if target.dtype != torch.float32:
             target = target.to(dtype=torch.float32)
-        if target is not self.target:
-            self.target = target
+
+        self._target_cache[cache_key] = target
         return target
+
+
+    def _finalize_target(self, target: torch.Tensor, batch_imgs: torch.Tensor) -> torch.Tensor:
+        batch_size = batch_imgs.shape[0]
+        cached_target = self._get_cached_target(
+            target,
+            batch_size,
+            batch_imgs.device,
+            batch_imgs.dtype,
+            batch_imgs.shape[-2:],
+        )
+        if cached_target is not self.target:
+            self.target = cached_target
+        return cached_target
 
 
     def init_sgd(self, batch_cell_ids=None):
@@ -571,7 +634,6 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 count,
                 self.total_offspring,
             )
-            self.target = self.target[:count]
         elif self.target.shape[0]<count:
             logging.warning(
                 "Target batch size %s smaller than population size %s; repeating (total offspring %s)",
@@ -579,7 +641,13 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 count,
                 self.total_offspring,
             )
-            self.target = self.target.repeat(count//self.target.shape[0], *([1]*len(self.target.shape[1:])))
+        self.target = self._get_cached_target(
+            self.target,
+            int(count),
+            self.target.device,
+            self.target.dtype,
+            self.target.shape[-2:],
+        )
     
 
     @torch.no_grad()  # Use no_grad instead of inference_mode to allow tensor reuse in SGD
@@ -626,8 +694,8 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             if self._can_skip_correct_dims(batch_imgs):
                 corrected_target = self._finalize_target(self.target, batch_imgs)
             else:
-                batch_imgs, corrected_target = ff.correct_dims(batch_imgs, self.target)
-                corrected_target = self._finalize_target(corrected_target, batch_imgs)
+                batch_imgs = self._canonicalize_candidates(batch_imgs)
+                corrected_target = self._finalize_target(self.target, batch_imgs)
 
             use_amp = bool(getattr(self.config, "use_amp", True))
             use_cuda_amp = use_amp and torch.device(self.config.device).type == "cuda"

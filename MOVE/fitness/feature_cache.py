@@ -15,6 +15,12 @@ from typing import Any, Callable, Dict, Hashable, Iterable, Optional, Tuple
 
 import torch
 
+try:
+    _dynamo_disable = torch._dynamo.disable
+except Exception:  # pragma: no cover - torch._dynamo may be unavailable
+    def _dynamo_disable(fn):
+        return fn
+
 TensorKey = Tuple[int, Tuple[int, ...], torch.device, torch.dtype]
 CacheKey = Tuple[Hashable, TensorKey]
 
@@ -78,6 +84,7 @@ def feature_cache_scope():
         _LOCAL_CACHE = previous
 
 
+@_dynamo_disable
 def cached_result(
     slot: Hashable,
     tensor: Optional[torch.Tensor],
@@ -105,6 +112,7 @@ def cached_result(
     return cache.get(slot, tensor, builder)
 
 
+@_dynamo_disable
 def store_result(
     slot: Hashable,
     tensor: Optional[torch.Tensor],
@@ -123,6 +131,7 @@ def store_result(
     return cache.set(slot, tensor, value)
 
 
+@_dynamo_disable
 def invalidate_slots(slots: Iterable[Hashable], tensor: Optional[torch.Tensor]) -> None:
     """Invalidate cached entries for ``tensor`` in the given slots."""
 
@@ -135,6 +144,7 @@ def invalidate_slots(slots: Iterable[Hashable], tensor: Optional[torch.Tensor]) 
         cache.pop_many(slots, tensor)
 
 
+@_dynamo_disable
 def clear_persistent_cache() -> None:
     """Remove all entries from the persistent cache."""
 

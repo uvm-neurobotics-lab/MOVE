@@ -56,8 +56,13 @@ class _CompiledForwardCache:
         if not hasattr(torch, "compile"):
             return None
         genome_id = int(genome.id)
+        skip_ids = getattr(config, "_sgd_compile_forward_skip_ids", None)
+        if skip_ids and genome_id in skip_ids:
+            return None
         if genome_id in self._disabled:
             return None
+        strict = bool(getattr(config, "sgd_compile_strict", False))
+        forward_recompile_error = bool(getattr(config, "sgd_compile_forward_recompile_error", False))
         device = torch.device(config.device) if config.device is not None else torch.device("cpu")
         if device.type != "cuda":
             return None
@@ -66,9 +71,14 @@ class _CompiledForwardCache:
         last_sig = self._last_signature.get(genome_id)
         if last_sig is None:
             self._last_signature[genome_id] = signature
-            return None
+            if not strict:
+                return None
         if last_sig != signature:
             self._last_signature[genome_id] = signature
+            if strict and forward_recompile_error:
+                raise RuntimeError(
+                    f"CPPN topology changed for genome {genome_id} while strict compile is enabled; recompilation blocked."
+                )
             return None
 
         key = (genome_id, device, mode, signature)
@@ -85,13 +95,35 @@ class _CompiledForwardCache:
             )
 
         try:
-            compiled = torch.compile(
-                forward_fn,
-                    dynamic=bool(getattr(config, "sgd_compile_dynamic", True)),
-                mode=mode,
-                fullgraph=bool(getattr(config, "sgd_compile_fullgraph", False)),
+            logging.info("Compiling CPPN forward for genome %s", genome_id)
+            compile_dynamic = bool(getattr(config, "sgd_compile_dynamic", True))
+            compile_fullgraph = bool(getattr(config, "sgd_compile_fullgraph", False))
+            backend, compile_dynamic, compile_fullgraph = _resolve_compile_backend(
+                "forward",
+                config,
+                dynamic=compile_dynamic,
+                fullgraph=compile_fullgraph,
             )
+            if _should_pass_compile_mode("forward", backend, mode):
+                compiled = torch.compile(
+                    forward_fn,
+                    dynamic=compile_dynamic,
+                    mode=mode,
+                    fullgraph=compile_fullgraph,
+                    backend=backend,
+                )
+            else:
+                compiled = torch.compile(
+                    forward_fn,
+                    dynamic=compile_dynamic,
+                    fullgraph=compile_fullgraph,
+                    backend=backend,
+                )
         except Exception:
+            if strict:
+                raise RuntimeError(
+                    f"CPPN torch.compile failed for genome {genome_id} while strict compile is enabled."
+                )
             return None
 
         self._cache[key] = compiled
@@ -106,6 +138,194 @@ class _CompiledForwardCache:
 
 
 _SGD_FORWARD_CACHE = _CompiledForwardCache()
+
+
+class _CompiledFitnessCache:
+    """Cache torch.compile'd fitness functions for SGD evaluation."""
+
+    def __init__(self) -> None:
+        self._cache: Dict[Tuple[int, torch.device, str, Tuple], Callable] = {}
+        self._disabled: Set[int] = set()
+        self._target_signatures: Dict[Tuple[int, torch.device, str], Tuple] = {}
+
+    def _target_signature(self, target: torch.Tensor) -> Tuple:
+        return (tuple(target.shape), target.dtype, tuple(target.stride()))
+
+    def get(self, fn, config, device: torch.device, target: torch.Tensor) -> Optional[Callable]:
+        if not getattr(config, "sgd_compile_fitness", False):
+            return None
+        if not hasattr(torch, "compile"):
+            return None
+        fn_id = id(fn)
+        if fn_id in self._disabled:
+            return None
+        if device.type != "cuda":
+            return None
+
+        mode = str(getattr(config, "sgd_compile_fitness_mode", "reduce-overhead"))
+        bind_target = bool(getattr(config, "sgd_compile_fitness_bind_target", True))
+        no_recompile = bool(getattr(config, "sgd_compile_fitness_no_recompile", True))
+        recompile_error = bool(getattr(config, "sgd_compile_fitness_recompile_error", False))
+        target_sig = self._target_signature(target) if bind_target else tuple()
+        if bind_target and no_recompile:
+            sig_key = (fn_id, device, mode)
+            last_sig = self._target_signatures.get(sig_key)
+            if last_sig is not None and last_sig != target_sig:
+                if recompile_error:
+                    raise RuntimeError(
+                        "Fitness function recompilation is disabled but the target signature changed. "
+                        "This typically means the target tensor was rebuilt between SGD steps. "
+                        "Check that branching during SGD is disabled, e.g. by setting sgd_no_branch=True. "
+                        "Disable strict recompile checks or set sgd_compile_fitness_bind_target=False."
+                    )
+                return None
+        key = (fn_id, device, mode, target_sig)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+
+        if bind_target:
+            fixed_target = target
+
+            def fitness_fn(imgs: torch.Tensor) -> torch.Tensor:
+                return fn(imgs, fixed_target)
+        else:
+            def fitness_fn(imgs: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+                return fn(imgs, target)
+
+        try:
+            fn_name = getattr(fn, "__name__", str(fn))
+            logging.info("Compiling fitness function %s", fn_name)
+            compile_dynamic = bool(getattr(config, "sgd_compile_fitness_dynamic", True))
+            compile_fullgraph = bool(getattr(config, "sgd_compile_fitness_fullgraph", False))
+            backend, compile_dynamic, compile_fullgraph = _resolve_compile_backend(
+                "fitness",
+                config,
+                dynamic=compile_dynamic,
+                fullgraph=compile_fullgraph,
+            )
+            if _should_pass_compile_mode("fitness", backend, mode):
+                compiled = torch.compile(
+                    fitness_fn,
+                    dynamic=compile_dynamic,
+                    mode=mode,
+                    fullgraph=compile_fullgraph,
+                    backend=backend,
+                )
+            else:
+                compiled = torch.compile(
+                    fitness_fn,
+                    dynamic=compile_dynamic,
+                    fullgraph=compile_fullgraph,
+                    backend=backend,
+                )
+        except Exception:
+            return None
+
+        self._cache[key] = compiled
+        if bind_target:
+            self._target_signatures[(fn_id, device, mode)] = target_sig
+        return compiled
+
+    def disable(self, fn) -> None:
+        fn_id = id(fn)
+        self._disabled.add(fn_id)
+        keys_to_drop = [key for key in self._cache if key[0] == fn_id]
+        for key in keys_to_drop:
+            self._cache.pop(key, None)
+        sig_keys_to_drop = [key for key in self._target_signatures if key[0] == fn_id]
+        for key in sig_keys_to_drop:
+            self._target_signatures.pop(key, None)
+
+
+_SGD_FITNESS_CACHE = _CompiledFitnessCache()
+
+
+def _cudagraph_step_begin() -> None:
+    try:
+        if hasattr(torch, "_inductor") and hasattr(torch._inductor, "cudagraph_mark_step_begin"):
+            torch._inductor.cudagraph_mark_step_begin()
+    except Exception:
+        pass
+
+
+def _resolve_compile_backend(
+    kind: str,
+    config,
+    *,
+    dynamic: bool,
+    fullgraph: bool,
+) -> Tuple[Optional[str], bool, bool]:
+    if kind == "forward":
+        backend = getattr(config, "sgd_compile_backend", None)
+    else:
+        backend = getattr(config, "sgd_compile_fitness_backend", None)
+    if backend in ("", "default"):
+        backend = None
+
+    supported = {None, "inductor", "aot_eager", "nvfuser"}
+    if backend not in supported:
+        logging.warning(
+            "Unknown torch.compile backend '%s' for %s; falling back to default backend.",
+            backend,
+            kind,
+        )
+        backend = None
+
+    if fullgraph and backend not in (None, "inductor"):
+        logging.warning(
+            "fullgraph=True is not supported for backend '%s' (%s); disabling fullgraph.",
+            backend,
+            kind,
+        )
+        fullgraph = False
+
+    if dynamic and backend == "nvfuser":
+        logging.warning(
+            "dynamic=True is not supported for backend '%s' (%s); disabling dynamic shapes.",
+            backend,
+            kind,
+        )
+        dynamic = False
+
+    return backend, dynamic, fullgraph
+
+
+def _should_pass_compile_mode(kind: str, backend: Optional[str], mode: str) -> bool:
+    if backend in ("aot_eager", "nvfuser"):
+        logging.warning(
+            "torch.compile mode '%s' ignored for backend '%s' (%s); omitting mode argument.",
+            mode,
+            backend,
+            kind,
+        )
+        return False
+    return True
+
+
+def _prewarm_compiled_fitness(
+    fns,
+    imgs: torch.Tensor,
+    target: torch.Tensor,
+    config,
+) -> None:
+    if not getattr(config, "sgd_compile_fitness", False):
+        return
+    if not hasattr(torch, "compile"):
+        return
+    device = imgs.device
+    with torch.no_grad():
+        for fn in fns:
+            compiled = _SGD_FITNESS_CACHE.get(fn, config, device, target)
+            if compiled is None:
+                continue
+            try:
+                if getattr(config, "sgd_compile_fitness_bind_target", True):
+                    compiled(imgs)
+                else:
+                    compiled(imgs, target)
+            except Exception:
+                _SGD_FITNESS_CACHE.disable(fn)
 
 
 class EarlyStopping:
@@ -277,6 +497,14 @@ def _render_population_eager(genomes_batch, inputs_batch, feed_fn, config=None) 
 
 def _render_population_compiled(genomes_batch, inputs_batch, feed_fn, config) -> torch.Tensor:
     outputs: List[torch.Tensor] = []
+    strict = bool(getattr(config, "sgd_compile_strict", False))
+    strict_forward = bool(getattr(config, "sgd_compile_forward_recompile_error", False)) and strict
+    forward_strict_active = (
+        strict_forward
+        and bool(getattr(config, "sgd_use_compiled_forward", False))
+        and hasattr(torch, "compile")
+        and torch.device(getattr(config, "device", "cpu")).type == "cuda"
+    )
     for idx, genome in enumerate(genomes_batch):
         feed = feed_fn(inputs_batch, idx)
         # Prepare feed to match genome device/dtype/format to avoid implicit host-device transfers
@@ -294,6 +522,10 @@ def _render_population_compiled(genomes_batch, inputs_batch, feed_fn, config) ->
             pass
         compiled = _SGD_FORWARD_CACHE.get(genome, config)
         if compiled is None:
+            if forward_strict_active:
+                raise RuntimeError(
+                    f"Compiled CPPN forward unavailable for genome {getattr(genome, 'id', 'unknown')} while strict compile is enabled."
+                )
             outputs.append(
                 genome(
                     feed,
@@ -312,6 +544,10 @@ def _render_population_compiled(genomes_batch, inputs_batch, feed_fn, config) ->
                 outputs.append(out)
             except Exception:
                 _SGD_FORWARD_CACHE.disable(genome)
+                if forward_strict_active:
+                    raise RuntimeError(
+                        f"Compiled CPPN forward failed for genome {getattr(genome, 'id', 'unknown')} while strict compile is enabled."
+                    )
                 outputs.append(
                     genome(
                         feed,
@@ -337,15 +573,25 @@ def _evaluate_function_masked(
 ) -> torch.Tensor:
     """Evaluate ``fn`` on ``imgs`` while respecting an optional mask."""
 
+    bind_target = bool(getattr(config, "sgd_compile_fitness_bind_target", True))
+    no_recompile = bool(getattr(config, "sgd_compile_fitness_no_recompile", True))
+    recompile_error = bool(getattr(config, "sgd_compile_fitness_recompile_error", False))
+    compile_enabled = bool(getattr(config, "sgd_compile_fitness", False))
+    strict_no_recompile = bind_target and no_recompile and recompile_error
+
     active_indices: Optional[torch.Tensor] = None
+    mask_full: Optional[torch.Tensor] = None
     if mask_row is not None:
         if mask_row.dtype != torch.bool:
             mask_row = mask_row.to(dtype=torch.bool)
-        active_indices = mask_row.nonzero(as_tuple=False).flatten()
-        if active_indices.numel() == 0:
+        if mask_row.numel() == 0 or not mask_row.any():
             return imgs.new_zeros(imgs.shape[0], dtype=torch.float32)
-        if active_indices.numel() == imgs.shape[0]:
-            active_indices = None
+        if strict_no_recompile:
+            mask_full = mask_row
+        else:
+            active_indices = mask_row.nonzero(as_tuple=False).flatten()
+            if active_indices.numel() == imgs.shape[0]:
+                active_indices = None
 
     if active_indices is not None:
         fn_imgs = imgs.index_select(0, active_indices)
@@ -354,6 +600,16 @@ def _evaluate_function_masked(
         fn_imgs = imgs
         fn_target = target
 
+    compiled_fn = _SGD_FITNESS_CACHE.get(fn, config, imgs.device, fn_target)
+    if compiled_fn is None and bind_target and no_recompile:
+        if recompile_error and compile_enabled:
+            raise RuntimeError(
+                "Fitness function recompilation is disabled but a compiled instance was not found. "
+                "This typically means the target/shape changed between SGD steps or the compile failed."
+            )
+        # Do not compile new variants; use eager to avoid recompiles.
+        compiled_fn = None
+
     def _compute(autocast_enabled: bool) -> torch.Tensor:
         amp_ctx = (
             torch.cuda.amp.autocast(dtype=torch.float16)
@@ -361,7 +617,17 @@ def _evaluate_function_masked(
             else nullcontext()
         )
         with amp_ctx:
-            result = fn(fn_imgs, fn_target)
+            if compiled_fn is None:
+                result = fn(fn_imgs, fn_target)
+            else:
+                try:
+                    if bind_target:
+                        result = compiled_fn(fn_imgs)
+                    else:
+                        result = compiled_fn(fn_imgs, fn_target)
+                except Exception:
+                    _SGD_FITNESS_CACHE.disable(fn)
+                    result = fn(fn_imgs, fn_target)
         if result.dim() == 0:
             result = result.unsqueeze(0)
         return result
@@ -374,6 +640,11 @@ def _evaluate_function_masked(
             fitness = fitness.unsqueeze(0)
 
     fitness = fitness.to(device=imgs.device, dtype=torch.float32, non_blocking=True)
+
+    if mask_full is not None:
+        if mask_full.dtype != torch.bool:
+            mask_full = mask_full.to(dtype=torch.bool)
+        fitness = torch.where(mask_full, fitness, torch.zeros_like(fitness))
 
     if active_indices is not None:
         norm_input = fitness
@@ -420,7 +691,26 @@ def sgd_weights(
     if isinstance(target, torch.Tensor):
         target = _ensure_tensor_on_device(target, device)
 
+    lr = float(getattr(config, "sgd_learning_rate", 0.0))
+    raw_steps = getattr(config, "sgd_steps", 0)
+    if isinstance(raw_steps, str):
+        logging.warning(
+            "String-based SGD schedules are no longer supported in sgd_weights; "
+            "skipping fine-tuning for this batch."
+        )
+        return 0
+
+    sgd_steps = int(raw_steps)
+    if sgd_steps <= 0:
+        return 0
+
     if getattr(config, "sgd_no_branch", False):
+        if early_stop is not None and int(early_stop) < sgd_steps:
+            logging.warning(
+                "sgd_no_branch is enabled; early_stop=%s will be ignored because sgd_steps=%s.",
+                int(early_stop),
+                sgd_steps,
+            )
         return sgd_weights_no_branch(
             genomes,
             mask,
@@ -437,19 +727,6 @@ def sgd_weights(
             record_passes,
             normalizer,
         )
-
-    lr = float(getattr(config, "sgd_learning_rate", 0.0))
-    raw_steps = getattr(config, "sgd_steps", 0)
-    if isinstance(raw_steps, str):
-        logging.warning(
-            "String-based SGD schedules are no longer supported in sgd_weights; "
-            "skipping fine-tuning for this batch."
-        )
-        return 0
-
-    sgd_steps = int(raw_steps)
-    if sgd_steps <= 0:
-        return 0
 
     mask_tensor = mask
     if mask_tensor is not None:
@@ -564,6 +841,20 @@ def sgd_weights(
             genomes_batch, inputs_batch, _feed_fn, config
         )
 
+    strict_forward = bool(getattr(config, "sgd_compile_strict", False)) and bool(
+        getattr(config, "sgd_compile_forward_recompile_error", False)
+    )
+    max_forward_compiles = int(getattr(config, "sgd_compile_forward_max_per_batch", 0))
+    compile_skip_ids = None
+    if (
+        not strict_forward
+        and max_forward_compiles == 0
+        and getattr(config, "sgd_use_compiled_forward", False)
+    ):
+        compile_skip_ids = {int(getattr(genome, "id", idx)) for idx, (_, _, genome) in enumerate(genomes)}
+        if compile_skip_ids:
+            setattr(config, "_sgd_compile_forward_skip_ids", compile_skip_ids)
+
     if mask_tensor is not None:
         mask_fn = lambda slice_idx: mask_tensor[:, slice_idx]
         chunk_mask_fn = lambda active_mask, chunk_slice: active_mask[:, chunk_slice]
@@ -594,6 +885,20 @@ def sgd_weights(
     )
     postfix_fn = progress.set_postfix_str if hasattr(progress, "set_postfix_str") else (lambda _: None)
 
+    if getattr(config, "sgd_compile_fitness_prewarm", True):
+        prewarm_count = min(len(genomes), max(1, clip_microbatch_size or len(genomes)))
+        if prewarm_count > 0:
+            prewarm_slice = slice(0, prewarm_count)
+            prewarm_genomes = [genomes[i][2] for i in range(prewarm_count)]
+            prewarm_inputs = inputs_slice_fn(prewarm_slice)
+            prewarm_target = prepared_target[prewarm_slice]
+            _cudagraph_step_begin()
+            prewarm_imgs = render_fn(prewarm_genomes, prewarm_inputs)
+            prewarm_imgs = prep_images(prewarm_imgs, config)
+            if not prewarm_target.is_contiguous():
+                prewarm_target = prewarm_target.contiguous()
+            _prewarm_compiled_fitness(fns, prewarm_imgs, prewarm_target, config)
+
     for step_idx in progress:
         active_indices = (~stop_mask).nonzero(as_tuple=True)[0]
         if active_indices.numel() == 0:
@@ -623,6 +928,7 @@ def sgd_weights(
             chunk_target = active_target[chunk_slice]
             chunk_mask = chunk_mask_fn(active_mask, chunk_slice)
 
+            _cudagraph_step_begin()
             imgs = render_fn(chunk_genomes, chunk_inputs)
             imgs = prep_images(imgs, config)
             if not chunk_target.is_contiguous():
@@ -757,6 +1063,9 @@ def sgd_weights(
         )
     progress.close()
 
+    if compile_skip_ids is not None and getattr(config, "_sgd_compile_forward_skip_ids", None) is compile_skip_ids:
+        setattr(config, "_sgd_compile_forward_skip_ids", None)
+
     return steps_executed
 
 
@@ -860,6 +1169,26 @@ def sgd_weights_no_branch(
     device_type = torch.device(config.device).type if config.device is not None else "cpu"
     use_cuda_amp = use_amp and device_type == "cuda" and has_cuda_params and not has_cpu_params
 
+    strict_no_recompile = bool(
+        getattr(config, "sgd_compile_fitness_bind_target", True)
+        and getattr(config, "sgd_compile_fitness_no_recompile", True)
+        and getattr(config, "sgd_compile_fitness_recompile_error", False)
+    )
+    strict_forward = bool(getattr(config, "sgd_compile_strict", False)) and bool(
+        getattr(config, "sgd_compile_forward_recompile_error", False)
+    )
+    max_forward_compiles = int(getattr(config, "sgd_compile_forward_max_per_batch", 0))
+    compile_skip_ids = None
+
+    if (
+        not strict_forward
+        and max_forward_compiles == 0
+        and getattr(config, "sgd_use_compiled_forward", False)
+    ):
+        compile_skip_ids = {int(getattr(genome, "id", idx)) for idx, (_, _, genome) in enumerate(genomes)}
+        if compile_skip_ids:
+            setattr(config, "_sgd_compile_forward_skip_ids", compile_skip_ids)
+
     scaler = torch.cuda.amp.GradScaler() if use_cuda_amp else None
 
     profile_enabled = bool(getattr(config, "sgd_profile", False))
@@ -956,10 +1285,106 @@ def sgd_weights_no_branch(
     postfix_fn = progress.set_postfix_str if hasattr(progress, "set_postfix_str") else (lambda _: None)
     record_loss_fn = (lambda idx, value: record_loss.__setitem__(idx, value)) if record_loss is not None else (lambda idx, value: None)
 
+    def _pad_tensor_first_dim(tensor: torch.Tensor, pad_count: int) -> torch.Tensor:
+        if pad_count <= 0:
+            return tensor
+        pad = tensor[:1].repeat(pad_count, *([1] * (tensor.dim() - 1)))
+        return torch.cat([tensor, pad], dim=0)
+
     full_indices = torch.arange(len(genomes), device=config.device)
     active_mask = mask_fn(full_indices)
     active_inputs = inputs_slice_fn(full_indices)
     active_target = prepared_target[full_indices]
+
+    if getattr(config, "sgd_compile_fitness_prewarm", True):
+        prewarm_count = min(len(genomes), max(1, clip_microbatch_size or len(genomes)))
+        if prewarm_count > 0:
+            prewarm_slice = slice(0, prewarm_count)
+            prewarm_genomes = [genomes[i][2] for i in range(prewarm_count)]
+            prewarm_inputs = inputs_slice_fn(prewarm_slice)
+            prewarm_target = prepared_target[prewarm_slice]
+            if strict_no_recompile and clip_microbatch_size and prewarm_count < clip_microbatch_size:
+                pad_count = clip_microbatch_size - prewarm_count
+                prewarm_genomes = prewarm_genomes + [prewarm_genomes[0]] * pad_count
+                if inputs_per_genome and isinstance(prewarm_inputs, torch.Tensor):
+                    prewarm_inputs = _pad_tensor_first_dim(prewarm_inputs, pad_count)
+                prewarm_target = _pad_tensor_first_dim(prewarm_target, pad_count)
+            prewarm_imgs = render_fn(prewarm_genomes, prewarm_inputs)
+            prewarm_imgs = prep_images(prewarm_imgs, config)
+            if not prewarm_target.is_contiguous():
+                prewarm_target = prewarm_target.contiguous()
+            _prewarm_compiled_fitness(fns, prewarm_imgs, prewarm_target, config)
+
+    if getattr(config, "sgd_compile_forward_prewarm", True) and getattr(config, "sgd_use_compiled_forward", False):
+        if not strict_forward:
+            compile_skip_ids = set()
+            if max_forward_compiles == 0:
+                for idx, (_, _, genome) in enumerate(genomes):
+                    compile_skip_ids.add(int(getattr(genome, "id", idx)))
+            elif max_forward_compiles > 0:
+                for idx, (_, _, genome) in enumerate(genomes):
+                    if idx < max_forward_compiles:
+                        _ = _SGD_FORWARD_CACHE.get(genome, config)
+                    else:
+                        compile_skip_ids.add(int(getattr(genome, "id", idx)))
+            else:
+                for _, _, genome in genomes:
+                    _ = _SGD_FORWARD_CACHE.get(genome, config)
+            if compile_skip_ids:
+                setattr(config, "_sgd_compile_forward_skip_ids", compile_skip_ids)
+        else:
+            for _, _, genome in genomes:
+                compiled = _SGD_FORWARD_CACHE.get(genome, config)
+                if compiled is None:
+                    raise RuntimeError(
+                        f"Compiled CPPN forward unavailable for genome {getattr(genome, 'id', 'unknown')} while strict compile is enabled."
+                    )
+
+    if getattr(config, "sgd_pipeline_prewarm", False):
+        prewarm_count = min(len(genomes), max(1, clip_microbatch_size or len(genomes)))
+        if prewarm_count > 0:
+            prewarm_slice = slice(0, prewarm_count)
+            prewarm_genomes = [genomes[i][2] for i in range(prewarm_count)]
+            prewarm_inputs = inputs_slice_fn(prewarm_slice)
+            prewarm_target = prepared_target[prewarm_slice]
+            prewarm_mask = None
+            if active_mask is not None:
+                prewarm_mask = chunk_mask_fn(active_mask, prewarm_slice)
+            if strict_no_recompile and clip_microbatch_size and prewarm_count < clip_microbatch_size:
+                pad_count = clip_microbatch_size - prewarm_count
+                prewarm_genomes = prewarm_genomes + [prewarm_genomes[0]] * pad_count
+                if inputs_per_genome and isinstance(prewarm_inputs, torch.Tensor):
+                    prewarm_inputs = _pad_tensor_first_dim(prewarm_inputs, pad_count)
+                prewarm_target = _pad_tensor_first_dim(prewarm_target, pad_count)
+                if prewarm_mask is not None:
+                    pad_mask = torch.zeros(
+                        (prewarm_mask.shape[0], pad_count),
+                        device=prewarm_mask.device,
+                        dtype=prewarm_mask.dtype,
+                    )
+                    prewarm_mask = torch.cat([prewarm_mask, pad_mask], dim=1)
+            with torch.no_grad():
+                _cudagraph_step_begin()
+                warm_imgs = render_fn(prewarm_genomes, prewarm_inputs)
+                warm_imgs = prep_images(warm_imgs, config)
+                if not prewarm_target.is_contiguous():
+                    prewarm_target = prewarm_target.contiguous()
+                with feature_cache_scope():
+                    for fn_idx, fn in enumerate(fns):
+                        fn_name = getattr(fn, "__name__", "")
+                        mask_row = mask_row_fn(prewarm_mask, fn_idx) if prewarm_mask is not None else None
+                        _ = _evaluate_function_masked(
+                            fn,
+                            fn_name,
+                            warm_imgs,
+                            prewarm_target,
+                            mask_row,
+                            use_cuda_amp=use_cuda_amp,
+                            amp_whitelist=amp_whitelist,
+                            normalizer=normalizer,
+                            norm=norm,
+                            config=config,
+                        )
 
     with profiler_ctx:
         for step_idx in progress:
@@ -978,13 +1403,30 @@ def sgd_weights_no_branch(
 
             for offset in range(0, total_active, microbatch):
                 chunk_slice = slice(offset, min(offset + microbatch, total_active))
+                valid_count = chunk_slice.stop - chunk_slice.start
                 chunk_genomes = [genomes[i][2] for i in full_indices[chunk_slice].tolist()]
 
                 chunk_inputs = inputs_slice_fn(chunk_slice)
                 chunk_target = active_target[chunk_slice]
                 chunk_mask = chunk_mask_fn(active_mask, chunk_slice)
+                pad_count = 0
+                if strict_no_recompile and valid_count < microbatch:
+                    pad_count = microbatch - valid_count
+                    if valid_count > 0:
+                        chunk_genomes = chunk_genomes + [chunk_genomes[0]] * pad_count
+                        if inputs_per_genome and isinstance(chunk_inputs, torch.Tensor):
+                            chunk_inputs = _pad_tensor_first_dim(chunk_inputs, pad_count)
+                        chunk_target = _pad_tensor_first_dim(chunk_target, pad_count)
+                        if chunk_mask is not None:
+                            pad_mask = torch.zeros(
+                                (chunk_mask.shape[0], pad_count),
+                                device=chunk_mask.device,
+                                dtype=chunk_mask.dtype,
+                            )
+                            chunk_mask = torch.cat([chunk_mask, pad_mask], dim=1)
 
                 with record_fn("sgd.render"):
+                    _cudagraph_step_begin()
                     imgs = render_fn(chunk_genomes, chunk_inputs)
                     imgs = prep_images(imgs, config)
                     if not chunk_target.is_contiguous():
@@ -1013,6 +1455,8 @@ def sgd_weights_no_branch(
 
                     normed = torch.where(torch.isfinite(normed), normed, torch.zeros_like(normed))
 
+                if pad_count > 0:
+                    normed = normed[:valid_count]
                 loss_per_example = (1.0 - normed).mean(dim=1)
                 loss_per_example = torch.where(
                     torch.isfinite(loss_per_example),
@@ -1021,12 +1465,12 @@ def sgd_weights_no_branch(
                 )
                 loss_mean = loss_per_example.mean().to(dtype=torch.float32)
 
-                record_tracker[0] += len(chunk_genomes)
-                chunk_weight = loss_per_example.numel() / max(1, total_active)
+                record_tracker[0] += valid_count
+                chunk_weight = valid_count / max(1, total_active)
                 scaled_loss = loss_mean * chunk_weight
                 with record_fn("sgd.backward"):
                     backward_fn(scaled_loss)
-                record_tracker[1] += len(chunk_genomes)
+                record_tracker[1] += valid_count
 
                 per_genome_loss[chunk_slice] = loss_per_example.detach()
                 loss_accum += loss_mean.detach() * chunk_weight
@@ -1062,6 +1506,9 @@ def sgd_weights_no_branch(
             )
 
             profiler_step()
+
+    if compile_skip_ids is not None and getattr(config, "_sgd_compile_forward_skip_ids", None) is compile_skip_ids:
+        setattr(config, "_sgd_compile_forward_skip_ids", None)
 
     progress.close()
 

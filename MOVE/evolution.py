@@ -319,6 +319,7 @@ class CPPNEvolutionaryAlgorithm(object):
             return  self.config.prob_mutate_activation, self.config.prob_mutate_weight, self.config.prob_add_connection, self.config.prob_add_node, self.config.prob_remove_node, self.config.prob_disable_connection, self.config.weight_mutation_max, self.config.prob_reenable_connection
 
 
+    @torch.no_grad()
     def activate_population(self, genomes):
         if self.config.activation_mode == 'population':
             if _graph_activate_population is None:

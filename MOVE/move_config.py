@@ -43,7 +43,8 @@ class MOVEConfig(CPPNConfig):
         self.clip_partial_min_length = 3
         self.clip_partial_stopwords = list(DEFAULT_STOP_WORDS)
         self.clip_max_partial_prompts = 8
-        self.clip_microbatch_size = 8
+        self.clip_microbatch_size = 64
+        self.clip_embed_microbatch_size = 64
         self.do_profile = False
         
         self.checkpoint_frequency = 0
@@ -128,8 +129,6 @@ class MOVEConfig(CPPNConfig):
         if self.evolve_only_after_sgd:
             self.evolve_every = self.grad_every
         
-
-        
         self.comparison_batch_size = None # same as batch_size
 
         self.hidden_nodes_at_start = (16, )
@@ -177,14 +176,15 @@ class MOVEConfig(CPPNConfig):
         # Functions that cannot be differentiated (copied so we can safely mutate)
         self.NO_GRADIENT = list(ff.NO_GRADIENT)
     
-        self.prob_mutate_activation = .35
-        self.prob_add_connection = .85 # 0.05 in the original NEAT
-        self.prob_add_node = .85 # 0.03 in original NEAT
-        self.prob_remove_node = 0.15
-        self.prob_disable_connection = .15
+        # Evolutionary mutation probabilities
+        self.prob_mutate_activation     = .35
+        self.prob_add_connection        = .85 # 0.05 in the original NEAT
+        self.prob_add_node              = .85 # 0.03 in original NEAT
+        self.prob_remove_node           = 0.15
+        self.prob_disable_connection    = .15
         self.single_structural_mutation = False
-        self.topology_mutation_iters = 1
-        self.connection_bloat = 0 # don't bloat extra connections
+        self.topology_mutation_iters    = 1
+        self.connection_bloat           = 0 # don't bloat extra connections
         
         self.low_mem      = False # don't record as much data to save memory
         self.thread_count = 1 # don't use multiple threads
@@ -197,12 +197,43 @@ class MOVEConfig(CPPNConfig):
         self.use_amp             = True # Enable AMP for SGD/eval
 
         # SGD performance
-        self.sgd_no_branch = True # Use branch-minimized fixed-step SGD loop
-        self.sgd_use_compiled_forward = False # Cache torch.compile'd CPPN forwards during SGD
-        self.sgd_compile_mode = "reduce-overhead" # torch.compile mode for SGD
-        self.sgd_compile_dynamic = True
-        self.sgd_compile_fullgraph = False
+        self.sgd_no_branch = True # Use branch-minimized fixed-step SGD loop. Necessary for stable TorchDynamo compilation.
+        
+        self.sgd_compile_fitness      = True # Compile the fitness function with TorchDynamo
+        self.sgd_use_compiled_forward = True  # Cache torch.compile'd CPPN forwards during SGD
+        
+        self.sgd_compile_strict = True
+        self.sgd_compile_forward_recompile_error = False
+        
+        self.sgd_compile_mode            = "reduce-overhead" # torch.compile mode for SGD reduce-overhead, default, max-autotune, etc.
+        self.sgd_compile_fitness_mode    = "reduce-overhead"
+        self.sgd_compile_backend         = "aot_eager" # default: None | inductor | aot_eager | nvfuser
+        self.sgd_compile_fitness_backend = "aot_eager" # default: None | inductor | aot_eager | nvfuser
+        
+        self.sgd_compile_dynamic         = True
+        self.sgd_compile_fitness_dynamic = True
+        
+        # Full graph compilation options (should most likely be left disabled)
+        self.sgd_compile_fullgraph          = False 
+        self.sgd_compile_fitness_fullgraph  = False # compilation errors when used with 'dynamic' compilation.
+        self.sgd_disable_cuda_graphs        = True
+        
+        self.sgd_compile_fitness_bind_target          = True
+        self.sgd_compile_fitness_no_recompile         = True
+        self.sgd_compile_fitness_recompile_error      = True
+        self.sgd_compile_fitness_compile_error        = True
+        self.sgd_compile_fullgraph_allow_cppn         = True
+        self.sgd_compile_fitness_fullgraph_allow_clip = True
+
+        self.sgd_compile_fitness_prewarm = True
+        self.sgd_compile_forward_prewarm = True
+        self.sgd_pipeline_prewarm = True
+        
+        self.sgd_compile_forward_max_per_batch = -1 # set to 0 to disable
+
         self.sgd_amp_whitelist = ["lpips", "dists"]
+        
+        self._apply_cuda_graphs_config()
         
         self.sgd_profile = False # don't profile SGD steps by default
         # self.sgd_profile = True
@@ -260,12 +291,50 @@ class MOVEConfig(CPPNConfig):
         for fn in self.NO_GRADIENT:
             if isinstance(fn, str) and fn in name_to_fn:
                 self.NO_GRADIENT[self.NO_GRADIENT.index(fn)] = name_to_fn[fn]
+
+    def _apply_cuda_graphs_config(self):
+        if not getattr(self, "sgd_disable_cuda_graphs", False):
+            return
+        try:
+            if hasattr(torch, "_inductor") and hasattr(torch._inductor, "config"):
+                if hasattr(torch._inductor.config, "triton") and hasattr(torch._inductor.config.triton, "cudagraphs"):
+                    torch._inductor.config.triton.cudagraphs = False
+                if hasattr(torch._inductor.config, "cuda_graphs"):
+                    torch._inductor.config.cuda_graphs = False
+            if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "config"):
+                if hasattr(torch._dynamo.config, "cudagraphs"):
+                    torch._dynamo.config.cudagraphs = False
+                if hasattr(torch._dynamo.config, "use_dynamic_shapes"):
+                    torch._dynamo.config.use_dynamic_shapes = True
+        except Exception:
+            pass
                 
                 
     def setup(self):
         super().setup()
         target_path_to_tensor(self)
         self.device = torch.device(self.device)
+
+        # Reset TorchDynamo if compile options changed to ensure new settings take effect.
+        try:
+            compile_state = (
+                getattr(self, "sgd_compile_mode", None),
+                getattr(self, "sgd_compile_backend", None),
+                getattr(self, "sgd_compile_dynamic", None),
+                getattr(self, "sgd_compile_fullgraph", None),
+                getattr(self, "sgd_compile_fitness_mode", None),
+                getattr(self, "sgd_compile_fitness_backend", None),
+                getattr(self, "sgd_compile_fitness_dynamic", None),
+                getattr(self, "sgd_compile_fitness_fullgraph", None),
+            )
+            if getattr(self, "_last_compile_state", None) != compile_state:
+                if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):
+                    torch._dynamo.reset()
+                self._last_compile_state = compile_state
+        except Exception:
+            pass
+
+        self._apply_cuda_graphs_config()
         
         # Enable cuDNN benchmarking for consistent input sizes
         if self.device.type == 'cuda':
@@ -282,7 +351,7 @@ class MOVEConfig(CPPNConfig):
             if hasattr(torch, 'set_float32_matmul_precision'):
                 try:
                     torch.set_float32_matmul_precision('high')  # Use TF32 when available
-                    logging.info("Set float32 matmul precision to 'high' for better performance")
+                    logging.info("float32 matmul precision was set to 'high' for better performance")
                 except Exception:
                     pass
         
