@@ -82,14 +82,18 @@ if __name__ == "__main__":
     with open(args.template) as f:
         template_string = f.read()
     
-    
+    ind = 0
     for tar, cm in zip( plan["targets"], plan["color_modes"]):
-        assert os.path.exists(tar), f"Target file {tar} does not exist"
-            
         save_string = template_string
+        if isinstance(tar, list):
+            save_string = save_string.replace("\"<TARGET>\"", '[' + ','.join([f"\"{t}\"" for t in tar]) + ']')
+            
+        else:
+            assert os.path.exists(tar), f"Target file {tar} does not exist"
+            save_string = save_string.replace("<TARGET>", tar)
+            
         
         save_string = save_string.replace("<EXPERIMENT_NAME>", plan["experiment_name"])
-        save_string = save_string.replace("<TARGET>", tar)
         save_string = save_string.replace("<COLOR_MODE>", cm)
         save_string = save_string.replace("<OUTPUT>", args.output)
         
@@ -104,8 +108,12 @@ if __name__ == "__main__":
             
         parallel_save_string = save_string
         save_string = save_string.replace("<CONDITIONS>", json.dumps(conditions, indent=4))
-        
-        tar_pretty = tar.split('/')[-1].split('.')[0]
+        tar_pretty = ""
+        if isinstance(tar, list):
+            tar_pretty = f"tar-{ind}"
+        else:
+            tar_pretty = tar.split('/')[-1].split('.')[0]
+
         save_path = os.path.join(serial_output, f"{tar_pretty}.json")
         print(f"Saving to {save_path}")
         with open(save_path, 'w') as f:
@@ -117,5 +125,5 @@ if __name__ == "__main__":
 
             with open(os.path.join(parallel_output, f"{tar_pretty}_{list(condition.keys())[0]}.json"), 'w') as f:
                 f.write(this_parallel_save_string)
-
+        ind += 1
         
