@@ -128,46 +128,6 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         if self.config.grad_every != 1 and self.config.batch_size < self.config.num_cells and self.config.sgd_steps > 0:
             print("\n\nWARNING: grad_every != 1 with batch_size < num_cells may cause some cells to never be trained with SGD\n\n")
 
-        # Enable torch.compile for fitness functions in PyTorch 2.0+
-        # Note: Disabled for CLIP objectives due to CUDA graph conflicts with tensor reuse
-        if getattr(self.config, "use_torch_compile", True) and hasattr(torch, "compile"):
-            try:
-                compiled_fns = []
-                skip_compile = {
-                    "lpips",
-                    "dists",
-                    "style",
-                    "vif",
-                    "dss",
-                    "ssim",
-                    "msssim",
-                    "haarpsi",
-                }
-                compile_allowlist = {
-                    str(name).lower()
-                    for name in getattr(self.config, "torch_compile_allowlist", ["mse"])
-                }
-
-                for fn in self.fns:
-                    fn_name = getattr(fn, "__name__", str(fn))
-                    if hasattr(fn, "__call__") and not hasattr(fn, "_is_compiled"):
-                        # Use 'default' mode instead of 'reduce-overhead' to avoid CUDA graph issues
-                        logging.info(f"Compiling objective function: {fn_name}")
-                        compiled_fn = torch.compile(fn, mode="default")
-                        compiled_fn._is_compiled = True
-                        compiled_fns.append(compiled_fn)
-                        logging.info(f"Compiled fitness function: {fn_name}")
-                    else:
-                        compiled_fns.append(fn)
-                self.fns = compiled_fns
-                self.config.objective_functions = self.fns
-            except Exception as e:
-                if bool(getattr(self.config, "sgd_compile_strict", False)):
-                    raise RuntimeError(
-                        f"Objective torch.compile failed while strict compile is enabled: {e}"
-                    )
-                logging.warning(f"torch.compile failed, falling back to eager mode: {e}")
-
         print("Initialized MOVE on device:", self.config.device)
         
                             

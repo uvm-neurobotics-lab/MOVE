@@ -111,6 +111,10 @@ class _CompiledForwardCache:
                 dynamic=compile_dynamic,
                 fullgraph=compile_fullgraph,
             )
+            _maybe_reset_dynamo(
+                "forward",
+                (mode, backend, compile_dynamic, compile_fullgraph),
+            )
             if _should_pass_compile_mode("forward", backend, mode):
                 compiled = torch.compile(
                     forward_fn,
@@ -222,6 +226,10 @@ class _CompiledFitnessCache:
                 dynamic=compile_dynamic,
                 fullgraph=compile_fullgraph,
             )
+            _maybe_reset_dynamo(
+                "fitness",
+                (mode, backend, compile_dynamic, compile_fullgraph),
+            )
             if _should_pass_compile_mode("fitness", backend, mode):
                 compiled = torch.compile(
                     fitness_fn,
@@ -257,6 +265,7 @@ class _CompiledFitnessCache:
 
 
 _SGD_FITNESS_CACHE = _CompiledFitnessCache()
+_LAST_DYNAMO_OPTIONS: Dict[str, Tuple] = {}
 
 
 def _cudagraph_step_begin() -> None:
@@ -319,6 +328,16 @@ def _should_pass_compile_mode(kind: str, backend: Optional[str], mode: str) -> b
         )
         return False
     return True
+
+
+def _maybe_reset_dynamo(kind: str, options: Tuple) -> None:
+    try:
+        if _LAST_DYNAMO_OPTIONS.get("global") != options:
+            if hasattr(torch, "_dynamo") and hasattr(torch._dynamo, "reset"):
+                torch._dynamo.reset()
+            _LAST_DYNAMO_OPTIONS["global"] = options
+    except Exception:
+        pass
 
 
 def _prewarm_compiled_fitness(
