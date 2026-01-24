@@ -5,7 +5,6 @@
     "output_dir": "tmp_results/clip",
     "target": ["a smiley face", "a smile", "an emoji", "an emoji with a smile", "a happy face", "a happy face emoji", "a yellow happy face emoji", "a yellow happy face", "yellow circle"],
     "clip_disable_partials": true,
-    "clip_num_variants": 1,
     "use_fused_optimizer": true,
     "use_radial_distance":true,
     "do_crossover":false,
@@ -31,22 +30,23 @@
     "fourier_feature_scale": 1.0,
     "use_fourier_features": true,
     "weight_init_std": 1.0,
-    "sgd_learning_rate": 0.001,
+    "sgd_learning_rate": 0.1,
     "color_mode": "HSL",
     "res_h": 224,
     "res_w": 224,
     "checkpoint_frequency": 1
-  },
-  "conditions": [
+},
+"conditions": [
     {
-      "clip": {
-
-        "clip_noise_scale": 0.1,
-        "clip_noise_anneal": false,
-        "clip_noise_final_scale": 0.0,
-        "clip_noise_anneal_start": 0.0,
-        "clip_noise_anneal_end": 0.1,
-        "clip_noise_anneal_power": 1.0,
+        "clip": {
+            "clip_num_variants": 1,
+            
+            "clip_noise_scale": 0.1,
+            "clip_noise_anneal": false,
+            "clip_noise_final_scale": 0.0,
+            "clip_noise_anneal_start": 0.0,
+            "clip_noise_anneal_end": 0.1,
+            "clip_noise_anneal_power": 1.0,
             
         "clip_augmentations": 0,
         "clip_aug_min_scale": 0.45,
