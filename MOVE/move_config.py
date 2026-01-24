@@ -200,10 +200,10 @@ class MOVEConfig(CPPNConfig):
         self.sgd_no_branch = True # Use branch-minimized fixed-step SGD loop. Necessary for stable TorchDynamo compilation.
         
         self.sgd_compile_fitness      = True # Compile the fitness function with TorchDynamo
-        self.sgd_use_compiled_forward = False  # Cache torch.compile'd CPPN forwards during SGD
+        self.sgd_use_compiled_forward = True  # Cache torch.compile'd CPPN forwards during SGD
         
         self.sgd_compile_strict = True
-        self.sgd_compile_forward_recompile_error = True
+        self.sgd_compile_forward_recompile_error = False
         
         self.sgd_compile_mode            = "reduce-overhead" # torch.compile mode for SGD reduce-overhead, default, max-autotune, etc.
         self.sgd_compile_fitness_mode    = "reduce-overhead"
@@ -229,7 +229,7 @@ class MOVEConfig(CPPNConfig):
         self.sgd_compile_forward_prewarm = True
         self.sgd_pipeline_prewarm = True
         
-        self.sgd_compile_forward_max_per_batch = 0 # set to 0 to disable
+        self.sgd_compile_forward_max_per_batch = 1 # set to 0 to disable
 
         self.sgd_amp_whitelist = ["lpips", "dists"]
         

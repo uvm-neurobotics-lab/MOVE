@@ -128,7 +128,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         if self.config.grad_every != 1 and self.config.batch_size < self.config.num_cells and self.config.sgd_steps > 0:
             print("\n\nWARNING: grad_every != 1 with batch_size < num_cells may cause some cells to never be trained with SGD\n\n")
 
-        # Enable torch.compile for fitness functions in PyTorch 2.0+ (20-40% speedup)
+        # Enable torch.compile for fitness functions in PyTorch 2.0+
         # Note: Disabled for CLIP objectives due to CUDA graph conflicts with tensor reuse
         if getattr(self.config, "use_torch_compile", True) and hasattr(torch, "compile"):
             try:
@@ -150,18 +150,6 @@ class MOVE(CPPNEvolutionaryAlgorithm):
 
                 for fn in self.fns:
                     fn_name = getattr(fn, "__name__", str(fn))
-                    fn_name_lower = fn_name.lower()
-                    # Skip compilation for CLIP objectives (causes CUDA graph errors)
-                    if (
-                        "clip" in fn_name_lower
-                        or "Clip" in str(type(fn))
-                        or fn_name_lower in skip_compile
-                        or fn_name_lower not in compile_allowlist
-                    ):
-                        compiled_fns.append(fn)
-                        logging.info(f"Skipping compilation for objective: {fn_name}")
-                        continue
-                    
                     if hasattr(fn, "__call__") and not hasattr(fn, "_is_compiled"):
                         # Use 'default' mode instead of 'reduce-overhead' to avoid CUDA graph issues
                         logging.info(f"Compiling objective function: {fn_name}")

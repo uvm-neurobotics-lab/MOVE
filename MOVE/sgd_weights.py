@@ -37,6 +37,7 @@ class _CompiledForwardCache:
     def __init__(self) -> None:
         self._cache: Dict[Tuple[int, torch.device, str, Tuple], Callable[[torch.Tensor], torch.Tensor]] = {}
         self._last_signature: Dict[int, Tuple] = {}
+        self._last_epoch: Dict[int, int] = {}
         self._disabled: Set[int] = set()
 
     @staticmethod
@@ -69,6 +70,12 @@ class _CompiledForwardCache:
         mode = str(getattr(config, "sgd_compile_mode", "reduce-overhead"))
         signature = self._signature(genome)
         last_sig = self._last_signature.get(genome_id)
+        epoch = getattr(config, "_sgd_compile_epoch_id", None)
+        last_epoch = self._last_epoch.get(genome_id)
+        if epoch is not None and epoch != last_epoch:
+            self._last_epoch[genome_id] = epoch
+            self._last_signature[genome_id] = signature
+            last_sig = signature
         if last_sig is None:
             self._last_signature[genome_id] = signature
             if not strict:
@@ -135,6 +142,17 @@ class _CompiledForwardCache:
         keys_to_drop = [key for key in self._cache if key[0] == genome_id]
         for key in keys_to_drop:
             self._cache.pop(key, None)
+
+    def reset_signatures(self, genomes: Optional[List] = None) -> None:
+        if genomes is None:
+            self._last_signature.clear()
+            return
+        for genome in genomes:
+            try:
+                genome_id = int(genome.id)
+            except Exception:
+                continue
+            self._last_signature.pop(genome_id, None)
 
 
 _SGD_FORWARD_CACHE = _CompiledForwardCache()
@@ -704,6 +722,12 @@ def sgd_weights(
     if sgd_steps <= 0:
         return 0
 
+    try:
+        current_epoch = int(getattr(config, "_sgd_compile_epoch_id", 0))
+    except Exception:
+        current_epoch = 0
+    setattr(config, "_sgd_compile_epoch_id", current_epoch + 1)
+
     if getattr(config, "sgd_no_branch", False):
         if early_stop is not None and int(early_stop) < sgd_steps:
             logging.warning(
@@ -846,6 +870,9 @@ def sgd_weights(
     )
     max_forward_compiles = int(getattr(config, "sgd_compile_forward_max_per_batch", 0))
     compile_skip_ids = None
+
+    if strict_forward and getattr(config, "sgd_use_compiled_forward", False):
+        _SGD_FORWARD_CACHE.reset_signatures([genome for _, _, genome in genomes])
     if (
         not strict_forward
         and max_forward_compiles == 0
@@ -1105,6 +1132,12 @@ def sgd_weights_no_branch(
     sgd_steps = int(raw_steps)
     if sgd_steps <= 0:
         return 0
+
+    try:
+        current_epoch = int(getattr(config, "_sgd_compile_epoch_id", 0))
+    except Exception:
+        current_epoch = 0
+    setattr(config, "_sgd_compile_epoch_id", current_epoch + 1)
 
     mask_tensor = mask
     if mask_tensor is not None:
