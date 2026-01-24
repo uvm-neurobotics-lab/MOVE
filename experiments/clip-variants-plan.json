@@ -1,0 +1,77 @@
+{
+    "experiment_name": "clip-variants",
+
+    "additional_controls":{
+        "alg": "move",
+        "output_dir": "../results/clip-variants",
+
+        
+        "use_radial_distance":true,
+        "do_crossover":false,
+        "coord_range": [-1.0,1.0],
+        "color_mode": "HSL",
+        "res_h": 224,
+        "res_w": 224,
+        
+        "clip_disable_partials": true,
+        "clip_random_seed": 7,
+        "clip_microbatch_size": 16,
+        "clip_num_variants": 16,
+        
+        "hidden_nodes_at_start": 2,
+        "weight_init_std": 1.0,
+        
+        "num_cells": 128,
+        "initial_batch_size": 128,
+        "batch_size": 128,
+
+        "allow_jumps": 16,
+
+        "move_fns_per_cell": 3,
+        
+        "soft_mask_sigma": 0.0,
+        "soft_mask_mu": 0.0,
+        "soft_mask_min": 0.0,
+        "max_weight": 20.0,
+        
+        "stop_condition": "passes",
+        "stop_condition_value": 2560000,
+        
+        "use_fourier_features": true,
+        "n_fourier_features": 16,
+        "fourier_feature_scale": 1.0,
+        
+        "sgd_steps": 1000,
+        "sgd_clamp_grad": 0.5,
+        "sgd_early_stop": 10,
+        "grad_every": 1,
+        "sgd_learning_rate": 0.01,
+        "use_fused_optimizer": true,
+        
+        "checkpoint_frequency": 1
+
+    },
+
+    "targets":[
+        ["flat yellow smiley face emoji, centered, simple vector icon, clean outline, no text, white background"]
+    ],
+
+    "color_modes":
+    [
+        "HSL"
+    ],
+
+    "mode": "grid",
+
+    "variables":[
+       "clip_noise_scale"
+    ],
+
+
+    "levels":[
+        [0.0001, 0.1, 0.5, 0.75]
+    ],
+
+    "name_template": "{clip_noise_scale:0.4f}_noise_scale"
+
+}

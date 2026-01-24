@@ -87,7 +87,6 @@ if __name__ == "__main__":
         save_string = template_string
         if isinstance(tar, list):
             save_string = save_string.replace("\"<TARGET>\"", '[' + ','.join([f"\"{t}\"" for t in tar]) + ']')
-            
         else:
             assert os.path.exists(tar), f"Target file {tar} does not exist"
             save_string = save_string.replace("<TARGET>", tar)
