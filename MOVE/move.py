@@ -728,13 +728,12 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             child = self.new_child(p, parents)
 
             # extra mutations for children
-            for _ in range(self.config.initial_mutations):
+            for _ in range(self.config.extra_initial_mutations):
                 child.mutate(self.config)
                 
             new_children.append((child_i, cell_i, child))
             
             self.total_offspring += 1
-            
             if len(new_children) >= batch_size:
                 break
 
@@ -745,15 +744,18 @@ class MOVE(CPPNEvolutionaryAlgorithm):
     def get_batch_size(self):
         initial_pop_done = self.total_offspring >= self.config.num_cells
         batch_size = self.config.batch_size if initial_pop_done else self.config.initial_batch_size
-        return batch_size, initial_pop_done
+        n_offspring_per_cell = self.config.offspring_per_cell
+        return batch_size, initial_pop_done, n_offspring_per_cell
     
 
     @torch.no_grad()
     def get_next_batch_ids(self):
-        batch_size, initial_pop_done = self.get_batch_size()
+        batch_size, initial_pop_done, n_offspring_per_cell = self.get_batch_size()
         if initial_pop_done or not self.config.enforce_initial_fill:
             # random parents 
-            batch_cell_ids = torch.tensor(np.random.choice(self.map.n_cells, size=batch_size, replace=False), device=self.config.device)
+            batch_cell_ids = torch.tensor(np.random.choice(self.map.n_cells, size=batch_size//n_offspring_per_cell, replace=False), device=self.config.device)
+            # duplicate n_offspring_per_cell times
+            batch_cell_ids = batch_cell_ids.repeat_interleave(n_offspring_per_cell)
         else:
             # insure each cell is used once at first
             batch_cell_ids = torch.arange(start=self.total_offspring, end=min(self.map.n_cells, self.total_offspring+batch_size), device=self.config.device)
@@ -766,14 +768,14 @@ class MOVE(CPPNEvolutionaryAlgorithm):
 
         assert len(parents) == self.map.n_cells
         
-        batch_size, initial_pop_done = self.get_batch_size()
+        batch_size, initial_pop_done, n_offspring_per_cell = self.get_batch_size()
         
         batch_cell_ids = self.get_next_batch_ids()
 
         if hasattr(self, "target"):
            self.correct_target_count(len(batch_cell_ids))
 
-        return parents, batch_cell_ids, initial_pop_done, batch_size
+        return parents, batch_cell_ids, initial_pop_done, batch_size, n_offspring_per_cell
 
     @torch.no_grad()
     def bloat_population(self, new_children):
@@ -995,9 +997,9 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         
         # selection
         if evolve_this_batch:
-            parents, batch_cell_ids, initial_pop_done, batch_size = self.selection()
+            parents, batch_cell_ids, initial_pop_done, batch_size, _ = self.selection()
         else: # no need to select
-            batch_size, initial_pop_done = self.get_batch_size()
+            batch_size, initial_pop_done, _ = self.get_batch_size()
             batch_cell_ids = self.get_next_batch_ids()
 
         # reproduction

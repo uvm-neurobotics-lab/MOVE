@@ -145,7 +145,7 @@ def _evolve_cell_worker(data: Dict, worker_id: int, config, result_queue: mp.Que
         logging.info(f"Worker {worker_id} moved child to {config.device}")
         
         # Apply mutations
-        for _ in range(config.initial_mutations + 1):
+        for _ in range(config.extra_initial_mutations + 1):
             child.mutate(config)
         child.reset(config)
         

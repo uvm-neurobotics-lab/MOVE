@@ -487,7 +487,11 @@ class CPPNEvolutionaryAlgorithm(object):
         
      
         with open(os.path.join(self.run_dir, f"target.txt"), 'w') as f:
-            f.write(str(self.config.target_path))
+            if self.config.target_path != None and self.config.target_path != "None" and os.path.exists(self.config.target_path):
+                f.write(str(self.config.target_path))
+            else:
+                # use target
+                f.write(str(self.config.target))
         
         self.save_best_img(os.path.join(self.image_dir, f"best_{self.config.run_id:04d}.png"), do_graph=True)
         print("Saved run to: ", self.run_dir)
@@ -550,12 +554,14 @@ class CPPNEvolutionaryAlgorithm(object):
         max_fitness_individual = max(self.population, key=lambda x: self.agg_fitnesses[x.id])
         return max_fitness_individual
     
-    def save_best_img(self, fname, do_graph=False, show_target=False):
+    def save_best_img(self, fname, do_graph=False, show_target=False, override_best=None):
         # if not do_graph and not self.gen % 10 == 0:
         #     return
-        b = self.get_best()
+        b = override_best
         if b is None:
-            return
+            b = self.get_best()
+            if b is None:
+                return
         run_device = getattr(b, "device", torch.device("cpu"))
         inputs = self.inputs
         if isinstance(inputs, torch.Tensor) and inputs.device != run_device:

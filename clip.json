@@ -3,7 +3,8 @@
   "controls": {
     "alg": "move",
     "output_dir": "tmp_results/clip",
-    "target": ["a smiley face", "a smile", "an emoji", "an emoji with a smile", "a happy face", "a happy face emoji", "a yellow happy face emoji", "a yellow happy face", "yellow circle"],
+    "target-prompts": ["a smiley face", "a smile", "an emoji", "an emoji with a smile", "a happy face", "a happy face emoji", "a yellow happy face emoji", "a yellow happy face", "yellow circle"],
+    "target": ["flat yellow smiley face emoji, centered, simple vector icon, clean outline, no text, white background"],
     "clip_disable_partials": true,
     "use_fused_optimizer": true,
     "use_radial_distance":true,
@@ -11,10 +12,13 @@
     "coord_range": [-1.0,1.0],
     "clip_random_seed": 7,
     "hidden_nodes_at_start": 2,
-    "num_cells": 84,
-    "initial_batch_size": 84,
-    "batch_size": 84,
-    "allow_jumps": 84,
+    "clip_microbatch_size": 4,
+    "clip_embed_microbatch_size": 4,
+    "num_cells": 120,
+    "initial_batch_size": 120,
+    "batch_size": 120,
+    "offspring_per_cell": 1,
+    "allow_jumps": 16,
     "soft_mask_sigma": 0.0,
     "soft_mask_mu": 0.0,
     "soft_mask_min": 0.0,
@@ -27,19 +31,26 @@
     "grad_every": 1,
     "sgd_steps": 100,
     "n_fourier_features": 16,
+    
+    "init_connection_probability": 0.0,
+    "init_connection_probability_fourier": 0.0,
+    "force_init_path_inputs_outputs": true,
+
+    "connection_bloat": 1,
+    "initial_mutations":0,
     "fourier_feature_scale": 1.0,
     "use_fourier_features": true,
     "weight_init_std": 1.0,
-    "sgd_learning_rate": 0.1,
+    "sgd_learning_rate": 0.01,
     "color_mode": "HSL",
-    "res_h": 224,
-    "res_w": 224,
-    "checkpoint_frequency": 1
+    "res_h": 33,
+    "res_w": 33,
+    "checkpoint_frequency": 10
 },
 "conditions": [
     {
         "clip": {
-            "clip_num_variants": 1,
+            "clip_num_variants": 10,
             
             "clip_noise_scale": 0.1,
             "clip_noise_anneal": false,
@@ -48,7 +59,7 @@
             "clip_noise_anneal_end": 0.1,
             "clip_noise_anneal_power": 1.0,
             
-        "clip_augmentations": 0,
+        "clip_augmentations": 4,
         "clip_aug_min_scale": 0.45,
         "clip_aug_max_scale": 1.0,
         "clip_aug_flip_prob": 0.5,

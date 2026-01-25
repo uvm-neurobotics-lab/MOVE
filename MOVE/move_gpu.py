@@ -223,7 +223,18 @@ class MOVEGPU(GpuEvolutionMixin, MOVE):
                 f.write(str(total_offspring))
             torch.save(inputs, os.path.join(run_dir, "inputs.pt"))
             with open(os.path.join(run_dir, "target.txt"), "w") as f:
-                f.write(str(target_path))
+                print("\ntarget_path:", target_path)
+                print()
+                
+                if target_path != None and target_path != "None" and os.path.exists(target_path):
+                    print("\nUsing target path:", target_path)
+                    f.write(str(target_path))
+                elif getattr(config, "clip_text_target", None) is not None:
+                    print("\saving clip_text_target: ", str(config.clip_text_target))
+                    f.write(str(config.clip_text_target))
+                else:
+                    print("\nsaving target tensor")
+                    f.write(str(config.target))
             self.save_best_img(best_img_path, do_graph=True)
 
         best_img = os.path.join(self.image_dir, f"best_{self.config.run_id:04d}.png")

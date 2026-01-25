@@ -215,6 +215,11 @@ class CPPN(nn.Module):
             if isinstance(cx.weight, nn.Parameter):
                 total += cx.weight.numel()
         return total
+
+    @property
+    def n_enabled_connections(self):
+        return len(self.enabled_connections)
+        
     
     def __init__(self, config:CPPNConfig, do_init=True):
         super().__init__()
@@ -254,7 +259,8 @@ class CPPN(nn.Module):
                                               force_init_path_inputs_outputs= config.force_init_path_inputs_outputs)
             
             self.update_layers()
-            
+            print(f"initialized {self.n_enabled_connections} cxs")
+
             self.mutate_lr(config.mutate_sgd_lr_sigma) # initialize learning rate
         
         self.to(self.device)
@@ -345,6 +351,7 @@ class CPPN(nn.Module):
                 return False
             return int(node_id) < fourier_cutoff
         
+        # Connect hiden layers
         prev_layer = self.input_nodes
         if len(list(hidden_layers.values())[0]) > 0:
             for layer in sorted(list(hidden_layers.values()), key=lambda x: [] if len(x)==0 else x[0].layer):
@@ -356,6 +363,7 @@ class CPPN(nn.Module):
                 if len(layer) > 0:
                     prev_layer = layer
         
+        # Connect last hidden to output
         for node in self.output_nodes:
             for prev_node in prev_layer:
                 prob = init_connection_prob_fourier if is_fourier(prev_node.id) else initial_connection_prob
@@ -364,34 +372,34 @@ class CPPN(nn.Module):
                     
         if force_init_path_inputs_outputs:
             for output_node in self.output_nodes:
-                path = []
+                # path = []
                 path_end = output_node
                 for layer in sorted(list(hidden_layers.values()), key=lambda x: [] if len(x)==0 else x[0].layer, reverse=True):
                     if len(layer) == 0:
-                        continue
+                        continue # next output
                     # check to see if there is already a connection from this layer to the output node
                     if any([f"{node.id},{path_end.id}" in self.connections.keys() for node in layer]):
                         existing = [node for node in layer if f"{node.id},{path_end.id}" in self.connections.keys()][0]
-                        path.append(f"{existing.id},{path_end.id}")
                         path_end = existing
                     else:
                         random_node = random_choice(layer)
-                        self.connections[f"{random_node.id},{path_end.id}"] = Connection(self.rand_weight(weight_std))
-                        path.append(f"{random_node.id},{path_end.id}") 
+                        key = f"{random_node.id},{path_end.id}"
+                        self.connections[key] = Connection(self.rand_weight(weight_std))
+                        self.connections[key].enabled = True
                         path_end = random_node
-                    
-                    
+                        continue # next output
+                        
                 
                 if any([f"{input_node_id},{path_end.id}" in self.connections.keys() for input_node_id in self.input_node_ids]):
-                    path_start = [node for node in self.input_nodes if f"{node.id},{path_end.id}" in self.connections.keys()][0]
-                    path.append(f"{path_start.id},{path_end.id}")
+                    # already connected to inputs
+                    continue # next output
                 else:
+                    # find a random input and connect it
                     random_node = random_choice(self.input_nodes)
-                    self.connections[f"{random_node.id},{path_end.id}"] = Connection(self.rand_weight(weight_std))
-                    path.append(f"{random_node.id},{path_end.id}")
-                    
-                for cx in path:
-                    self.connections[cx].enabled = True
+                    key = f"{random_node.id},{path_end.id}"
+                    self.connections[key] = Connection(self.rand_weight(weight_std))
+                    self.connections[key].enabled = True
+                    continue # next output
     
     def reinitialize_weights(self, config):
         for cx in self.connections.values():

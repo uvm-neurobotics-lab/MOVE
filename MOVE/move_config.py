@@ -115,7 +115,7 @@ class MOVEConfig(CPPNConfig):
         # self.output_activation = IdentityActivation
         self.output_activation = None
         self.normalize_outputs = "min_max"
-        self.initial_mutations = 0
+        self.extra_initial_mutations = 0
         
         self.diversity_mode = None # don't record diversity (it's slow)
         self.autoencoder_frequency = 0 # used for novelty, disabled for MOVE
@@ -158,6 +158,8 @@ class MOVEConfig(CPPNConfig):
         # self.batch_size = 1
         self.batch_size = self.num_cells
         self.initial_batch_size = self.num_cells # just for the initial population
+        
+        self.offspring_per_cell = 1
         
         # self.objective_functions =  None
         self.objective_functions =  [

@@ -88,7 +88,7 @@ class CPPNConfig:
         self.bias_mutation_std = 1.0
         self.weight_mutation_std = 1.0
         
-        self.initial_mutations = 0 
+        self.extra_initial_mutations = 0 
 
         self.max_weight = None
         self.weight_init_std = 2.0
