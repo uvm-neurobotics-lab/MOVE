@@ -143,7 +143,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             ClipSimilarityObjective,
             build_clip_objectives,
         )
-        from .clip.clip_model import embed_text, maybe_compile_clip_models, set_clip_model_names
+        from .clip.clip_model import embed_text, maybe_compile_clip_models, set_clip_model_names, set_clip_provider
 
         # Allow either a single prompt string (historical behaviour) or a list
         # of prompt strings (each prompt contributes its own CLIP objectives).
@@ -176,9 +176,15 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 jitter_std=jitter_std,
             )
 
+        set_clip_provider(
+            getattr(self.config, "clip_provider", "openai"),
+            getattr(self.config, "clip_openclip_pretrained", "openai"),
+            getattr(self.config, "clip_openclip_pretrained_second", None),
+            getattr(self.config, "clip_verbose", False),
+        )
         set_clip_model_names(
             getattr(self.config, "clip_vit_model", "ViT-B/32"),
-            getattr(self.config, "clip_rn50_model", "RN50"),
+            getattr(self.config, "second_clip_model", "RN50"),
         )
         maybe_compile_clip_models(self.config, device=self.config.device)
 
@@ -238,7 +244,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 partial_meta.append((prompt_idx, prompt_text, partial_prompts))
 
                 for idx, token_prompt in enumerate(partial_prompts):
-                    partial_embedding = embed_text(token_prompt, device=self.config.device).float()
+                    partial_embedding = embed_text(token_prompt, device=self.config.device, config=self.config).float()
                     normalized_embedding = F.normalize(partial_embedding, dim=0)
                     slug = re.sub(r"[^a-z0-9]+", "_", token_prompt.lower()).strip("_")
                     if not slug:

@@ -41,6 +41,11 @@ class Node(nn.Module):
                     cfg = activation_config.get(activation.__name__)
                     if isinstance(cfg, dict):
                         kwargs = cfg
+                if activation.__name__ in ("DenseActivation", "StaticDenseActivation") and "shape" not in kwargs:
+                    res_h = getattr(config, "res_h", None)
+                    res_w = getattr(config, "res_w", None)
+                    if res_h is not None and res_w is not None:
+                        kwargs = {**kwargs, "shape": (int(res_h), int(res_w))}
             try:
                 self.activation = activation(**kwargs) if kwargs else activation()
             except TypeError:

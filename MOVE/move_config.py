@@ -50,7 +50,18 @@ class MOVEConfig(CPPNConfig):
         # Available CLIP model names depend on the installed CLIP package.
         # Common options: ViT-B/32, ViT-B/16, ViT-L/14, RN50, RN101, RN50x4, RN50x16, RN50x64.
         self.clip_vit_model = "ViT-B/32"
-        self.clip_rn50_model = "RN50"
+        # self.clip_vit_model = "ViT-B/16"
+        # Second CLIP model
+        # Set to None (or the same as clip_vit_model) to disable loading a second model.
+        self.second_clip_model = None
+        # CLIP provider: "openai" (default) or "openclip" for OpenCLIP models.
+        self.clip_provider = "openai"
+        # Enable verbose CLIP/OpenCLIP logging.
+        self.clip_verbose = False
+        # OpenCLIP pretrained weights tag. Common: "openai", "laion2b_s34b_b79k", "laion400m_e32", "datacompdr".
+        self.clip_openclip_pretrained = "openai"
+        # Optional second pretrained tag for the second CLIP model.
+        self.clip_openclip_pretrained_second = None
         
         # CLIP Compilation options
         self.clip_compile_models = True
@@ -91,7 +102,9 @@ class MOVEConfig(CPPNConfig):
                     TanhActivation,
                     SigmoidActivation, 
                     Conv3x3Activation,
-                    DenseActivation,
+                    Conv7x7Activation,
+                    Conv9x9Activation,
+                    # DenseActivation,
                     # FullAttentionActivation,
                     LocalAttentionActivation
                     ] # CLIP

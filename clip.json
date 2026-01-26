@@ -26,7 +26,13 @@
     "max_weight": 20.0,
     "stop_condition": "passes",
     "stop_condition_value": 2560000,
+    
     "sgd_early_stop": 20,
+    "sgd_no_branch":false,
+    
+    "sgd_compile_fitness":false,
+    "sgd_use_compiled_forward":false,
+    
     "grad_every": 1,
     "sgd_steps": 1000,
     "n_fourier_features": 8,
@@ -42,8 +48,8 @@
     "weight_init_std": 1.0,
     "sgd_learning_rate": 0.01,
     "color_mode": "HSL",
-    "res_h": 33,
-    "res_w": 33,
+    "res_h": 224,
+    "res_w": 224,
     "checkpoint_frequency": 10
 },
 "conditions": [

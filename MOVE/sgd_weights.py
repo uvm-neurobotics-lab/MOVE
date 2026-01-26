@@ -1158,8 +1158,10 @@ def sgd_weights(
             break
         n_enabled_cxs = sum([gen.n_enabled_connections for gen in active_genomes])
         n_params = sum(len(list(gen.parameters())) for gen in active_genomes)
+        n_params_elem = sum(param.numel() for gen in active_genomes for param in gen.parameters())
+    
         postfix_fn(
-            f"loss={loss_value.item():.4f}, {n_params}p, {n_enabled_cxs}cxs, {len(active_genomes)}/{len(genomes)} gs"
+            f"loss={loss_value.item():.4f}, {n_params} ({n_params_elem})p, {n_enabled_cxs}cxs, {len(active_genomes)}/{len(genomes)} gs"
         )
     progress.close()
 
@@ -1617,9 +1619,10 @@ def sgd_weights_no_branch(
 
             n_params = sum(len(list(gen.parameters())) for gen in active_genomes)
             n_enabled_cxs = sum([gen.n_enabled_connections for gen in active_genomes])
+            n_params_elem = sum(param.numel() for gen in active_genomes for param in gen.parameters())
             
             postfix_fn(
-                f"loss={loss_value.item():.4f}, {n_params}p, {n_enabled_cxs}cxs, {len(active_genomes)}/{len(genomes)} gs"
+                f"loss={loss_value.item():.4f}, {n_params} ({n_params_elem})p, {n_enabled_cxs}cxs, {len(active_genomes)}/{len(genomes)} gs"
             )
 
             profiler_step()

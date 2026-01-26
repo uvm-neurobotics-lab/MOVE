@@ -231,7 +231,7 @@ class Record():
 
 
     def save(self, run_dir, plot=True):
-        logging.info("Saving record")
+        logging.info(f"Saving record {run_dir}")
         torch.save(self.agg_fitness_by_batch, os.path.join(run_dir, "agg_fitness_by_batch.pt"))
         
         torch.save(self.evals_by_batch, os.path.join(run_dir, "evals_by_batch.pt"))

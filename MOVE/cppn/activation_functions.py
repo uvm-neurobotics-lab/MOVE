@@ -200,15 +200,21 @@ class SoftPlusActivation(torch.nn.Module):
 
 class DenseActivation(torch.nn.Module):
     """Two-layer dense activation with per-position parameters (HxW per node)."""
-    def __init__(self, hidden_activation=torch.tanh):
+    def __init__(self, hidden_activation=torch.tanh, shape=None):
         super(DenseActivation, self).__init__()
         self.hidden_activation = hidden_activation
         self.w1 = None
         self.b1 = None
         self.w2 = None
         self.b2 = None
+        if shape is not None:
+            self._init_params(tuple(shape), device=None, dtype=None)
 
     def _init_params(self, shape, device, dtype):
+        if device is None:
+            device = torch.device("cpu")
+        if dtype is None:
+            dtype = torch.get_default_dtype()
         self.w1 = torch.nn.Parameter(torch.randn(shape, device=device, dtype=dtype) * 0.5)
         self.b1 = torch.nn.Parameter(torch.zeros(shape, device=device, dtype=dtype))
         self.w2 = torch.nn.Parameter(torch.randn(shape, device=device, dtype=dtype) * 0.5)
@@ -217,6 +223,41 @@ class DenseActivation(torch.nn.Module):
     def forward(self, x):
         if x.dim() != 2:
             raise ValueError(f"DenseActivation expects 2D tensor (H, W). Got {x.shape}.")
+        if self.w1 is None or self.w1.shape != x.shape:
+            self._init_params(x.shape, x.device, x.dtype)
+        h = self.hidden_activation(self.w1 * x + self.b1)
+        return self.w2 * h + self.b2
+
+
+class StaticDenseActivation(torch.nn.Module):
+    """Static two-layer dense activation with fixed random weights (no SGD)."""
+    def __init__(self, hidden_activation=torch.tanh, shape=None):
+        super(StaticDenseActivation, self).__init__()
+        self.hidden_activation = hidden_activation
+        self.w1 = None
+        self.b1 = None
+        self.w2 = None
+        self.b2 = None
+        if shape is not None:
+            self._init_params(tuple(shape), device=None, dtype=None)
+
+    def _init_params(self, shape, device, dtype):
+        if device is None:
+            device = torch.device("cpu")
+        if dtype is None:
+            dtype = torch.get_default_dtype()
+        self.w1 = torch.randn(shape, device=device, dtype=dtype) * 0.5
+        self.b1 = torch.zeros(shape, device=device, dtype=dtype)
+        self.w2 = torch.randn(shape, device=device, dtype=dtype) * 0.5
+        self.b2 = torch.zeros(shape, device=device, dtype=dtype)
+        self.register_buffer("_w1", self.w1)
+        self.register_buffer("_b1", self.b1)
+        self.register_buffer("_w2", self.w2)
+        self.register_buffer("_b2", self.b2)
+
+    def forward(self, x):
+        if x.dim() != 2:
+            raise ValueError(f"StaticDenseActivation expects 2D tensor (H, W). Got {x.shape}.")
         if self.w1 is None or self.w1.shape != x.shape:
             self._init_params(x.shape, x.device, x.dtype)
         h = self.hidden_activation(self.w1 * x + self.b1)
@@ -351,6 +392,31 @@ class Conv3x3Activation(torch.nn.Module):
         elif original_dim != 4:
             raise ValueError(f"Unsupported input dim for conv activation: {original_dim}")
         y = self.activation(self.conv(x))
+        if original_dim == 2:
+            return y.squeeze(0).squeeze(0)
+        if original_dim == 3:
+            return y.squeeze(1)
+        return y
+
+
+class StaticConv3x3Activation(torch.nn.Module):
+    """Static 3x3 convolution with fixed random weights (no SGD)."""
+    def __init__(self):
+        super(StaticConv3x3Activation, self).__init__()
+        weight = torch.randn(1, 1, 3, 3) * 0.5
+        self.register_buffer("weight", weight)
+        self.padding = 1
+
+    def forward(self, x):
+        original_dim = x.dim()
+        if original_dim == 2:
+            x = x.unsqueeze(0).unsqueeze(0)
+        elif original_dim == 3:
+            x = x.unsqueeze(1)
+        elif original_dim != 4:
+            raise ValueError(f"Unsupported input dim for conv activation: {original_dim}")
+        weight = self.weight.to(device=x.device, dtype=x.dtype)
+        y = F.conv2d(x, weight, bias=None, padding=self.padding)
         if original_dim == 2:
             return y.squeeze(0).squeeze(0)
         if original_dim == 3:
