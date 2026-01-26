@@ -25,6 +25,8 @@ class MOVEConfig(CPPNConfig):
         self.alg = "MOVE"
         self.name = "default" # name for this configuration
         self.run_id = uuid.uuid1().int>>64
+        
+        self.do_profile = False
 
         self.target = None # set later
         self.clip_text_target = None
@@ -45,7 +47,17 @@ class MOVEConfig(CPPNConfig):
         self.clip_max_partial_prompts = 8
         self.clip_microbatch_size = 64
         self.clip_embed_microbatch_size = 64
-        self.do_profile = False
+        # Available CLIP model names depend on the installed CLIP package.
+        # Common options: ViT-B/32, ViT-B/16, ViT-L/14, RN50, RN101, RN50x4, RN50x16, RN50x64.
+        self.clip_vit_model = "ViT-B/32"
+        self.clip_rn50_model = "RN50"
+        
+        # CLIP Compilation options
+        self.clip_compile_models = True
+        self.clip_compile_mode = "reduce-overhead"
+        self.clip_compile_backend = None  # None | inductor | aot_eager | nvfuser
+        self.clip_compile_dynamic = False
+        self.clip_compile_fullgraph = False
         
         self.checkpoint_frequency = 0
 
@@ -74,6 +86,17 @@ class MOVEConfig(CPPNConfig):
                             SigmoidActivation, 
                             ] # GECCO24
         
+        self.activations=  [SinActivation,
+                    IdentityActivation,
+                    TanhActivation,
+                    SigmoidActivation, 
+                    Conv3x3Activation,
+                    DenseActivation,
+                    # FullAttentionActivation,
+                    LocalAttentionActivation
+                    ] # CLIP
+
+        
         # self.activations=  [SinActivation,
         #                     IdentityActivation,
         #                     TanhActivation,
@@ -87,6 +110,9 @@ class MOVEConfig(CPPNConfig):
         #                     torch.nn.Hardshrink,
         
         #                     ] 
+        
+        self.activation_config = {}
+        
         
         self.soft_mask_sigma = None # don't use a soft mask (binary mask)
         self.soft_mask_mu = 0.0 
@@ -200,24 +226,31 @@ class MOVEConfig(CPPNConfig):
         # SGD performance
         self.sgd_no_branch = True # Use branch-minimized fixed-step SGD loop. Necessary for stable TorchDynamo compilation.
         
-        self.sgd_compile_fitness      = True # Compile the fitness function with TorchDynamo
-        self.sgd_use_compiled_forward = False  # Cache torch.compile'd CPPN forwards during SGD
+        self.sgd_dynamo_suppress_errors = False
         
+        self.sgd_compile_fitness      = True # Compile the fitness function with TorchDynamo
+        self.sgd_use_compiled_forward = True  # Cache torch.compile'd CPPN forwards during SGD
+        self.sgd_compile_forward_max_per_batch = -1 # set to 0 to disable. Use -1 for unlimited caching.
+        self.sgd_compile_forward_param_threshold = 5_000 # min number of parameters to enable compiled forward caching. Set to None to disable.
+        
+        # Leave true to avoid recompiles during SGD fitness evals. May cause RuntimeErrors if the target tensor is rebuilt during SGD (e.g. when sgd_no_branch is False).
         self.sgd_compile_strict = True
+        # Only enable if using sgd_use_compiled_forward and not using sgd_compile_forward_param_threshold or sgd_compile_forward_max_per_batch
         self.sgd_compile_forward_recompile_error = False
         
-        self.sgd_compile_mode            = "reduce-overhead" # torch.compile mode for SGD reduce-overhead, default, max-autotune, etc.
-        self.sgd_compile_fitness_mode    = "reduce-overhead"
-        self.sgd_compile_backend         = "aot_eager" # default: None | inductor | aot_eager | nvfuser
-        self.sgd_compile_fitness_backend = "aot_eager" # default: None | inductor | aot_eager | nvfuser
+        self.sgd_compile_mode            = "reduce-overhead" # torch.compile mode for SGD: reduce-overhead | default | max-autotune
+        self.sgd_compile_fitness_mode    = "max-autotune" # max-autotune | reduce-overhead | default . max-autotune recommended if no recompiles occur.
+        self.sgd_compile_backend         = "inductor" # default: None : inductor | aot_eager | nvfuser
+        self.sgd_compile_fitness_backend = "inductor" # default: None : inductor | aot_eager | nvfuser
         
-        self.sgd_compile_dynamic         = True
-        self.sgd_compile_fitness_dynamic = True
+        # most likely are not necessary
+        self.sgd_compile_dynamic         = False
+        self.sgd_compile_fitness_dynamic = False
         
         # Full graph compilation options (should most likely be left disabled)
         self.sgd_compile_fullgraph          = False 
-        self.sgd_compile_fitness_fullgraph  = False # compilation errors when used with 'dynamic' compilation.
-        self.sgd_disable_cuda_graphs        = True
+        self.sgd_compile_fitness_fullgraph  = True # compilation errors when used with 'dynamic' compilation.
+        self.sgd_disable_cuda_graphs        = False
         
         self.sgd_compile_fitness_bind_target          = True
         self.sgd_compile_fitness_no_recompile         = True
@@ -230,7 +263,6 @@ class MOVEConfig(CPPNConfig):
         self.sgd_compile_forward_prewarm = True
         self.sgd_pipeline_prewarm = True
         
-        self.sgd_compile_forward_max_per_batch = 0 # set to 0 to disable
 
         self.sgd_amp_whitelist = ["lpips", "dists"]
         
@@ -316,6 +348,8 @@ class MOVEConfig(CPPNConfig):
         target_path_to_tensor(self)
         self.device = torch.device(self.device)
 
+        self._warn_expected_memory_use()
+
         # Reset TorchDynamo if compile options changed to ensure new settings take effect.
         try:
             compile_state = (
@@ -334,6 +368,16 @@ class MOVEConfig(CPPNConfig):
                 self._last_compile_state = compile_state
         except Exception:
             pass
+
+        if getattr(self, "sgd_use_compiled_forward", False) and getattr(self, "sgd_compile_forward_max_per_batch", 0) == 0:
+            logging.warning(
+                "sgd_use_compiled_forward is True but sgd_compile_forward_max_per_batch is 0; compiled forward caching is disabled."
+            )
+
+        if getattr(self, "sgd_compile_fitness", False) and not getattr(self, "sgd_no_branch", True):
+            logging.warning(
+                "sgd_compile_fitness is enabled while sgd_no_branch is disabled; target tensors may be rebuilt during SGD, triggering recompiles. Either disable sgd_compile_fitness/enable sgd_no_branch or make sure sgd_compile_fitness_no_recompile is disabled to avoid RuntimeErrors (not recommended since there could be multiple recompiles during the SGD loop, especially with early stopping)."
+            )
 
         self._apply_cuda_graphs_config()
         
@@ -369,6 +413,52 @@ class MOVEConfig(CPPNConfig):
 
         self.NO_GRADIENT = ff.NO_GRADIENT
         self.intialize_linked_variables()
+
+    def _warn_expected_memory_use(self) -> None:
+        """Best-effort warning for configs likely to exceed GPU memory."""
+        try:
+            if self.device.type != "cuda" or not torch.cuda.is_available():
+                return
+            props = torch.cuda.get_device_properties(self.device)
+            total_bytes = float(props.total_memory)
+        except Exception:
+            return
+
+        res_h = int(getattr(self, "res_h", 0) or 0)
+        res_w = int(getattr(self, "res_w", 0) or 0)
+        batch_size = int(getattr(self, "batch_size", 0) or 0)
+        clip_microbatch = int(getattr(self, "clip_microbatch_size", 0) or 0)
+        clip_aug = int(getattr(self, "clip_augmentations", 0) or 0)
+        channels = len(getattr(self, "color_mode", "RGB") or "RGB")
+
+        hw = max(1, res_h) * max(1, res_w)
+        base_image_bytes = float(batch_size * hw * max(1, channels) * 4)
+        clip_views = max(1, clip_aug) if clip_aug > 0 else 1
+        clip_batch = max(1, clip_microbatch) if clip_microbatch > 0 else max(1, batch_size)
+        clip_image_bytes = float(clip_batch * clip_views * hw * 3 * 4)
+
+        total_estimate = base_image_bytes + clip_image_bytes
+
+        # Full attention activations allocate O((HW)^2) per node.
+        if any(getattr(act, "__name__", "") == "FullAttentionActivation" for act in self.activations):
+            attn_bytes = float(hw * hw * 4)
+            total_estimate += attn_bytes
+            if hw >= 4096:
+                logging.warning(
+                    "FullAttentionActivation with resolution %dx%d can allocate a %dx%d attention matrix (~%.2f MiB) per node.",
+                    res_h,
+                    res_w,
+                    hw,
+                    hw,
+                    attn_bytes / (1024 ** 2),
+                )
+
+        if total_estimate > 0.7 * total_bytes:
+            logging.warning(
+                "Estimated working set ~%.2f MiB (>=70%% of GPU memory %.2f MiB). Consider reducing batch/microbatch/resolution or disabling FullAttentionActivation.",
+                total_estimate / (1024 ** 2),
+                total_bytes / (1024 ** 2),
+            )
 
 
 def resize_image(image, size, device):

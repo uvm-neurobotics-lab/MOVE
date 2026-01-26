@@ -143,7 +143,7 @@ class MOVE(CPPNEvolutionaryAlgorithm):
             ClipSimilarityObjective,
             build_clip_objectives,
         )
-        from .clip.clip_model import embed_text
+        from .clip.clip_model import embed_text, maybe_compile_clip_models, set_clip_model_names
 
         # Allow either a single prompt string (historical behaviour) or a list
         # of prompt strings (each prompt contributes its own CLIP objectives).
@@ -175,6 +175,12 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 flip_prob=flip_prob,
                 jitter_std=jitter_std,
             )
+
+        set_clip_model_names(
+            getattr(self.config, "clip_vit_model", "ViT-B/32"),
+            getattr(self.config, "clip_rn50_model", "RN50"),
+        )
+        maybe_compile_clip_models(self.config, device=self.config.device)
 
         objectives = []
         all_embeddings = []

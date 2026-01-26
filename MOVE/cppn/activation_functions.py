@@ -3,6 +3,7 @@ import inspect
 import math
 import sys
 import torch
+import torch.nn.functional as F
 
 def get_all():
     """Returns all activation functions."""
@@ -197,14 +198,143 @@ class SoftPlusActivation(torch.nn.Module):
         return torch.log(1 + torch.exp(x))
 
 
+class DenseActivation(torch.nn.Module):
+    """Two-layer dense activation with per-position parameters (HxW per node)."""
+    def __init__(self, hidden_activation=torch.tanh):
+        super(DenseActivation, self).__init__()
+        self.hidden_activation = hidden_activation
+        self.w1 = None
+        self.b1 = None
+        self.w2 = None
+        self.b2 = None
+
+    def _init_params(self, shape, device, dtype):
+        self.w1 = torch.nn.Parameter(torch.randn(shape, device=device, dtype=dtype) * 0.5)
+        self.b1 = torch.nn.Parameter(torch.zeros(shape, device=device, dtype=dtype))
+        self.w2 = torch.nn.Parameter(torch.randn(shape, device=device, dtype=dtype) * 0.5)
+        self.b2 = torch.nn.Parameter(torch.zeros(shape, device=device, dtype=dtype))
+
+    def forward(self, x):
+        if x.dim() != 2:
+            raise ValueError(f"DenseActivation expects 2D tensor (H, W). Got {x.shape}.")
+        if self.w1 is None or self.w1.shape != x.shape:
+            self._init_params(x.shape, x.device, x.dtype)
+        h = self.hidden_activation(self.w1 * x + self.b1)
+        return self.w2 * h + self.b2
+
+
+class FullAttentionActivation(torch.nn.Module):
+    """Full self-attention over an HxW node field (O((HW)^2))."""
+    def __init__(self, temperature=1.0, use_bias=True, out_scale=1.0):
+        super(FullAttentionActivation, self).__init__()
+        self.temperature = float(temperature) if temperature is not None else 1.0
+        self.use_bias = bool(use_bias)
+        self.out_scale = float(out_scale) if out_scale is not None else 1.0
+
+        self.q_weight = torch.nn.Parameter(torch.randn(1) * 0.5)
+        self.k_weight = torch.nn.Parameter(torch.randn(1) * 0.5)
+        self.v_weight = torch.nn.Parameter(torch.randn(1) * 0.5)
+        if self.use_bias:
+            self.q_bias = torch.nn.Parameter(torch.zeros(1))
+            self.k_bias = torch.nn.Parameter(torch.zeros(1))
+            self.v_bias = torch.nn.Parameter(torch.zeros(1))
+        else:
+            self.q_bias = None
+            self.k_bias = None
+            self.v_bias = None
+
+    def forward(self, x):
+        if x.dim() != 2:
+            raise ValueError(f"FullAttentionActivation expects 2D tensor (H, W). Got {x.shape}.")
+        h, w = x.shape
+        x_flat = x.reshape(-1, 1)
+
+        q = x_flat * self.q_weight
+        k = x_flat * self.k_weight
+        v = x_flat * self.v_weight
+        if self.use_bias:
+            q = q + self.q_bias
+            k = k + self.k_bias
+            v = v + self.v_bias
+
+        scale = self.temperature if self.temperature and self.temperature > 0 else 1.0
+        scores = (q @ k.T) / scale
+        weights = torch.softmax(scores, dim=-1)
+        out = weights @ v
+        out = out.reshape(h, w)
+        return out * self.out_scale
+
+
+class LocalAttentionActivation(torch.nn.Module):
+    """Local windowed self-attention over an HxW node field."""
+    def __init__(self, window_size=7, temperature=1.0, use_bias=True, out_scale=1.0):
+        super(LocalAttentionActivation, self).__init__()
+        if window_size % 2 == 0:
+            raise ValueError("window_size must be odd")
+        self.window_size = int(window_size)
+        self.temperature = float(temperature) if temperature is not None else 1.0
+        self.use_bias = bool(use_bias)
+        self.out_scale = float(out_scale) if out_scale is not None else 1.0
+
+        self.q_weight = torch.nn.Parameter(torch.randn(1) * 0.5)
+        self.k_weight = torch.nn.Parameter(torch.randn(1) * 0.5)
+        self.v_weight = torch.nn.Parameter(torch.randn(1) * 0.5)
+        if self.use_bias:
+            self.q_bias = torch.nn.Parameter(torch.zeros(1))
+            self.k_bias = torch.nn.Parameter(torch.zeros(1))
+            self.v_bias = torch.nn.Parameter(torch.zeros(1))
+        else:
+            self.q_bias = None
+            self.k_bias = None
+            self.v_bias = None
+
+    def forward(self, x):
+        if x.dim() != 2:
+            raise ValueError(f"LocalAttentionActivation expects 2D tensor (H, W). Got {x.shape}.")
+        h, w = x.shape
+        x4 = x.unsqueeze(0).unsqueeze(0)
+        patches = F.unfold(
+            x4,
+            kernel_size=self.window_size,
+            padding=self.window_size // 2,
+        )  # (1, K, H*W)
+        k = patches * self.k_weight
+        v = patches * self.v_weight
+        if self.use_bias:
+            k = k + self.k_bias
+            v = v + self.v_bias
+
+        q = x.reshape(1, 1, h * w) * self.q_weight
+        if self.use_bias:
+            q = q + self.q_bias
+
+        scale = self.temperature if self.temperature and self.temperature > 0 else 1.0
+        scores = (q * k) / scale
+        weights = torch.softmax(scores, dim=1)
+        out = (weights * v).sum(dim=1)
+        out = out.reshape(h, w)
+        return out * self.out_scale
+
+
 
 class BaseConvActivation(torch.nn.Module):
     def __init__(self):
         super(BaseConvActivation, self).__init__()
         
     def forward(self, x):
-        x = x.unsqueeze(0)
-        return self.activation(self.conv(x)).squeeze(0)
+        original_dim = x.dim()
+        if original_dim == 2:
+            x = x.unsqueeze(0).unsqueeze(0)
+        elif original_dim == 3:
+            x = x.unsqueeze(1)
+        elif original_dim != 4:
+            raise ValueError(f"Unsupported input dim for conv activation: {original_dim}")
+        y = self.activation(self.conv(x))
+        if original_dim == 2:
+            return y.squeeze(0).squeeze(0)
+        if original_dim == 3:
+            return y.squeeze(1)
+        return y
 
 
 class Conv3x3Activation(torch.nn.Module):
@@ -213,8 +343,19 @@ class Conv3x3Activation(torch.nn.Module):
         self.conv = torch.nn.Conv2d(1, 1, 3, padding=1, bias=False)
         self.activation = torch.nn.Identity()
     def forward(self, x):
-        x = x.unsqueeze(0)
-        return self.activation(self.conv(x)).squeeze(0)
+        original_dim = x.dim()
+        if original_dim == 2:
+            x = x.unsqueeze(0).unsqueeze(0)
+        elif original_dim == 3:
+            x = x.unsqueeze(1)
+        elif original_dim != 4:
+            raise ValueError(f"Unsupported input dim for conv activation: {original_dim}")
+        y = self.activation(self.conv(x))
+        if original_dim == 2:
+            return y.squeeze(0).squeeze(0)
+        if original_dim == 3:
+            return y.squeeze(1)
+        return y
 
 
 class Conv5x5Activation(BaseConvActivation):

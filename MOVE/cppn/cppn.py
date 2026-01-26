@@ -24,17 +24,27 @@ from .fourier_features import add_fourier_features
 
 
 class Node(nn.Module):
-    def __init__(self, activation, id, bias=0.0, device='cpu'):
+    def __init__(self, activation, id, bias=0.0, device='cpu', config=None):
         super().__init__()
         # self.bias = nn.Parameter(torch.randn(1))
         self.bias = nn.Parameter(torch.tensor(bias, device=device))
-        self.set_activation(activation)
+        self.set_activation(activation, config=config)
         self.id:str = id
         self.layer = 999
     
-    def set_activation(self, activation):
+    def set_activation(self, activation, config=None):
         if isinstance(activation, type):
-            self.activation = activation()
+            kwargs = {}
+            if config is not None:
+                activation_config = getattr(config, "activation_config", None)
+                if isinstance(activation_config, dict):
+                    cfg = activation_config.get(activation.__name__)
+                    if isinstance(cfg, dict):
+                        kwargs = cfg
+            try:
+                self.activation = activation(**kwargs) if kwargs else activation()
+            except TypeError:
+                self.activation = activation()
         else:
             self.activation = activation
         self.activation.to(self.bias.device)
@@ -68,19 +78,19 @@ class Node(nn.Module):
             "layer": self.layer
         }
     
-    def from_json(self, json):
+    def from_json(self, json, config=None):
         if isinstance(json["activation"], str):
             json["activation"] = af.ACTIVATION_FUNCTIONS[json["activation"]]
         self.id = json["id"]
-        self.set_activation(af.__dict__[json["activation"]])
+        self.set_activation(af.__dict__[json["activation"]], config=config)
         self.bias = nn.Parameter(torch.tensor(json["bias"]))
         self.layer = json["layer"]
     
     @staticmethod
-    def create_from_json(json):
+    def create_from_json(json, config=None):
         if isinstance(json["activation"], str):
             json["activation"] = af.ACTIVATION_FUNCTIONS[json["activation"]]
-        n = Node(json["activation"], json["id"], json["bias"])
+        n = Node(json["activation"], json["id"], json["bias"], config=config)
         n.layer = json["layer"]
         return n
     
@@ -259,7 +269,6 @@ class CPPN(nn.Module):
                                               force_init_path_inputs_outputs= config.force_init_path_inputs_outputs)
             
             self.update_layers()
-            print(f"initialized {self.n_enabled_connections} cxs")
 
             self.mutate_lr(config.mutate_sgd_lr_sigma) # initialize learning rate
         
@@ -320,14 +329,14 @@ class CPPN(nn.Module):
                 n_hidden = (n_hidden,)
             
             for node_id in self.input_node_ids:
-                node = Node(af.IdentityActivation, node_id)
+                node = Node(af.IdentityActivation, node_id, config=config)
                 self.nodes[node_id] = node
             
             for node_id in self.output_node_ids:
                 if config.output_activation is None:
-                    node = Node(random_choice(config.activations), node_id)
+                    node = Node(random_choice(config.activations), node_id, config=config)
                 else:
-                    node = Node(config.output_activation, node_id)
+                    node = Node(config.output_activation, node_id, config=config)
                 self.nodes[node_id] = node
             
             hidden_layers = {}
@@ -336,7 +345,7 @@ class CPPN(nn.Module):
                 hidden_layers[this_layer_id] = []
                 for j in range(layer):
                     new_id = type(self).get_new_node_id()
-                    node = Node(random_choice(config.activations), new_id)
+                    node = Node(random_choice(config.activations), new_id, config=config)
                     self.nodes[new_id] = node
                     node.layer = i+1
                     hidden_layers[this_layer_id].append(node)
@@ -639,6 +648,7 @@ class CPPN(nn.Module):
             random_choice(config.activations),
             type(self).get_new_node_id(),
             device=self.device,
+            config=config,
         )
         
         assert new_node.id not in self.nodes.keys(),\
@@ -717,7 +727,7 @@ class CPPN(nn.Module):
             eligible_nodes.extend(self.input_nodes)
         for node in eligible_nodes:
             if torch.rand(1)[0] < prob:
-                node.set_activation(random_choice(config.activations))
+                node.set_activation(random_choice(config.activations), config=config)
 
 
 
@@ -916,6 +926,7 @@ class CPPN(nn.Module):
                 node.id,
                 node.bias.item(),
                 device=self.device,
+                config=config,
             )
         
         for conn_key, conn in self.connections.items():
@@ -982,6 +993,7 @@ class CPPN(nn.Module):
                 n.id,
                 n.bias.item(),
                 device=self.device,
+                config=config,
             )
                 
                 
@@ -994,6 +1006,7 @@ class CPPN(nn.Module):
                 n.id,
                 n.bias.item(),
                 device=self.device,
+                config=config,
             )    
         
         for match_index in range(len(matching1)):
@@ -1039,6 +1052,7 @@ class CPPN(nn.Module):
                     n.id,
                     n.bias.item(),
                     device=self.device,
+                    config=config,
                 )
                             
         
@@ -1066,7 +1080,7 @@ class CPPN(nn.Module):
         if CPPNClass is None:
             CPPNClass = CPPN
         new_cppn = CPPNClass(config, do_init=False)
-        new_cppn.from_json(json_dict)
+        new_cppn.from_json(json_dict, config=config)
         new_cppn.to(config.device)
         return new_cppn
     
@@ -1084,7 +1098,7 @@ class CPPN(nn.Module):
                 }
 
     
-    def from_json(self, json_dict):
+    def from_json(self, json_dict, config=None):
         """Constructs a CPPN from a json dict or string."""
         if isinstance(json_dict, str):
             json_dict = json.loads(json_dict, strict=False)
@@ -1099,7 +1113,7 @@ class CPPN(nn.Module):
         self.connections = nn.ModuleDict() 
         
         for key, item in json_dict["nodes"].items():
-            self.nodes[key] = Node.create_from_json(item)
+            self.nodes[key] = Node.create_from_json(item, config=config)
             if int(self.nodes[key].id) > self.__class__.current_node_id:
                 self.__class__.current_node_id = int(self.nodes[key].id)+1
         if self.id > self.__class__.current_id:
