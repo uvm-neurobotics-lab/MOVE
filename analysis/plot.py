@@ -139,10 +139,11 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
                     target_path = os.path.join(cond_path, run, "target.txt")
                     if not os.path.exists(target_path):
                         target = "None"
+                        print(target_path, "does not exist, setting target to None")
                     else:
                         with open(target_path, 'r') as f:
                             target = f.read().strip()
-                    
+                
                     cell_names_path = os.path.join(cond_path, run, "cell_names.csv")
                     if not os.path.exists(cell_names_path):
                         cells = []

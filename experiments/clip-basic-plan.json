@@ -1,0 +1,80 @@
+{
+    "experiment_name": "clip-basic",
+
+    "additional_controls":{
+        "alg": "move",
+        "output_dir": "../results/clip-basic",
+        "clip_disable_partials": true,
+        "use_fused_optimizer": true,
+        "use_radial_distance":true,
+        "do_crossover":false,
+        "coord_range": [-0.5,0.5],
+        "clip_random_seed": 7,
+        "hidden_nodes_at_start": 2,
+        "clip_microbatch_size": 32,
+        "clip_embed_microbatch_size": 32,
+        "num_cells": 60,
+        "initial_batch_size": 60,
+        "batch_size": 60,
+        "offspring_per_cell": 1,
+        "allow_jumps": 16,
+        "soft_mask_sigma": 0.0,
+        "soft_mask_mu": 0.0,
+        "soft_mask_min": 0.0,
+        "move_fns_per_cell": 3,
+        "max_weight": 20.0,
+        "stop_condition": "passes",
+        "stop_condition_value": 2560000,
+        
+        "sgd_early_stop": 20,
+        "sgd_no_branch":false,
+        
+        "sgd_compile_fitness":false,
+        "sgd_use_compiled_forward":false,
+        
+        "grad_every": 1,
+        "sgd_steps": 1000,
+        "n_fourier_features": 8,
+        
+        "init_connection_probability": 0.1,
+        "init_connection_probability_fourier": 0.1,
+        "force_init_path_inputs_outputs": true,
+    
+        "connection_bloat": 1,
+        "initial_mutations":0,
+        "fourier_feature_scale": 1.0,
+        "use_fourier_features": true,
+        "weight_init_std": 1.0,
+        "sgd_learning_rate": 0.01,
+        "color_mode": "HSL",
+        "res_h": 224,
+        "res_w": 224,
+        
+        "checkpoint_frequency": 1
+
+    },
+
+    "targets":[
+        ["flat yellow smiley face emoji, centered, simple vector icon, clean outline, no text, white background"]
+    ],
+
+    "color_modes":
+    [
+        "HSL"
+    ],
+
+    "mode": "enum",
+
+    "variables":[
+       "clip_noise_scale"
+    ],
+
+    "conditions": [
+        {
+            "basic": {
+            }
+        }
+    ]
+
+
+}
