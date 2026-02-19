@@ -121,9 +121,14 @@ def read_tensor_results(results_path, names, fns =None, max_runs=None, reduce=Tr
                         if not os.path.join(cond_path, run) in unfinished:
                             unfinished.append(os.path.join(cond_path, run))
                         continue
-                    t = torch.load(pt_path)
-                    t = process_tensor(t, name, fns, reduce, max_batch)
-
+                    try:
+                        t = torch.load(pt_path)
+                        t = process_tensor(t, name, fns, reduce, max_batch)
+                    except Exception as e:
+                        print("Error loading", pt_path)
+                        print(e)
+                        print(traceback.format_exc())
+                        continue
                     if only_final:
                         last_row_not_nan = torch.isnan(t).sum(dim=0) == 0
                         t = t[:, last_row_not_nan]
