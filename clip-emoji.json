@@ -118,27 +118,44 @@
     "clip_disable_partials": true,
     "use_fused_optimizer": true,
     "use_radial_distance":true,
-    "do_crossover":false,
-    "coord_range": [-0.5,0.5],
+    "do_crossover":true,
+    "coord_range": [-0.75,0.75],
     "clip_random_seed": 7,
     "hidden_nodes_at_start": 2,
-    "clip_microbatch_size": 64,
-    "clip_embed_microbatch_size": 64,
+    "clip_microbatch_size": 16,
+    "clip_embed_microbatch_size": 16,
     "num_cells": 100,
-    "initial_batch_size": 100,
-    "batch_size": 100,
+    "initial_batch_size": 64,
+    "batch_size": 64,
+    "move_fns_per_cell": 3,
     "offspring_per_cell": 1,
     "allow_jumps": 16,
     "soft_mask_sigma": 0.0,
     "soft_mask_mu": 0.0,
     "soft_mask_min": 0.0,
-    "move_fns_per_cell": 1,
     "max_weight": 20.0,
     "stop_condition": "passes",
     "stop_condition_value": 2560000,
     "sgd_early_stop": 20,
+    "sgd_no_branch":false,
+    
+    "sgd_compile_fitness":false,
+    "sgd_use_compiled_forward":false,
+    
+    "activations": ["SinActivation",
+                    "IdentityActivation",
+                    "TanhActivation",
+                    "SigmoidActivation", 
+                    "Conv3x3Activation",
+                    "Conv7x7Activation",
+                    "Conv9x9Activation",
+                    "LocalAttentionActivation"
+                    ],
+
+
+
     "grad_every": 1,
-    "sgd_steps": 100,
+    "sgd_steps": 1000,
     "n_fourier_features": 8,
     
     "init_connection_probability": 0.1,
@@ -154,7 +171,7 @@
     "color_mode": "HSL",
     "res_h": 224,
     "res_w": 224,
-    "checkpoint_frequency": 10
+    "checkpoint_frequency": 100
 },
 "conditions": [
     {

@@ -238,7 +238,8 @@ class _CompiledFitnessCache:
 
         try:
             fn_name = getattr(fn, "__name__", str(fn))
-            logging.info("Compiling fitness function %s", fn_name)
+            fn_display_name = getattr(fn, "display_name", fn_name)
+            logging.info("Compiling fitness function %s", fn_display_name)
             compile_dynamic = bool(getattr(config, "sgd_compile_fitness_dynamic", True))
             compile_fullgraph = bool(getattr(config, "sgd_compile_fitness_fullgraph", False))
             backend, compile_dynamic, compile_fullgraph = _resolve_compile_backend(
@@ -269,7 +270,7 @@ class _CompiledFitnessCache:
         except Exception as exc:
             logging.warning(
                 "Failed to compile fitness function %s; falling back to eager. Error: %s",
-                fn_name,
+                fn_display_name,
                 exc,
             )
             self.disable(fn)
@@ -825,10 +826,28 @@ def sgd_weights(
 
     parameter_groups: List[Dict[str, object]] = []
     group_to_genome: List[int] = []
+    seen_param_ids: Set[int] = set()
     for genome_idx, (_, _, genome) in enumerate(genomes):
         if getattr(config, "device", None) is not None:
             genome.to(device)
-        params = list(genome.parameters())
+        raw_params = list(genome.parameters())
+        if not raw_params:
+            continue
+        params: List[torch.nn.Parameter] = []
+        duplicate_count = 0
+        for param in raw_params:
+            param_id = id(param)
+            if param_id in seen_param_ids:
+                duplicate_count += 1
+                continue
+            seen_param_ids.add(param_id)
+            params.append(param)
+        if duplicate_count:
+            logging.warning(
+                "Skipping %s duplicate parameters for genome %s during SGD group assembly.",
+                duplicate_count,
+                genome_idx,
+            )
         if not params:
             continue
         parameter_groups.append({"params": params, "lr": getattr(genome, "sgd_lr", lr)})
@@ -1223,10 +1242,28 @@ def sgd_weights_no_branch(
 
     parameter_groups: List[Dict[str, object]] = []
     group_to_genome: List[int] = []
+    seen_param_ids: Set[int] = set()
     for genome_idx, (_, _, genome) in enumerate(genomes):
         if getattr(config, "device", None) is not None:
             genome.to(device)
-        params = list(genome.parameters())
+        raw_params = list(genome.parameters())
+        if not raw_params:
+            continue
+        params: List[torch.nn.Parameter] = []
+        duplicate_count = 0
+        for param in raw_params:
+            param_id = id(param)
+            if param_id in seen_param_ids:
+                duplicate_count += 1
+                continue
+            seen_param_ids.add(param_id)
+            params.append(param)
+        if duplicate_count:
+            logging.warning(
+                "Skipping %s duplicate parameters for genome %s during SGD group assembly.",
+                duplicate_count,
+                genome_idx,
+            )
         if not params:
             continue
         parameter_groups.append({"params": params, "lr": getattr(genome, "sgd_lr", lr)})

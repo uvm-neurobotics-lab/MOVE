@@ -32,7 +32,25 @@ from .record_keeping import Record
 
 from .norm import norm_tensor, read_norm_data
 from .fitness import fitness_functions as ff
+from .fitness.name_to_fn import name_to_fn
 from .fitness.feature_cache import feature_cache_scope
+
+
+def _normalize_max_partial_prompts(value):
+    """Normalize ``clip_max_partial_prompts`` to an ``int`` cap or ``None``.
+
+    ``None`` and negative values mean "no maximum".
+    """
+
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < 0:
+        return None
+    return max(0, parsed)
 
 
 class MOVE(CPPNEvolutionaryAlgorithm):
@@ -211,6 +229,10 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                 microbatch_size=microbatch,
                 augmentations=augmentations,
             )
+            for objective in these_objectives:
+                # Improve logging/readability (e.g. during torch.compile of fitness
+                # functions) by carrying the full originating prompt text.
+                objective.display_name = f"{objective.identifier}: {prompt_text}"
             objectives.extend(these_objectives)
             variant_objectives.extend(these_objectives[: len(embeddings)])
 
@@ -229,16 +251,15 @@ class MOVE(CPPNEvolutionaryAlgorithm):
                         stop_words_iter = stop_words_cfg
                     stop_words_set = {str(word).lower() for word in stop_words_iter}
                 min_length = max(1, int(getattr(self.config, "clip_partial_min_length", 3)))
+                partial_n_tokens = max(1, int(getattr(self.config, "clip_partials_n_tokens", 1)))
                 max_partials = getattr(self.config, "clip_max_partial_prompts", None)
-                try:
-                    max_partials_int = None if max_partials is None else max(0, int(max_partials))
-                except (TypeError, ValueError):
-                    max_partials_int = None
+                max_partials_int = _normalize_max_partial_prompts(max_partials)
 
                 partial_prompts = generate_partial_prompts(
                     prompt_text,
                     min_length=min_length,
                     stop_words=stop_words_set,
+                    n_tokens=partial_n_tokens,
                     max_partial_prompts=max_partials_int,
                 )
                 partial_meta.append((prompt_idx, prompt_text, partial_prompts))
@@ -264,6 +285,37 @@ class MOVE(CPPNEvolutionaryAlgorithm):
         self._clip_noise_scale_initial = float(getattr(self.config, "clip_noise_scale", 0.2))
         self._clip_noise_scale_current = float(getattr(self.config, "clip_noise_scale", 0.2))
         self.config.clip_noise_scale = float(getattr(self.config, "clip_noise_scale", 0.2))
+
+        extra = getattr(self.config, "clip_extra_objectives", None) or []
+        weights = getattr(self.config, "clip_extra_objective_weights", None) or {}
+        if extra:
+            for name in extra:
+                if not name:
+                    continue
+                fn_name = str(name)
+                fn = name_to_fn.get(fn_name)
+                if fn is None:
+                    logging.warning("Unknown clip_extra_objective '%s'; skipping.", fn_name)
+                    continue
+                weight = float(weights.get(fn_name, 1.0)) if isinstance(weights, dict) else 1.0
+                if weight == 0.0:
+                    continue
+
+                if fn_name in ("lpips", "dists", "style", "vif", "mse", "psnr", "ssim", "msssim", "haarpsi"):
+                    logging.warning(
+                        "clip_extra_objective '%s' uses target images; CLIP mode uses a placeholder target unless you supply a real target.",
+                        fn_name,
+                    )
+
+                if weight != 1.0:
+                    def _make_weighted(base_fn, w):
+                        def _wrapped(candidates, target):
+                            return base_fn(candidates, target) * w
+                        _wrapped.__name__ = f"{base_fn.__name__}_w{w:g}"
+                        return _wrapped
+                    objectives.append(_make_weighted(fn, weight))
+                else:
+                    objectives.append(fn)
 
         # Keep the original prompt (or prompt list) for later noise scheduling refresh.
         self.clip_text = text

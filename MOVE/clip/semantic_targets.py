@@ -110,21 +110,25 @@ def generate_partial_prompts(
     *,
     min_length: int = 3,
     stop_words: Optional[set[str]] = None,
+    n_tokens: int = 1,
     max_partial_prompts: Optional[int] = None,
 ) -> List[str]:
     """Derive canonical partial prompts from ``text``.
 
     Tokens shorter than ``min_length`` or appearing in ``stop_words`` are
-    filtered out.  The return value preserves the original casing of each token
-    so it can be fed back into CLIP while guaranteeing uniqueness.
+    filtered out. ``n_tokens`` controls how many tokens are joined for each
+    partial (e.g. 1 => single token, 2 => bigrams). Uniqueness is enforced at
+    the full partial level (case-insensitive) while preserving original casing
+    from the first occurrence.
     """
 
     min_length = max(1, int(min_length))
+    n_tokens = max(1, int(n_tokens))
     normalized_stop_words = None
     if stop_words:
         normalized_stop_words = {word.lower() for word in stop_words}
-    seen = set()
-    partials: List[str] = []
+
+    filtered_tokens: List[str] = []
     for match in re.finditer(r"[A-Za-z0-9][A-Za-z0-9'\-]*", text):
         token = match.group(0).strip("'\"")
         lower_token = token.lower()
@@ -132,10 +136,26 @@ def generate_partial_prompts(
             continue
         if normalized_stop_words and lower_token in normalized_stop_words:
             continue
-        if lower_token in seen:
+        filtered_tokens.append(token)
+
+    if not filtered_tokens:
+        return []
+
+    if n_tokens == 1:
+        span_tokens: List[List[str]] = [[tok] for tok in filtered_tokens]
+    else:
+        if len(filtered_tokens) < n_tokens:
+            return []
+        span_tokens = [filtered_tokens[i : i + n_tokens] for i in range(len(filtered_tokens) - n_tokens + 1)]
+
+    seen = set()
+    partials: List[str] = []
+    for span in span_tokens:
+        key = " ".join(token.lower() for token in span)
+        if key in seen:
             continue
-        seen.add(lower_token)
-        partials.append(token)
+        seen.add(key)
+        partials.append(" ".join(span))
         if max_partial_prompts is not None and len(partials) >= max_partial_prompts:
             break
     return partials

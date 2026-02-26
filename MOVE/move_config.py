@@ -44,6 +44,9 @@ class MOVEConfig(CPPNConfig):
         self.clip_disable_partials = False
         self.clip_partial_min_length = 3
         self.clip_partial_stopwords = list(DEFAULT_STOP_WORDS)
+        # Number of tokens per partial prompt (1 = single-token partials).
+        self.clip_partials_n_tokens = 1
+        # Maximum number of generated partial prompts; negative means unlimited.
         self.clip_max_partial_prompts = 8
         self.clip_microbatch_size = 64
         self.clip_embed_microbatch_size = 64
@@ -62,6 +65,13 @@ class MOVEConfig(CPPNConfig):
         self.clip_openclip_pretrained = "openai"
         # Optional second pretrained tag for the second CLIP model.
         self.clip_openclip_pretrained_second = None
+
+        # Extra objectives to add alongside CLIP (e.g., ["lpips", "tv", "sharpness"]).
+        # Weights can be provided via clip_extra_objective_weights (name -> weight).
+        self.clip_extra_objectives = None
+        self.clip_extra_objective_weights ={}
+        # self.clip_extra_objectives = ["tv", "sharpness", "lpips"]
+        # self.clip_extra_objective_weights = {"tv": 0.1, "sharpness": 0.1, "lpips": 0.2}
         
         # CLIP Compilation options
         self.clip_compile_models = True
@@ -422,7 +432,14 @@ class MOVEConfig(CPPNConfig):
         
         for i in range(len(self.objective_functions)):
             if isinstance(self.objective_functions[i], str):
-                self.objective_functions[i] = name_to_fn[self.objective_functions[i]]
+                fn_name = self.objective_functions[i]
+                resolved = name_to_fn.get(fn_name)
+                if resolved is not None:
+                    self.objective_functions[i] = resolved
+                else:
+                    # Defer unresolved objective strings (e.g., CLIP objectives or
+                    # prompt strings) to MOVE initialization which will rebuild them.
+                    continue
 
         self.NO_GRADIENT = ff.NO_GRADIENT
         self.intialize_linked_variables()

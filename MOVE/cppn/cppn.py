@@ -51,8 +51,12 @@ class Node(nn.Module):
             except TypeError:
                 self.activation = activation()
         else:
-            self.activation = activation
-        self.activation.to(self.bias.device)
+            if isinstance(activation, nn.Module):
+                self.activation = copy.deepcopy(activation)
+            else:
+                self.activation = activation
+        if isinstance(self.activation, nn.Module):
+            self.activation.to(self.bias.device)
     
     def remove_parameters(self):
         detached_bias = self.bias.detach()

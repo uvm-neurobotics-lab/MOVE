@@ -6,14 +6,7 @@ import time
 from typing import Callable, Optional
 import matplotlib.pyplot as plt
 import numpy as np
-import __main__ as main
-if not hasattr(main, '__file__'):
-    try:
-        from tqdm.notebook import tqdm
-    except ImportError:
-        from tqdm import tqdm
-else:
-    from tqdm import tqdm
+from tqdm.auto import tqdm
 import pandas as pd
 import torch
 import os
@@ -419,10 +412,11 @@ class CPPNEvolutionaryAlgorithm(object):
                 
                 # pbar seems broken, print progress manually
                 # TODO: clean up
+                mean_fit = np.mean(list(self.agg_fitnesses.values())) if len(self.agg_fitnesses) > 0 else 0.0
                 pct = '('+f"{self.stop_condition.curr / self.config.stop_condition_value * 100:.1f}%"+")" if self.stop_condition is not None else ''
                 stop_condition_size = len(str(self.stop_condition.value)) if self.stop_condition is not None else 1
                 run_info  = f"Run {self.run_number:<3d}: {self.stop_condition.curr:>{stop_condition_size}d}/{self.stop_condition.value} {str(self.stop_condition.__class__.__name__).replace('StopAfter','')} {pct}" if self.stop_condition is not None else f"Run {self.run_number}"
-                run_info += f" # unique: {self.n_unique:<4d} | Elite fit: {self.solution_fitness:.4f}, params: {b.n_parameters if b is not None else 'N/A':<5d} |"
+                run_info += f" # unique: {self.n_unique:<4d} | Avg. Fit: {mean_fit:.3f} Elite fit: {self.solution_fitness:.4f}, params: {b.n_parameters if b is not None else 'N/A':<5d} |"
                 tqdm.write(run_info)
                 
                 stop_reached = self.stop_condition(self)

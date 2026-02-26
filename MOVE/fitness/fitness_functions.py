@@ -128,6 +128,29 @@ def _resize_to_min(img: torch.Tensor) -> torch.Tensor:
    return img
 
 
+def tv(candidates, _target=None):
+   """Total variation penalty (returns negative TV so higher is better)."""
+   img = _ensure_batched_rgb(candidates).to(dtype=torch.float32)
+   img = torch.clamp(img, 0.0, 1.0)
+   dh = torch.abs(img[:, :, 1:, :] - img[:, :, :-1, :]).mean(dim=(1, 2, 3))
+   dw = torch.abs(img[:, :, :, 1:] - img[:, :, :, :-1]).mean(dim=(1, 2, 3))
+   return -(dh + dw)
+
+
+def sharpness(candidates, _target=None):
+   """Edge strength via Laplacian magnitude (higher is sharper)."""
+   img = _ensure_batched_rgb(candidates).to(dtype=torch.float32)
+   img = torch.clamp(img, 0.0, 1.0)
+   kernel = torch.tensor(
+      [[0.0, -1.0, 0.0], [-1.0, 4.0, -1.0], [0.0, -1.0, 0.0]],
+      device=img.device,
+      dtype=img.dtype,
+   ).view(1, 1, 3, 3)
+   gray = img.mean(dim=1, keepdim=True)
+   lap = F.conv2d(gray, kernel, padding=1)
+   return lap.abs().mean(dim=(1, 2, 3))
+
+
 @torch.no_grad()
 def correct_dims(candidates, target):
    if is_canonical_image_batch(candidates):

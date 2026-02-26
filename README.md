@@ -25,12 +25,12 @@ experiment output.
 
 ## Requirements
 
-- Python 3.10 or newer (3.11 recommended).
+- Python 3.9 or newer (3.11 recommended).
 - CUDA-capable GPU (MOVE will fall back to CPU but runs considerably slower).
 - Conda is recommended for reproducing the paper environment.
 
 PyTorch, TorchVision, LPIPS, and other dependencies are pinned inside
-`environment.yml`.
+`environment.yml` (Conda workflow) and `requirements.txt` (venv/pip workflow).
 
 ---
 
@@ -42,6 +42,14 @@ PyTorch, TorchVision, LPIPS, and other dependencies are pinned inside
    conda env create -f environment.yml
    conda activate move
    ```
+
+  Or with venv + pip:
+
+  ```bash
+  python -m venv .venv
+  source .venv/bin/activate
+  pip install -r requirements.txt
+  ```
 
 2. **Run MOVE with the default configuration**
    ```bash
@@ -144,8 +152,9 @@ objectives are replaced with a bundle of CLIP similarity objectives:
 
 1. MOVE samples one or more noisy text embeddings with
    `clip_num_variants` (defaults to 1). Each variant becomes an objective.
-2. If `clip_include_partials` is `True`, MOVE extracts distinct keywords from
-   the prompt and tracks them as additional objectives.
+2. If `clip_include_partials` is `True`, MOVE extracts distinct partial
+  prompts from the text (single tokens by default, or n-token phrases) and
+  tracks them as additional objectives.
 3. During evolution the map contains a cell for each objective, encouraging
    diverse imagery that satisfies different parts of the prompt.
 
@@ -161,6 +170,7 @@ Key configuration knobs:
 | `clip_disable_partials` | Force-disable token-level objectives (even if `clip_include_partials` is `True`). Useful when you provide a list of full prompts and want MOVE cells to combine only full-prompt objectives. |
 | `clip_partial_min_length` | Minimum character length for partial prompts. |
 | `clip_partial_stopwords` | Words to ignore when extracting partial prompts (defaults to a short English list). |
+| `clip_partials_n_tokens` | Number of tokens per partial prompt (`1` for unigrams, `2` for bigrams, etc.). Deduplication is performed at the full partial level. |
 | `clip_max_partial_prompts` | Hard cap on the number of partial prompts. |
 | `clip_microbatch_size` | Number of images to embed at once when generating CLIP activations (helps with GPU memory). |
 | `clip_augmentations` | Number of additional random crops per candidate used when embedding for CLIP. Averaged scores make guidance less brittle (defaults to 4). |

@@ -326,6 +326,7 @@ dependencies:
       - networkx==3.0
       - numpy==1.24.1
       - oauthlib==3.2.2
+      - open-clip-torch==2.24.0
       - openai-clip==1.0.1
       - opencv-python==4.8.1.78
       - pillow==9.3.0
@@ -344,7 +345,9 @@ dependencies:
       - safetensors==0.4.0
       - scikit-image==0.22.0
       - scipy==1.11.3
+      - scikits-bootstrap==1.1.1
       - shapely==2.0.2
+      - statsmodels==0.14.1
       - sympy==1.12
       - tb-nightly==2.16.0a20231107
       - tensorboard-data-server==0.7.2
@@ -361,4 +364,3 @@ dependencies:
       - werkzeug==3.0.1
       - wrapt==1.16.0
       - yapf==0.40.2
-prefix: /home/jackson/miniconda3/envs/move
