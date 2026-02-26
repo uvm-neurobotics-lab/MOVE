@@ -37,6 +37,8 @@
     "sgd_early_stop": 20,
     "grad_every": 1,
     "sgd_steps": 1,
+    
+    "save_map_images_every": 5,
 
     "n_fourier_features": 8,
     "fourier_feature_scale": 1.0,
