@@ -194,8 +194,25 @@ class MOVEGPU(GpuEvolutionMixin, MOVE):
                 fname = os.path.join(self.genomes_dir, f"batch_{self.current_batch:04d}.json")
                 self.submit_cpu_task(b.save, fname, self.config)
 
+        self._maybe_save_map_images_snapshot()
+
         if self.config.checkpoint_frequency > 0 and self.current_batch % self.config.checkpoint_frequency == 0:
             self.save_checkpoint()
+
+    def _maybe_save_map_images_snapshot(self):
+        if self.config.dry_run:
+            return
+
+        every = int(getattr(self.config, "save_map_images_every", 0) or 0)
+        if every <= 0:
+            return
+
+        batch_number = self.current_batch + 1
+        if batch_number % every != 0:
+            return
+
+        snapshot_dir = os.path.join(self.image_dir, f"batch_{batch_number:06d}")
+        self.submit_cpu_task(self.record.save_map, snapshot_dir, self.map, self.config, self.inputs)
 
     def on_end(self):
         self.end_time = time.time()

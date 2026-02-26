@@ -81,6 +81,9 @@ class MOVEConfig(CPPNConfig):
         self.clip_compile_fullgraph = False
         
         self.checkpoint_frequency = 0
+        # Save full MAP image snapshots every N batches.
+        # 0 disables periodic snapshots (only save at run end).
+        self.save_map_images_every = 0
 
         self.total_offspring = 30_000_000
         # self.total_offspring = 3000

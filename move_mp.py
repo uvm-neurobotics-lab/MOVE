@@ -737,6 +737,9 @@ class MOVE_MP(MOVE):
                 b = self.get_best()
                 if b is not None:
                     b.save(os.path.join(self.genomes_dir, f"batch_{self.current_batch:04d}.json"), self.config)
+
+            self._maybe_save_map_images_snapshot()
+
             if self.config.checkpoint_frequency > 0 and self.current_batch % self.config.checkpoint_frequency == 0:
                 self.save_checkpoint()
         else:

@@ -36,7 +36,7 @@
     "stop_condition_value": 640000,
     "sgd_early_stop": 20,
     "grad_every": 1,
-    "sgd_steps": 1000,
+    "sgd_steps": 1,
 
     "n_fourier_features": 8,
     "fourier_feature_scale": 1.0,
